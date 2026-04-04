@@ -22,11 +22,7 @@ npm run build
 echo "⚙️ Installing Capacitor CLI..."
 npm install -g @capacitor/cli
 
-# Add Android platform
-echo "📱 Adding Android platform..."
-npx cap add android || echo "Android platform already exists"
-
-# Sync Capacitor
+# Sync Capacitor (مجلد android موجود مسبقاً — لا cap add)
 echo "🔄 Syncing Capacitor..."
 npx cap sync android
 
