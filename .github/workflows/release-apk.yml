@@ -1,0 +1,52 @@
+# عند دفع tag مثل v1.0.0 يُبنى الـ APK ويُرفَق بـ GitHub Release
+# الرابط الثابت: https://github.com/OWNER/REPO/releases/download/TAG/saraf-iq-debug.apk
+name: Release APK
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@v3
+
+      - run: yes | sdkmanager --licenses || true
+
+      - run: npx cap sync android
+
+      - name: Gradle assembleDebug
+        working-directory: android
+        run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Rename for release asset
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk saraf-iq-debug.apk
+
+      - name: GitHub Release + attach APK
+        uses: softprops/action-gh-release@v2
+        with:
+          files: saraf-iq-debug.apk
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
