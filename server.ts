@@ -1,4 +1,5 @@
 import "dotenv/config";
+import {existsSync} from "node:fs";
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
@@ -957,6 +958,30 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
+    const apkFileName = "saraf-iq-debug.apk";
+    const apkDiskPath = path.join(distPath, apkFileName);
+
+    /** قبل static وقبل SPA: بدون ملف APK كان يصل الطلب إلى app.get('*') فيُرجع index.html فيبدو أن الرابط «يفتح الموقع». */
+    app.get(`/${apkFileName}`, (_req, res) => {
+      if (!existsSync(apkDiskPath)) {
+        res
+          .status(404)
+          .type("text/plain; charset=utf-8")
+          .send(
+            [
+              "ملف APK غير موجود على السيرفر.",
+              "أضف الملف إلى: public/saraf-iq-debug.apk ثم npm run build وأعد النشر.",
+              "",
+              "APK not found. Add public/saraf-iq-debug.apk to the project, rebuild, and redeploy.",
+            ].join("\n"),
+          );
+        return;
+      }
+      res.setHeader("Content-Type", "application/vnd.android.package-archive");
+      res.setHeader("Content-Disposition", `attachment; filename="${apkFileName}"`);
+      res.sendFile(apkDiskPath);
+    });
+
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
