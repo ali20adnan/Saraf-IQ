@@ -2,6 +2,15 @@ import {useEffect, useRef, useState} from 'react';
 import {motion} from 'motion/react';
 import {BrandLogo} from './BrandLogo';
 
+/** أصول واجهة تُحمَّل أثناء الشاشة لتصفح أخف لاحقاً */
+const PRELOAD_IMAGES = [
+  '/icons/logo.png',
+  '/icons/zaincash.png',
+  '/icons/superqi.png',
+  '/icons/firstbank.png',
+  '/icons/fastpay.png',
+];
+
 const MIN_VISIBLE_MS = 900;
 const REDUCED_MOTION_HOLD_MS = 1_000;
 const DESKTOP_INTRO_MS = 650;
@@ -83,6 +92,29 @@ export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
 
   const [introDone, setIntroDone] = useState(false);
   const [visible, setVisible] = useState(true);
+  const [bootAssetsReady, setBootAssetsReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fontsReady = document.fonts.ready;
+    const imagesReady = Promise.all(
+      PRELOAD_IMAGES.map(
+        (src) =>
+          new Promise<void>((resolve) => {
+            const img = new Image();
+            img.onload = () => resolve();
+            img.onerror = () => resolve();
+            img.src = src;
+          }),
+      ),
+    );
+    Promise.all([fontsReady, imagesReady]).then(() => {
+      if (!cancelled) setBootAssetsReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const phoneMotion = isPhoneViewport && !prefersReducedMotion;
   const phoneReduced = isPhoneViewport && prefersReducedMotion;
@@ -105,7 +137,7 @@ export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
   }, [isPhoneViewport, phoneReduced]);
 
   useEffect(() => {
-    if (!settingsReady || !introDone) return;
+    if (!settingsReady || !introDone || !bootAssetsReady) return;
     const elapsed = Date.now() - mountRef.current;
     const wait = Math.max(0, MIN_VISIBLE_MS - elapsed);
     const timer = window.setTimeout(() => {
@@ -113,7 +145,7 @@ export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
       window.setTimeout(() => onCompleteRef.current(), 300);
     }, wait);
     return () => window.clearTimeout(timer);
-  }, [settingsReady, introDone]);
+  }, [settingsReady, introDone, bootAssetsReady]);
 
   const darkPhone = phoneMotion;
 

@@ -53,6 +53,7 @@
     "@types/node-telegram-bot-api": "^0.64.14",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
-    "typescript": "~5.8.2"
+    "typescript": "~5.8.2",
+    "vite-plugin-pwa": "^1.2.0"
   }
 }

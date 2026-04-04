@@ -7,6 +7,9 @@
 
 html {
   height: 100%;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
@@ -16,6 +19,7 @@ body {
   background-color: #F8FAFC;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+  overscroll-behavior-y: none;
 }
 
 .pb-safe {
