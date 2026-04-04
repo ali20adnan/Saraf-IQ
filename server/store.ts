@@ -28,6 +28,15 @@ export type Agent = {
   telegram_id: number;
   name: string;
   is_active: boolean;
+  permissions: string[]; // ['add_number', 'reset_balance']
+  created_at: string;
+};
+
+export type Admin = {
+  id: string;
+  telegram_id: number;
+  name: string;
+  permissions: string[]; // ['manage_agents', 'site_settings', 'manage_admins', 'view_stats']
   created_at: string;
 };
 
@@ -47,6 +56,7 @@ type FileStore = {
   app_settings: Record<string, string>;
   agents: Agent[];
   agent_numbers: AgentNumber[];
+  admins: Admin[];
 };
 
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -135,6 +145,7 @@ function loadFileStore(): FileStore {
         app_settings: { ...defaultAppSettings },
         agents: [],
         agent_numbers: [],
+        admins: [],
       };
     }
     const raw = fs.readFileSync(DATA_FILE, "utf-8");
@@ -149,8 +160,9 @@ function loadFileStore(): FileStore {
         parsed.app_settings && typeof parsed.app_settings === "object"
           ? { ...defaultAppSettings, ...parsed.app_settings }
           : { ...defaultAppSettings },
-      agents: Array.isArray(parsed.agents) ? parsed.agents : [],
+      agents: Array.isArray(parsed.agents) ? parsed.agents.map(a => ({ ...a, permissions: Array.isArray(a.permissions) ? a.permissions : ['add_number', 'reset_balance'] })) : [],
       agent_numbers: Array.isArray(parsed.agent_numbers) ? parsed.agent_numbers : [],
+      admins: Array.isArray(parsed.admins) ? parsed.admins : [],
     };
   } catch {
     return {
@@ -160,6 +172,7 @@ function loadFileStore(): FileStore {
       app_settings: { ...defaultAppSettings },
       agents: [],
       agent_numbers: [],
+      admins: [],
     };
   }
 }
@@ -466,6 +479,7 @@ export async function createAgent(input: { telegram_id: number; name: string }):
     telegram_id: input.telegram_id,
     name: input.name,
     is_active: false,
+    permissions: ['add_number', 'reset_balance'],
     created_at: new Date().toISOString(),
   };
   if (db) {
@@ -590,4 +604,65 @@ export async function incrementNumberBalance(numberId: string, amount: number): 
   saveFileStore(st);
   
   return { exhausted, agentId: st.agent_numbers[ix].agent_id };
+}
+
+/** PERMISSIONS & ADMINS */
+
+export async function toggleAgentPermission(agentId: string, permission: string): Promise<void> {
+  const st = loadFileStore();
+  const ix = st.agents.findIndex(a => a.id === agentId);
+  if (ix === -1) return;
+  const current = st.agents[ix].permissions || [];
+  if (current.includes(permission)) {
+    st.agents[ix].permissions = current.filter(p => p !== permission);
+  } else {
+    st.agents[ix].permissions = [...current, permission];
+  }
+  if (db) await db.from("agents").update({ permissions: st.agents[ix].permissions }).eq("id", agentId);
+  saveFileStore(st);
+}
+
+export async function listAdmins(): Promise<Admin[]> {
+  if (db) {
+    const { data, error } = await db.from("admins").select("*").order("created_at", { ascending: false });
+    if (!error && data) return data as Admin[];
+  }
+  return loadFileStore().admins;
+}
+
+export async function createAdmin(input: { telegram_id: number; name: string }): Promise<Admin> {
+  const id = globalThis.crypto?.randomUUID?.() ?? `admin-${Date.now()}`;
+  const row: Admin = {
+    id,
+    telegram_id: input.telegram_id,
+    name: input.name,
+    permissions: ['manage_agents', 'site_settings', 'view_stats'], // Default
+    created_at: new Date().toISOString(),
+  };
+  if (db) await db.from("admins").insert([row]);
+  const st = loadFileStore();
+  st.admins.unshift(row);
+  saveFileStore(st);
+  return row;
+}
+
+export async function toggleAdminPermission(adminId: string, permission: string): Promise<void> {
+  const st = loadFileStore();
+  const ix = st.admins.findIndex(a => a.id === adminId);
+  if (ix === -1) return;
+  const current = st.admins[ix].permissions || [];
+  if (current.includes(permission)) {
+    st.admins[ix].permissions = current.filter(p => p !== permission);
+  } else {
+    st.admins[ix].permissions = [...current, permission];
+  }
+  if (db) await db.from("admins").update({ permissions: st.admins[ix].permissions }).eq("id", adminId);
+  saveFileStore(st);
+}
+
+export async function deleteAdmin(id: string): Promise<void> {
+  if (db) await db.from("admins").delete().eq("id", id);
+  const st = loadFileStore();
+  st.admins = st.admins.filter(a => a.id !== id);
+  saveFileStore(st);
 }
