@@ -49,6 +49,12 @@ export type AgentNumber = {
   sort_order: number;
 };
 
+export type BotUser = {
+  id: string; // uuid
+  telegram_id: number;
+  created_at: string;
+};
+
 type FileStore = {
   transactions: ServerTransaction[];
   offers: ServerOffer[];
@@ -57,6 +63,7 @@ type FileStore = {
   agents: Agent[];
   agent_numbers: AgentNumber[];
   admins: Admin[];
+  bot_users: BotUser[];
 };
 
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -146,6 +153,7 @@ function loadFileStore(): FileStore {
         agents: [],
         agent_numbers: [],
         admins: [],
+        bot_users: [],
       };
     }
     const raw = fs.readFileSync(DATA_FILE, "utf-8");
@@ -163,6 +171,7 @@ function loadFileStore(): FileStore {
       agents: Array.isArray(parsed.agents) ? parsed.agents.map(a => ({ ...a, permissions: Array.isArray(a.permissions) ? a.permissions : ['add_number', 'reset_balance'] })) : [],
       agent_numbers: Array.isArray(parsed.agent_numbers) ? parsed.agent_numbers : [],
       admins: Array.isArray(parsed.admins) ? parsed.admins : [],
+      bot_users: Array.isArray(parsed.bot_users) ? parsed.bot_users : [],
     };
   } catch {
     return {
@@ -173,6 +182,7 @@ function loadFileStore(): FileStore {
       agents: [],
       agent_numbers: [],
       admins: [],
+      bot_users: [],
     };
   }
 }
@@ -672,4 +682,64 @@ export async function deleteAdmin(id: string): Promise<void> {
   if (db) await db.from("admins").delete().eq("id", id);
   st.admins = st.admins.filter(a => a.id !== id);
   saveFileStore(st);
+}
+
+/**
+ * Bot Users Management (for Broadcasts)
+ */
+export async function registerBotUser(telegramId: number) {
+  const store = loadFileStore();
+  const exists = store.bot_users.find((u) => u.telegram_id === telegramId);
+  if (exists) return exists;
+
+  const newUser: BotUser = {
+    id: globalThis.crypto?.randomUUID?.() ?? `botuser-${Date.now()}`,
+    telegram_id: telegramId,
+    created_at: new Date().toISOString(),
+  };
+  store.bot_users.push(newUser);
+  saveFileStore(store);
+
+  if (db) {
+    await db.from("bot_users").upsert({
+      telegram_id: telegramId,
+      created_at: newUser.created_at,
+    });
+  }
+  return newUser;
+}
+
+export async function listBotUsers() {
+  const store = loadFileStore();
+  return store.bot_users;
+}
+
+/**
+ * Offers Management
+ */
+export async function createOffer(offerData: Omit<ServerOffer, "id">) {
+  const store = loadFileStore();
+  const id = globalThis.crypto?.randomUUID?.() ?? `offer-${Date.now()}`;
+  const newOffer: ServerOffer = {
+    id,
+    ...offerData,
+  };
+  store.offers.push(newOffer);
+  store.offers.sort((a, b) => a.sort_order - b.sort_order);
+  saveFileStore(store);
+
+  if (db) {
+    await db.from("offers").insert(newOffer);
+  }
+  return newOffer;
+}
+
+export async function deleteOffer(id: string) {
+  const store = loadFileStore();
+  store.offers = store.offers.filter((o) => o.id !== id);
+  saveFileStore(store);
+
+  if (db) {
+    await db.from("offers").delete().eq("id", id);
+  }
 }

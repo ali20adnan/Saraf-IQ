@@ -198,6 +198,10 @@ async function startServer() {
         const agents = await store.listAgents();
         const agent = agents.find(a => a.telegram_id === userId);
 
+        if (userId) {
+          await store.registerBotUser(userId);
+        }
+
         if (isStartCommand(text)) {
           if (isAdmin || secondaryAdmin) return sendAdminHome(msg.chat.id);
           if (agent) return sendAgentHome(msg.chat.id, agent.name);
@@ -266,6 +270,59 @@ async function startServer() {
           }
           await store.toggleAgentActive(found.id, true);
           return bot?.sendMessage(msg.chat.id, `✅ تم تفعيل الوكيل: <b>${found.name}</b> بنجاح.`, { parse_mode: "HTML" });
+        }
+
+        // Broadcast (Admins only)
+        if (text.startsWith("BROADCAST ")) {
+          const hasPerm = isAdmin || (secondaryAdmin && secondaryAdmin.permissions.includes('site_settings'));
+          if (!hasPerm) return;
+
+          const broadcastText = text.replace("BROADCAST ", "").trim();
+          if (!broadcastText) return bot?.sendMessage(msg.chat.id, "⚠️ يرجى كتابة نص الرسالة.\nمثال: <code>BROADCAST عرض جديد!</code>", { parse_mode: "HTML" });
+
+          const users = await store.listBotUsers();
+          let count = 0;
+          await bot?.sendMessage(msg.chat.id, `🔄 جاري بدء البث لـ ${users.length} مستخدم...`);
+          
+          for (const u of users) {
+             try {
+               await bot?.sendMessage(u.telegram_id, broadcastText, { parse_mode: "HTML" });
+               count++;
+               // Small delay to avoid flood limits
+               await new Promise(r => setTimeout(r, 50)); 
+             } catch (e) { /* ignore blocked users */ }
+          }
+          return bot?.sendMessage(msg.chat.id, `✅ تم الانتهاء من البث بنجاح!\nوصلت الرسالة لـ ${count} مستخدم من أصل ${users.length}.`, { parse_mode: "HTML" });
+        }
+
+        // Add Offer (Admins only)
+        if (text.startsWith("ADD_OFFER ")) {
+           const hasPerm = isAdmin || (secondaryAdmin && secondaryAdmin.permissions.includes('site_settings'));
+           if (!hasPerm) return;
+
+           const parts = text.split(" ");
+           if (parts.length < 7) {
+             return bot?.sendMessage(msg.chat.id, "⚠️ استخدام خاطئ. أرسل:\n<code>ADD_OFFER [buy/sell] [العنوان_عربي] [العنوان_انجليزي] [المبلغ] [الوحدة_عربي] [الوحدة_انجليزي]</code>\n\nمثال:\n<code>ADD_OFFER sell \"بيع 100\" \"Sell 100\" \"95,000\" \"دينار\" \"IQD\"</code>", { parse_mode: "HTML" });
+           }
+
+           const type = parts[1].toLowerCase() as "buy" | "sell";
+           const titleAr = parts[2].replace(/\"/g, "");
+           const titleEn = parts[3].replace(/\"/g, "");
+           const amount = parts[4].replace(/\"/g, "");
+           const unitAr = parts[5].replace(/\"/g, "");
+           const unitEn = parts[6].replace(/\"/g, "");
+
+           await store.createOffer({
+             variant: type,
+             title_ar: titleAr,
+             title_en: titleEn,
+             amount_display: amount,
+             unit_ar: unitAr,
+             unit_en: unitEn,
+             sort_order: 10, // Default bottom
+           });
+
+           return bot?.sendMessage(msg.chat.id, `✅ تم إضافة العرض: <b>${titleAr}</b> بنجاح إلى الموقع.`, { parse_mode: "HTML" });
         }
 
       } catch (e) {
@@ -514,12 +571,22 @@ async function startServer() {
             return answer();
           }
           
-          if (data.startsWith("orders_list_")) {
-            const st = data.replace("orders_list_", "");
-            const txs = await store.listTransactionsByStatusMerged(st as any, 10);
-            const text = formatOrderLines(txs, `قائمة الطلبات: ${st}`);
             await bot?.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🔙 رجوع", callback_data: "menu_orders" }]] } });
             return answer();
+          }
+
+          // ---- OFFERS MANAGEMENT CALLBACKS ----
+          if (data === "omv_") return sendOffersMenu(chatId, messageId);
+          if (data === "oah_") {
+             const helpMsg = "➕ <b>إضافة عرض جديد</b>\nلإضافة عرض، أرسل:\n<code>ADD_OFFER [buy/sell] [العنوان_عربي] [العنوان_انجليزي] [المبلغ] [الوحدة_عربي] [الوحدة_انجليزي]</code>\n\nمثال:\n<code>ADD_OFFER sell \"بيع 100\" \"Sell 100\" \"95,000\" \"دينار\" \"IQD\"</code>";
+             await bot?.sendMessage(chatId, helpMsg, { parse_mode: "HTML" });
+             return answer();
+          }
+          if (data.startsWith("od_")) {
+             const oid = data.replace("od_", "");
+             await store.deleteOffer(oid);
+             await answer("تم حذف العرض 🗑");
+             return sendOffersMenu(chatId, messageId);
           }
         }
 
