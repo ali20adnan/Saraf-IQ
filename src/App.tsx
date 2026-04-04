@@ -1838,8 +1838,8 @@ function MainContent() {
                     <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-6">
                       <Clock className="w-10 h-10 text-gray-400" />
                     </div>
-                    <h2 className="text-2xl font-black text-gray-900 mb-3">Coming Soon</h2>
-                    <p className="text-gray-500 font-medium">This section is currently under maintenance and will be available shortly.</p>
+                    <h2 className="text-2xl font-black text-gray-900 mb-3">{t('comingSoon')}</h2>
+                    <p className="text-gray-500 font-medium">{t('maintenanceDesc')}</p>
                   </div>
                 ) : (
                   <>
@@ -1925,7 +1925,7 @@ function MainContent() {
                             <ShieldAlert className="w-8 h-8 text-gray-300" />
                           </div>
                           <p className="text-gray-500 font-medium max-w-xs mx-auto">
-                            Service temporarily unavailable.
+                            {t('serviceUnavailable')}
                           </p>
                         </div>
                       </div>

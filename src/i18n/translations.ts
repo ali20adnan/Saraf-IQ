@@ -114,7 +114,10 @@ export const translations = {
     minSellLimit: "Min: 5,000 IQD",
     maxSellLimit: "Max: 300,000 IQD",
     maxBatchInfo: "Max: 60,000 IQD per batch",
-    batchesCount: "This will be processed in {n} batches of 60,000 IQD."
+    batchesCount: "This will be processed in {n} batches of 60,000 IQD.",
+    comingSoon: "Coming Soon",
+    maintenanceDesc: "This section is under maintenance and will be available shortly.",
+    serviceUnavailable: "Service temporarily unavailable."
   },
   ar: {
     appTitle: "صراف",
@@ -231,6 +234,9 @@ export const translations = {
     minSellLimit: "الحد الأدنى: 5,000 دينار",
     maxSellLimit: "الحد الأقصى: 300,000 دينار",
     maxBatchInfo: "60 ألف لكل دفعة",
-    batchesCount: "سيتم إرسال المبلغ على شكل {n} دفعات (كل دفعة 60,000 دينار)."
+    batchesCount: "سيتم إرسال المبلغ على شكل {n} دفعات (كل دفعة 60,000 دينار).",
+    comingSoon: "قريباً",
+    maintenanceDesc: "هذا القسم قيد الصيانة حالياً وسيكون متاحاً قريباً.",
+    serviceUnavailable: "الخدمة غير متوفرة حالياً."
   }
 };

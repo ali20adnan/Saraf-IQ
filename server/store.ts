@@ -113,7 +113,7 @@ const defaultOffers: ServerOffer[] = [
 ];
 
 const defaultProfile: SiteProfile = {
-  full_name: "Business User",
+  full_name: "",
   email: "user@example.com",
   phone: "",
 };
