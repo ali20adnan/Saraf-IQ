@@ -1,6 +1,8 @@
 import type {ImgHTMLAttributes} from 'react';
 
 const sizeStyles = {
+  /** تابات الجوال وأماكن ضيقة */
+  xs: 'h-7 w-7 min-h-[1.75rem] min-w-[1.75rem]',
   sm: 'h-11 w-11 min-h-[2.75rem] min-w-[2.75rem]',
   md: 'h-14 w-14 min-h-[3.5rem] min-w-[3.5rem]',
   lg: 'h-16 w-16 min-h-16 min-w-16',

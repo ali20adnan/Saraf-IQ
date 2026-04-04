@@ -1,25 +1,22 @@
-// Haptic feedback for mobile - Capacitor optional
+// Haptic feedback for mobile — Capacitor optional (dynamic import for native)
 
-type HapticsPlugin = {
-  impact: (options: { style: 'light' | 'medium' | 'heavy' }) => Promise<void>;
-  notification: (options: { type: 'success' | 'warning' | 'error' }) => Promise<void>;
-  vibrate: () => Promise<void>;
-};
+import type { HapticsPlugin } from '@capacitor/haptics';
+import { ImpactStyle, NotificationType } from '@capacitor/haptics';
 
-// Dynamically import Capacitor Haptics
+export { ImpactStyle, NotificationType };
+
 let Haptics: HapticsPlugin | null = null;
 
-// Lazy load haptics
 const loadHaptics = async (): Promise<HapticsPlugin | null> => {
   if (Haptics) return Haptics;
   try {
-    // Only load in native environment
-    if (typeof window !== 'undefined' && 
-        typeof (window as unknown as { Capacitor?: { isNativePlatform: () => boolean } }).Capacitor !== 'undefined' &&
-        (window as unknown as { Capacitor?: { isNativePlatform: () => boolean } }).Capacitor?.isNativePlatform() === true) {
-      // @ts-ignore - Capacitor may not be installed
+    if (
+      typeof window !== 'undefined' &&
+      typeof (window as unknown as { Capacitor?: { isNativePlatform: () => boolean } }).Capacitor !== 'undefined' &&
+      (window as unknown as { Capacitor?: { isNativePlatform: () => boolean } }).Capacitor?.isNativePlatform() === true
+    ) {
       const module = await import('@capacitor/haptics');
-      Haptics = module.Haptics as HapticsPlugin;
+      Haptics = module.Haptics;
       return Haptics;
     }
     return null;
@@ -28,79 +25,49 @@ const loadHaptics = async (): Promise<HapticsPlugin | null> => {
   }
 };
 
-export const ImpactStyle = {
-  Light: 'light' as const,
-  Medium: 'medium' as const,
-  Heavy: 'heavy' as const,
-};
-
-export const NotificationType = {
-  Success: 'success' as const,
-  Warning: 'warning' as const,
-  Error: 'error' as const,
-};
-
-// Check if running on native mobile
 const isNative = (): boolean => {
-  return typeof window !== 'undefined' && 
-         typeof (window as unknown as { Capacitor?: { isNativePlatform: () => boolean } }).Capacitor !== 'undefined' &&
-         (window as unknown as { Capacitor?: { isNativePlatform: () => boolean } }).Capacitor?.isNativePlatform() === true;
+  return (
+    typeof window !== 'undefined' &&
+    typeof (window as unknown as { Capacitor?: { isNativePlatform: () => boolean } }).Capacitor !== 'undefined' &&
+    (window as unknown as { Capacitor?: { isNativePlatform: () => boolean } }).Capacitor?.isNativePlatform() === true
+  );
 };
 
 export const haptics = {
-  // Light feedback for small interactions
   async light() {
     const h = await loadHaptics();
-    if (h && isNative()) {
-      await h.impact({ style: 'light' });
-    }
+    if (h && isNative()) await h.impact({ style: ImpactStyle.Light });
   },
 
-  // Medium feedback for buttons
   async medium() {
     const h = await loadHaptics();
-    if (h && isNative()) {
-      await h.impact({ style: 'medium' });
-    }
+    if (h && isNative()) await h.impact({ style: ImpactStyle.Medium });
   },
 
-  // Heavy feedback for important actions
   async heavy() {
     const h = await loadHaptics();
-    if (h && isNative()) {
-      await h.impact({ style: 'heavy' });
-    }
+    if (h && isNative()) await h.impact({ style: ImpactStyle.Heavy });
   },
 
-  // Success feedback
   async success() {
     const h = await loadHaptics();
-    if (h && isNative()) {
-      await h.notification({ type: 'success' });
-    }
+    if (h && isNative()) await h.notification({ type: NotificationType.Success });
   },
 
-  // Error feedback
   async error() {
     const h = await loadHaptics();
-    if (h && isNative()) {
-      await h.notification({ type: 'error' });
-    }
+    if (h && isNative()) await h.notification({ type: NotificationType.Error });
   },
 
-  // Warning feedback
   async warning() {
     const h = await loadHaptics();
-    if (h && isNative()) {
-      await h.notification({ type: 'warning' });
-    }
+    if (h && isNative()) await h.notification({ type: NotificationType.Warning });
   },
 
-  // Vibrate pattern
   async vibrate() {
     if (isNative()) {
       const h = await loadHaptics();
-      if (h) await h.vibrate();
+      if (h) await h.vibrate({ duration: 50 });
     } else if (typeof navigator !== 'undefined' && navigator.vibrate) {
       navigator.vibrate(50);
     }

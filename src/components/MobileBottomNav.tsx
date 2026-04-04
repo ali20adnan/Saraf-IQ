@@ -1,5 +1,6 @@
 import React, { memo, useCallback } from 'react';
 import { Home, Clock, User, Tag, Settings } from 'lucide-react';
+import { BrandLogo } from './BrandLogo';
 import { useLanguage } from '../context/LanguageContext';
 import { haptics } from '../lib/haptics';
 
@@ -28,8 +29,8 @@ function MobileBottomNavInner({
     [onNavigate],
   );
 
-  const navItems: { id: ViewType; icon: typeof Home; label: string }[] = [
-    { id: 'home', icon: Home, label: t('dashboard') },
+  const navItems: { id: ViewType; icon: typeof Home; label: string; brand?: true }[] = [
+    { id: 'home', icon: Home, label: t('dashboard'), brand: true },
     { id: 'offers', icon: Tag, label: t('bundles') },
     { id: 'history', icon: Clock, label: t('history') },
     { id: 'profile', icon: User, label: t('profile') },
@@ -58,7 +59,15 @@ function MobileBottomNavInner({
               {isActive && (
                 <span className="absolute inset-x-1 top-1 bottom-6 rounded-lg bg-red-50" aria-hidden />
               )}
-              <Icon className="relative z-[1] h-6 w-6" strokeWidth={isActive ? 2.5 : 2} />
+              {item.brand ? (
+                <BrandLogo
+                  alt={t('appTitle')}
+                  size="xs"
+                  className={`relative z-[1] ${isActive ? '' : 'opacity-70'}`}
+                />
+              ) : (
+                <Icon className="relative z-[1] h-6 w-6" strokeWidth={isActive ? 2.5 : 2} />
+              )}
               <span className="relative z-[1] mt-0.5 max-w-[4.5rem] truncate text-[10px] font-bold leading-tight">
                 {item.label}
               </span>

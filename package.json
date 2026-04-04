@@ -1,5 +1,5 @@
 {
-  "name": "react-example",
+  "name": "saraf-iq",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -21,16 +21,14 @@
     "cap:open": "cap open android",
     "cap:build": "npm run build && cap sync android && cap open android",
     "apk:copy": "node scripts/copy-apk-to-public.mjs",
-    "build-apk": "rm -rf node_modules package-lock.json && npm cache clean --force && npm install && npm run build && npx cap sync android && cd android && chmod +x gradlew && ./gradlew assembleDebug --stacktrace && cp app/build/outputs/apk/debug/app-debug.apk ../public/saraf-iq-debug.apk && echo 'APK available at /saraf-iq-debug.apk'"
+    "build-apk": "npm run build && npx cap sync android"
   },
   "dependencies": {
     "@capacitor/android": "^7.2.0",
     "@capacitor/core": "^7.2.0",
     "@capacitor/haptics": "^7.0.1",
     "@capacitor/push-notifications": "^7.0.1",
-    "@capacitor/share": "^7.0.1",
     "@capacitor/status-bar": "^7.0.1",
-    "@google/genai": "^1.29.0",
     "@supabase/supabase-js": "^2.101.1",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
@@ -50,7 +48,6 @@
     "@types/js-cookie": "^3.0.6",
     "@types/node": "^22.14.0",
     "@types/node-telegram-bot-api": "^0.64.14",
-    "autoprefixer": "^10.4.21",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
