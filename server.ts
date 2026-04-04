@@ -58,11 +58,22 @@ async function startServer() {
       req.protocol ||
       "https";
     const origin = `${proto}://${host}`;
+
+    /** Railway يحقن تلقائيًا (مثل saraf-iq-production.up.railway.app) — الرابط يبقى ثابتًا حتى لو تغيّر Host */
+    const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN?.trim();
+    const publicBase = process.env.PUBLIC_BASE_URL?.replace(/\/$/, "").trim();
+    const canonicalBase =
+      publicBase ||
+      (railwayDomain ? `https://${railwayDomain}` : null) ||
+      origin;
+
     res.json({
-      url: `${origin}${APK_PUBLIC_PATH}`,
+      url: `${canonicalBase}${APK_PUBLIC_PATH}`,
       path: APK_PUBLIC_PATH,
+      railwayPublicDomain: railwayDomain || null,
+      linkedToRailway: Boolean(railwayDomain),
       hint:
-        "Either set APK_DOWNLOAD_URL (Railway env) to an external APK URL, or add public/saraf-iq-debug.apk and redeploy.",
+        "On Railway, url uses RAILWAY_PUBLIC_DOMAIN when set. Add public/saraf-iq-debug.apk or set APK_DOWNLOAD_URL.",
     });
   });
 
