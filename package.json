@@ -16,7 +16,8 @@
     "cap:android": "cap add android",
     "cap:ios": "cap add ios",
     "cap:open": "cap open android",
-    "cap:build": "npm run build && cap sync android && cap open android"
+    "cap:build": "npm run build && cap sync android && cap open android",
+    "build-apk": "chmod +x build-apk.sh && ./build-apk.sh"
   },
   "dependencies": {
     "@capacitor/android": "^7.2.0",
