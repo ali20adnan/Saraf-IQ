@@ -1498,7 +1498,7 @@ function MainContent() {
                             <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-2xl flex items-center justify-center overflow-hidden bg-white shadow-sm border border-gray-100 group-hover:scale-105 transition-transform p-3
                               ${selectedMethod === method.id ? 'ring-2 ring-red-500 border-transparent shadow-md' : ''}`}>
                               {('isImage' in method && method.isImage) ? (
-                                <img src={method.icon as string} alt={method.name} className="w-full h-full object-contain" />
+                                <img src={method.icon as string} alt={method.name} className="w-full h-full object-contain" loading="eager" fetchPriority="high" />
                               ) : (
                                 <method.icon className={`w-7 h-7 sm:w-8 sm:h-8 ${method.color || 'text-gray-900'}`} />
                               )}
