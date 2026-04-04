@@ -119,8 +119,8 @@ async function startServer() {
       let msg = `🛡️ <b>إدارة المسؤولين (Admins)</b>\n\n`;
       msg += `يمكنك إضافة مسؤولين آخرين للتحكم في الموقع.\nلمنح صلاحيات كاملة لشخص، أرسل:\n<code>ADD_ADMIN [ID] [NAME]</code>\n\n`;
       
-      const buttons = admins.map(a => ([{ text: `👤 ${a.name}`, callback_data: `admin_mgmt_view_${a.id}` }]));
-      buttons.push([{ text: "➕ إضافة مسؤول (تعليمات)", callback_data: "admin_mgmt_help" }]);
+      const buttons = admins.map(a => ([{ text: `👤 ${a.name}`, callback_data: `amv_${a.id}` }]));
+      buttons.push([{ text: "➕ إضافة مسؤول (تعليمات)", callback_data: "amh" }]);
       buttons.push([{ text: "🔙 رجوع", callback_data: "admin_home" }]);
 
       await bot?.editMessageText(msg, { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } });
@@ -135,12 +135,12 @@ async function startServer() {
       const msg = `🛡️ <b>صلاحيات المسؤول: ${a.name}</b>\nالمعرف: <code>${a.telegram_id}</code>\n\nاختر الصلاحية للتبديل:`;
       const reply_markup = {
         inline_keyboard: [
-          [{ text: `${p('manage_agents')} إدارة الوكلاء`, callback_data: `admin_perm_toggle_${a.id}_manage_agents` }],
-          [{ text: `${p('site_settings')} إعدادات الموقع`, callback_data: `admin_perm_toggle_${a.id}_site_settings` }],
-          [{ text: `${p('manage_admins')} إدارة المسؤولين`, callback_data: `admin_perm_toggle_${a.id}_manage_admins` }],
-          [{ text: `${p('view_stats')} عرض الإحصائيات`, callback_data: `admin_perm_toggle_${a.id}_view_stats` }],
-          [{ text: "❌ حذف المسؤول", callback_data: `admin_mgmt_delete_${a.id}` }],
-          [{ text: "🔙 رجوع", callback_data: `admin_mgmt_list` }],
+          [{ text: `${p('manage_agents')} إدارة الوكلاء`, callback_data: `adp_${a.id}_manage_agents` }],
+          [{ text: `${p('site_settings')} إعدادات الموقع`, callback_data: `adp_${a.id}_site_settings` }],
+          [{ text: `${p('manage_admins')} إدارة المسؤولين`, callback_data: `adp_${a.id}_manage_admins` }],
+          [{ text: `${p('view_stats')} عرض الإحصائيات`, callback_data: `adp_${a.id}_view_stats` }],
+          [{ text: "❌ حذف المسؤول", callback_data: `amd_${a.id}` }],
+          [{ text: "🔙 رجوع", callback_data: `aml` }],
         ]
       };
       await bot?.editMessageText(msg, { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup });
@@ -155,9 +155,9 @@ async function startServer() {
       const msg = `👥 <b>صلاحيات الوكيل: ${a.name}</b>\n\nتتحكم هذه الإعدادات فيما يمكن للوكيل القيام به عبر البوت الخاص به:`;
       const reply_markup = {
         inline_keyboard: [
-          [{ text: `${p('add_number')} إضافة أرقام جديدة`, callback_data: `agent_perm_toggle_${a.id}_add_number` }],
-          [{ text: `${p('reset_balance')} تصفير رصيد الأرقام`, callback_data: `agent_perm_toggle_${a.id}_reset_balance` }],
-          [{ text: "🔙 رجوع", callback_data: `admin_view_agent_${a.id}` }],
+          [{ text: `${p('add_number')} إضافة أرقام جديدة`, callback_data: `agp_${a.id}_add_number` }],
+          [{ text: `${p('reset_balance')} تصفير رصيد الأرقام`, callback_data: `agp_${a.id}_reset_balance` }],
+          [{ text: "🔙 رجوع", callback_data: `ava_${a.id}` }],
         ]
       };
       await bot?.editMessageText(msg, { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup });
@@ -367,7 +367,7 @@ async function startServer() {
           }
 
           if (data === "admin_agents") {
-            const buttons = agentsList.map(a => ([{ text: `${a.is_active ? '✅' : '⚪️'} ${a.name}`, callback_data: `admin_view_agent_${a.id}` }]));
+            const buttons = agentsList.map(a => ([{ text: `${a.is_active ? '✅' : '⚪️'} ${a.name}`, callback_data: `ava_${a.id}` }]));
             buttons.push([{ text: "➕ إضافة وكيل جديد", callback_data: "admin_agents_help" }]);
             buttons.push([{ text: "🔙 رجوع", callback_data: "admin_home" }]);
             await bot?.editMessageText("👥 <b>قائمة الوكلاء</b>\nاختر وكيلاً للإدارة:", { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } });
@@ -379,8 +379,8 @@ async function startServer() {
             return answer();
           }
 
-          if (data.startsWith("admin_view_agent_")) {
-            const aid = data.replace("admin_view_agent_", "");
+          if (data.startsWith("ava_")) {
+            const aid = data.replace("ava_", "");
             const a = agentsList.find(x => x.id === aid);
             if (a) {
               const nums = await store.listAgentNumbers(aid);
@@ -392,9 +392,9 @@ async function startServer() {
                 parse_mode: "HTML",
                 reply_markup: {
                   inline_keyboard: [
-                    [{ text: a.is_active ? "❌ تعطيل" : "✅ تفعيل", callback_data: `admin_toggle_agent_${a.id}` }],
-                    [{ text: "⚖️ إدارة الصلاحيات", callback_data: `admin_agent_perms_${a.id}` }],
-                    [{ text: "❌ حذف الوكيل", callback_data: `admin_delete_agent_${a.id}` }],
+                    [{ text: a.is_active ? "❌ تعطيل" : "✅ تفعيل", callback_data: `ata_${a.id}` }],
+                    [{ text: "⚖️ إدارة الصلاحيات", callback_data: `aap_${a.id}` }],
+                    [{ text: "❌ حذف الوكيل", callback_data: `ada_${a.id}` }],
                     [{ text: "🔙 القائمة", callback_data: "admin_agents" }]
                   ]
                 }
@@ -403,8 +403,8 @@ async function startServer() {
             return answer();
           }
 
-          if (data.startsWith("admin_toggle_agent_")) {
-            const aid = data.replace("admin_toggle_agent_", "");
+          if (data.startsWith("ata_")) {
+            const aid = data.replace("ata_", "");
             const a = agentsList.find(x => x.id === aid);
             if (a) {
               const next = !a.is_active;
@@ -424,9 +424,9 @@ async function startServer() {
                   chat_id: chatId, message_id: messageId, parse_mode: "HTML",
                   reply_markup: {
                     inline_keyboard: [
-                      [{ text: updatedA.is_active ? "❌ تعطيل" : "✅ تفعيل", callback_data: `admin_toggle_agent_${updatedA.id}` }],
-                      [{ text: "⚖️ إدارة الصلاحيات", callback_data: `admin_agent_perms_${updatedA.id}` }],
-                      [{ text: "❌ حذف الوكيل", callback_data: `admin_delete_agent_${updatedA.id}` }],
+                      [{ text: updatedA.is_active ? "❌ تعطيل" : "✅ تفعيل", callback_data: `ata_${updatedA.id}` }],
+                      [{ text: "⚖️ إدارة الصلاحيات", callback_data: `aap_${updatedA.id}` }],
+                      [{ text: "❌ حذف الوكيل", callback_data: `ada_${updatedA.id}` }],
                       [{ text: "🔙 القائمة", callback_data: "admin_agents" }]
                     ]
                   }
@@ -436,52 +436,52 @@ async function startServer() {
             }
           }
 
-          if (data.startsWith("admin_delete_agent_")) {
-             const aid = data.replace("admin_delete_agent_", "");
+          if (data.startsWith("ada_")) {
+             const aid = data.replace("ada_", "");
              await store.deleteAgent(aid);
              await answer("تم حذف الوكيل بنجاح");
              const updatedAgents = await store.listAgents();
-             const buttons = updatedAgents.map(a => ([{ text: `${a.is_active ? '✅' : '⚪️'} ${a.name}`, callback_data: `admin_view_agent_${a.id}` }]));
+             const buttons = updatedAgents.map(a => ([{ text: `${a.is_active ? '✅' : '⚪️'} ${a.name}`, callback_data: `ava_${a.id}` }]));
              buttons.push([{ text: "➕ إضافة وكيل جديد", callback_data: "admin_agents_help" }]);
              buttons.push([{ text: "🔙 رجوع", callback_data: "admin_home" }]);
              await bot?.editMessageText("👥 <b>قائمة الوكلاء</b>\nتم الحذف بنجاح. اختر وكيلاً آخر للإدارة:", { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } });
              return;
           }
 
-          if (data.startsWith("admin_agent_perms_")) {
-            const aid = data.replace("admin_agent_perms_", "");
+          if (data.startsWith("aap_")) {
+            const aid = data.replace("aap_", "");
             return sendAgentPermissionsMenu(chatId, aid, messageId);
           }
 
-          if (data.startsWith("agent_perm_toggle_")) {
+          if (data.startsWith("agp_")) {
             const parts = data.split("_");
-            const aid = parts[3];
-            const perm = parts.slice(4).join("_");
+            const aid = parts[1];
+            const perm = parts.slice(2).join("_");
             await store.toggleAgentPermission(aid, perm);
             await answer("تم تحديث الصلاحية");
             return sendAgentPermissionsMenu(chatId, aid, messageId);
           }
 
           // Admins Management
-          if (data === "admin_mgmt_list") return sendAdminManagementMenu(chatId, messageId);
-          if (data === "admin_mgmt_help") {
+          if (data === "aml") return sendAdminManagementMenu(chatId, messageId);
+          if (data === "amh") {
             await bot?.sendMessage(chatId, "🛡️ <b>إضافة مسؤول جديد</b>\nلإضافة شخص كمسؤول، اطلب منه إرسال معرفه الرقمي لك، ثم أرسل:\n<code>ADD_ADMIN [ID] [NAME]</code>\n\nمثال: <code>ADD_ADMIN 12345678 علي حسن</code>", { parse_mode: "HTML" });
             return answer();
           }
-          if (data.startsWith("admin_mgmt_view_")) {
-            const aid = data.replace("admin_mgmt_view_", "");
+          if (data.startsWith("amv_")) {
+            const aid = data.replace("amv_", "");
             return sendAdminPermissionsMenu(chatId, aid, messageId);
           }
-          if (data.startsWith("admin_perm_toggle_")) {
+          if (data.startsWith("adp_")) {
             const parts = data.split("_");
-            const aid = parts[3];
-            const perm = parts.slice(4).join("_");
+            const aid = parts[1];
+            const perm = parts.slice(2).join("_");
             await store.toggleAdminPermission(aid, perm);
             await answer("تم تحديث الصلاحية");
             return sendAdminPermissionsMenu(chatId, aid, messageId);
           }
-          if (data.startsWith("admin_mgmt_delete_")) {
-             const aid = data.replace("admin_mgmt_delete_", "");
+          if (data.startsWith("amd_")) {
+             const aid = data.replace("amd_", "");
              await store.deleteAdmin(aid);
              await answer("تم حذف المسؤول");
              return sendAdminManagementMenu(chatId, messageId);
