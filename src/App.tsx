@@ -6,6 +6,8 @@ import Cookies from 'js-cookie';
 import { supabase } from './lib/supabase';
 import { notificationService } from './lib/notifications';
 import { MobileBottomNav } from './components/MobileBottomNav';
+import { AppSplash } from './components/AppSplash';
+import { BrandLogo } from './components/BrandLogo';
 import type { ServerTransaction } from '../types/transaction';
 
 type TransactionType = 'sell' | 'buy';
@@ -93,6 +95,7 @@ function MainContent() {
   const [profileSaving, setProfileSaving] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [isInitialSettingsLoading, setIsInitialSettingsLoading] = useState(true);
+  const [splashDismissed, setSplashDismissed] = useState(false);
   
   // Agents State
   const [activeAgentNumber, setActiveAgentNumber] = useState<ActiveAgentNumber | null>(null);
@@ -597,12 +600,7 @@ function MainContent() {
           {/* Logo and Identity */}
           <div className="flex flex-col items-center gap-3 mb-8">
             <div className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center shadow-md border border-red-100/50 p-2">
-              <img
-                src="/icons/logo.png"
-                alt={t('appTitle')}
-                className="w-full h-full object-contain"
-                loading="eager"
-              />
+              <BrandLogo alt={t('appTitle')} size="xl" priority />
             </div>
             <div>
               <h1 className="font-black text-xl tracking-tight text-gray-900">{t('appTitle')}</h1>
@@ -1141,12 +1139,7 @@ function MainContent() {
         aria-label={`${t('appTitle')} — ${t('home')}`}
       >
         <div className="w-16 h-16 shrink-0 flex items-center justify-center">
-          <img
-            src="/icons/logo.png"
-            alt={t('appTitle')}
-            className="w-full h-full object-contain"
-            loading="eager"
-          />
+          <BrandLogo alt={t('appTitle')} size="lg" priority />
         </div>
         <div className="min-w-0">
           <h1 className="font-black text-lg tracking-tight text-gray-900">{t('appTitle')}</h1>
@@ -1235,12 +1228,7 @@ function MainContent() {
         aria-label={`${t('appTitle')} — ${t('home')}`}
       >
         <div className="w-14 h-14 shrink-0 flex items-center justify-center">
-          <img
-            src="/icons/logo.png"
-            alt={t('appTitle')}
-            className="w-full h-full object-contain"
-            loading="eager"
-          />
+          <BrandLogo alt={t('appTitle')} size="md" priority />
         </div>
         <h1 className="text-base font-black tracking-tight text-gray-900 truncate">{t('appTitle')}</h1>
       </button>
@@ -1858,13 +1846,8 @@ function MainContent() {
             
             {/* Logo and Identity */}
             <div className="flex flex-col items-center gap-3 mb-10">
-              <div className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center shadow-md border border-red-100/50 overflow-hidden">
-                <img
-                  src="/icons/logo.png"
-                  alt={t('appTitle')}
-                  className="w-20 h-20 object-contain"
-                  loading="eager"
-                />
+              <div className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center shadow-md border border-red-100/50 overflow-hidden p-2">
+                <BrandLogo alt={t('appTitle')} size="xl" priority />
               </div>
               <div>
                 <h1 className="font-black text-xl tracking-tight text-gray-900">{t('appTitle')}</h1>
@@ -2139,15 +2122,13 @@ function MainContent() {
     }
   };
 
-  if (isInitialSettingsLoading) {
+  if (!splashDismissed) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <motion.div 
-          animate={{ rotate: 360 }}
-          transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-          className="w-10 h-10 border-4 border-red-600 border-t-transparent rounded-full"
-        />
-      </div>
+      <AppSplash
+        appTitle={t('appTitle')}
+        settingsReady={!isInitialSettingsLoading}
+        onComplete={() => setSplashDismissed(true)}
+      />
     );
   }
 
