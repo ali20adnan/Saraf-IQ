@@ -1,0 +1,88 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type'
+        required: true
+        default: 'debug'
+        type: choice
+        options:
+        - debug
+        - release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build web app
+      run: npm run build
+
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Setup Gradle
+      uses: gradle/gradle-build-action@v3
+
+    - name: Add Android platform
+      run: npx cap add android || echo "Android platform already exists"
+
+    - name: Sync Capacitor
+      run: npx cap sync android
+
+    - name: Build APK (Debug)
+      if: github.event.inputs.build_type == 'debug' || github.event.inputs.build_type == ''
+      run: |
+        cd android
+        ./gradlew assembleDebug
+
+    - name: Build APK (Release)
+      if: github.event.inputs.build_type == 'release'
+      run: |
+        cd android
+        ./gradlew assembleRelease
+
+    - name: Upload Debug APK
+      if: github.event.inputs.build_type == 'debug' || github.event.inputs.build_type == ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: saraf-iq-debug.apk
+        path: android/app/build/outputs/apk/debug/app-debug.apk
+        retention-days: 30
+
+    - name: Upload Release APK
+      if: github.event.inputs.build_type == 'release'
+      uses: actions/upload-artifact@v4
+      with:
+        name: saraf-iq-release.apk
+        path: android/app/build/outputs/apk/release/app-release.apk
+        retention-days: 30
+
+    - name: Get APK info
+      run: |
+        echo "📱 APK Size: $(ls -lh android/app/build/outputs/apk/debug/app-debug.apk | awk '{print $5}')"
+        echo "🔗 Download from Artifacts section below"

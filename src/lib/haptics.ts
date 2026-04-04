@@ -13,10 +13,16 @@ let Haptics: HapticsPlugin | null = null;
 const loadHaptics = async (): Promise<HapticsPlugin | null> => {
   if (Haptics) return Haptics;
   try {
-    // @ts-ignore - Capacitor may not be installed
-    const module = await import('@capacitor/haptics');
-    Haptics = module.Haptics as HapticsPlugin;
-    return Haptics;
+    // Only load in native environment
+    if (typeof window !== 'undefined' && 
+        typeof (window as unknown as { Capacitor?: { isNativePlatform: () => boolean } }).Capacitor !== 'undefined' &&
+        (window as unknown as { Capacitor?: { isNativePlatform: () => boolean } }).Capacitor?.isNativePlatform() === true) {
+      // @ts-ignore - Capacitor may not be installed
+      const module = await import('@capacitor/haptics');
+      Haptics = module.Haptics as HapticsPlugin;
+      return Haptics;
+    }
+    return null;
   } catch {
     return null;
   }
