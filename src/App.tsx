@@ -1583,13 +1583,13 @@ function MainContent() {
                 <Tag className="w-5 h-5" />
                 <span className="text-[10px] font-bold">{t('bundles')}</span>
               </button>
-              <button onClick={() => setCurrentView('settings')} className={`flex flex-col items-center gap-1 min-w-[3.25rem] transition-colors ${currentView === 'settings' ? 'text-red-600' : 'text-gray-400 hover:text-gray-900'}`}>
-                <Settings className="w-5 h-5" />
-                <span className="text-[10px] font-bold">{t('settings')}</span>
-              </button>
               <button onClick={() => setCurrentView('history')} className={`flex flex-col items-center gap-1 min-w-[3.25rem] transition-colors ${currentView === 'history' ? 'text-red-600' : 'text-gray-400 hover:text-gray-900'}`}>
                 <Clock className="w-5 h-5" />
                 <span className="text-[10px] font-bold">{t('history')}</span>
+              </button>
+              <button onClick={() => setCurrentView('settings')} className={`flex flex-col items-center gap-1 min-w-[3.25rem] transition-colors ${currentView === 'settings' ? 'text-red-600' : 'text-gray-400 hover:text-gray-900'}`}>
+                <Settings className="w-5 h-5" />
+                <span className="text-[10px] font-bold">{t('settings')}</span>
               </button>
               <button onClick={() => setCurrentView('profile')} className={`flex flex-col items-center gap-1 min-w-[3.25rem] transition-colors ${currentView === 'profile' ? 'text-red-600' : 'text-gray-400 hover:text-gray-900'}`}>
                 <User className="w-5 h-5" />
