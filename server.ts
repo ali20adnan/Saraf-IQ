@@ -37,8 +37,21 @@ async function startServer() {
   app.use(express.json());
   app.set("trust proxy", true);
 
+  /** إن وُجد: يعيد توجيه GET /saraf-iq-debug.apk إلى رابط خارجي (GitHub Releases، تخزين، إلخ) دون رفع الملف في المشروع */
+  const APK_DOWNLOAD_URL = process.env.APK_DOWNLOAD_URL?.trim();
+
   const APK_PUBLIC_PATH = "/saraf-iq-debug.apk";
   app.get("/api/apk-link", (req, res) => {
+    if (APK_DOWNLOAD_URL) {
+      res.json({
+        url: APK_DOWNLOAD_URL,
+        path: APK_PUBLIC_PATH,
+        mode: "redirect",
+        hint:
+          "APK_DOWNLOAD_URL is set on the server. /saraf-iq-debug.apk redirects to this URL.",
+      });
+      return;
+    }
     const host = req.get("host") || "localhost";
     const proto =
       (req.get("x-forwarded-proto") as string)?.split(",")[0]?.trim() ||
@@ -49,7 +62,7 @@ async function startServer() {
       url: `${origin}${APK_PUBLIC_PATH}`,
       path: APK_PUBLIC_PATH,
       hint:
-        "After building the Android app, copy the APK to public/saraf-iq-debug.apk and redeploy so this URL serves the file.",
+        "Either set APK_DOWNLOAD_URL (Railway env) to an external APK URL, or add public/saraf-iq-debug.apk and redeploy.",
     });
   });
 
@@ -963,6 +976,10 @@ async function startServer() {
 
     /** قبل static وقبل SPA: بدون ملف APK كان يصل الطلب إلى app.get('*') فيُرجع index.html فيبدو أن الرابط «يفتح الموقع». */
     app.get(`/${apkFileName}`, (_req, res) => {
+      if (APK_DOWNLOAD_URL) {
+        res.redirect(302, APK_DOWNLOAD_URL);
+        return;
+      }
       if (!existsSync(apkDiskPath)) {
         res
           .status(404)
@@ -970,9 +987,10 @@ async function startServer() {
           .send(
             [
               "ملف APK غير موجود على السيرفر.",
-              "محليًا: ابنِ debug APK ثم npm run apk:copy ثم npm run build ثم ادفع public/saraf-iq-debug.apk مع الكود.",
+              "خيار 1 — رابط خارجي: في Railway أضف المتغير APK_DOWNLOAD_URL=رابط_مباشر_للملف.apk ثم أعد النشر.",
+              "خيار 2 — داخل المشروع: ابنِ debug APK ثم npm run apk:copy ثم npm run build ثم ادفع public/saraf-iq-debug.apk.",
               "",
-              "APK not on server. Locally: build debug APK, run npm run apk:copy, npm run build, commit and push public/saraf-iq-debug.apk.",
+              "APK missing. Option 1: set APK_DOWNLOAD_URL in Railway to a direct .apk URL. Option 2: add public/saraf-iq-debug.apk via apk:copy, build, commit, push.",
             ].join("\n"),
           );
         return;
