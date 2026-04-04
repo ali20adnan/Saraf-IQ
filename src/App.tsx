@@ -1275,43 +1275,58 @@ function MainContent() {
     </header>
   );
 
-  const renderUserGreeting = () => (
-    <div className="bg-white/90 p-4 sm:p-6 lg:p-8 rounded-2xl sm:rounded-[2rem] shadow-[0_8px_40px_rgb(15,23,42,0.06)] border border-gray-100/90 backdrop-blur-xl mb-5 sm:mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex items-center gap-4 min-w-0">
-        <div className="w-12 h-12 sm:w-14 sm:h-14 shrink-0 bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl sm:rounded-2xl flex items-center justify-center text-white shadow-lg shadow-gray-900/15 ring-1 ring-white/10">
-          <User className="w-5 h-5 sm:w-6 sm:h-6 text-white/90" />
+  const renderUserGreeting = () => {
+    const profileName = siteProfile?.full_name?.trim();
+    const welcomeWithName =
+      profileName &&
+      (lang === 'ar' ? `مرحباً بعودتك، ${profileName}` : `Welcome back, ${profileName}`);
+
+    return (
+      <div className="saraf-dash-in mb-5 flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:mb-6 sm:flex-row sm:items-center sm:justify-between sm:rounded-[2rem] sm:p-6 lg:p-8">
+        <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-gray-800 to-gray-900 text-white shadow-md ring-1 ring-black/5 sm:h-11 sm:w-11 sm:rounded-2xl">
+            <User className="h-[18px] w-[18px] text-white/95 sm:h-5 sm:w-5" />
+          </div>
+          <div className="min-w-0">
+            {welcomeWithName ? (
+              <h2 className="truncate text-base font-black tracking-tight text-gray-900 sm:text-lg md:text-xl">
+                {welcomeWithName}
+              </h2>
+            ) : (
+              <>
+                <p className="mb-0.5 text-xs font-medium text-gray-500 sm:text-sm">{t('greeting')}</p>
+                <h2 className="truncate text-base font-black tracking-tight text-gray-900 sm:text-lg md:text-xl">
+                  {t('userName')}
+                </h2>
+              </>
+            )}
+          </div>
         </div>
-        <div className="min-w-0">
-          <p className="text-xs sm:text-sm text-gray-500 font-medium mb-0.5">{t('greeting')}</p>
-          <h2 className="text-lg sm:text-xl font-black text-gray-900 tracking-tight truncate">
-            {siteProfile?.full_name?.trim() || t('userName')}
-          </h2>
+        <div
+          className={`flex w-full flex-row items-stretch gap-0 border-t border-gray-100 pt-3 sm:w-auto sm:gap-8 sm:border-0 sm:pt-0 ${dir === 'rtl' ? 'sm:text-left' : 'sm:text-right'}`}
+        >
+          <div className="min-w-0 flex-1 px-1 sm:px-0">
+            <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wider text-gray-400 sm:mb-1 sm:text-xs">
+              {t('activeOrders')}
+            </p>
+            <p className="text-xl font-black tabular-nums text-gray-900 sm:text-2xl">{dashboardStats.activeOrders}</p>
+          </div>
+          <div className="mx-2 w-px shrink-0 self-stretch bg-gray-200 sm:mx-0" aria-hidden />
+          <div className="min-w-0 flex-1 px-1 sm:px-0">
+            <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wider text-gray-400 sm:mb-1 sm:text-xs">
+              {t('totalExchanged')}
+            </p>
+            <p className="flex flex-wrap items-baseline gap-1 text-xl font-black tabular-nums text-gray-900 sm:text-2xl" dir="ltr">
+              {Number.isFinite(dashboardStats.totalCompletedIqd) && dashboardStats.totalCompletedIqd > 0
+                ? dashboardStats.totalCompletedIqd.toLocaleString(lang === 'ar' ? 'ar-IQ' : 'en-US')
+                : '0'}
+              <span className="text-xs font-bold text-gray-400 sm:text-sm">{t('iqd')}</span>
+            </p>
+          </div>
         </div>
       </div>
-      <div
-        className={`flex flex-row items-stretch gap-3 sm:gap-8 w-full sm:w-auto pt-3 sm:pt-0 border-t border-gray-100/90 sm:border-0 ${dir === 'rtl' ? 'sm:text-left' : 'sm:text-right'}`}
-      >
-        <div className="flex-1 min-w-0 rounded-xl bg-gradient-to-br from-slate-50 to-gray-50/80 border border-gray-100/80 px-3 py-2.5 sm:rounded-none sm:bg-transparent sm:border-0 sm:px-0 sm:py-0">
-          <p className="text-[10px] sm:text-xs text-gray-400 font-bold mb-0.5 sm:mb-1 uppercase tracking-wider">
-            {t('activeOrders')}
-          </p>
-          <p className="text-xl sm:text-2xl font-black text-gray-900 tabular-nums">{dashboardStats.activeOrders}</p>
-        </div>
-        <div className="hidden sm:block w-px shrink-0 bg-gradient-to-b from-gray-100 via-gray-200 to-gray-100 self-center min-h-[2.75rem]" aria-hidden />
-        <div className="flex-1 min-w-0 rounded-xl bg-gradient-to-br from-red-50/80 to-orange-50/40 border border-red-100/50 px-3 py-2.5 sm:rounded-none sm:bg-transparent sm:border-0 sm:px-0 sm:py-0">
-          <p className="text-[10px] sm:text-xs text-gray-400 font-bold mb-0.5 sm:mb-1 uppercase tracking-wider">
-            {t('totalExchanged')}
-          </p>
-          <p className="text-xl sm:text-2xl font-black text-gray-900 tabular-nums flex flex-wrap items-baseline gap-1 justify-start" dir="ltr">
-            {Number.isFinite(dashboardStats.totalCompletedIqd) && dashboardStats.totalCompletedIqd > 0
-              ? dashboardStats.totalCompletedIqd.toLocaleString(lang === 'ar' ? 'ar-IQ' : 'en-US')
-              : '0'}
-            <span className="text-xs sm:text-sm text-gray-400 font-bold">{t('iqd')}</span>
-          </p>
-        </div>
-      </div>
-    </div>
-  );
+    );
+  };
 
   const renderTypeToggle = () => (
     <div className="flex bg-gray-200/50 p-1.5 rounded-2xl mb-8 relative shadow-inner">
