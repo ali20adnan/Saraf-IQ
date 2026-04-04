@@ -502,9 +502,9 @@ function MainContent() {
 
   const sellMethods = [
     { id: 'zaincash', name: t('zainCash'), icon: '/icons/zaincash.png', isImage: true, accent: 'bg-emerald-50 text-emerald-600 border-emerald-100' },
-    { id: 'superqi', name: t('superQi'), icon: '/icons/superqi.jpeg', isImage: true, accent: 'bg-red-50 text-red-600 border-red-100' },
+    { id: 'superqi', name: t('superQi'), icon: '/icons/superqi.png', isImage: true, accent: 'bg-red-50 text-red-600 border-red-100' },
     { id: 'firstbank', name: t('firstBank'), icon: '/icons/firstbank.png', isImage: true, accent: 'bg-blue-50 text-blue-600 border-blue-100' },
-    { id: 'fastpay', name: t('fastPay'), icon: '/icons/fastpay.jpeg', isImage: true, accent: 'bg-orange-50 text-orange-600 border-orange-100' },
+    { id: 'fastpay', name: t('fastPay'), icon: '/icons/fastpay.png', isImage: true, accent: 'bg-orange-50 text-orange-600 border-orange-100' },
   ];
 
   const buyMethods = [
