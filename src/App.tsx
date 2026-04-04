@@ -1065,24 +1065,26 @@ function MainContent() {
                       maxLength={19}
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-2 gap-3 sm:gap-4">
                     <div>
-                      <label className="block text-sm font-bold text-gray-700 mb-2">{t('expiryDate')}</label>
+                      <label className="block text-xs sm:text-sm font-bold text-gray-700 mb-1 sm:mb-2 truncate">
+                        {t('expiryDate', 'تاريخ الانتهاء (MM/YY)').replace('(MM/YY)', '').trim()}
+                      </label>
                       <input 
                         type="text" 
                         required
-                        className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-all font-mono text-lg font-bold text-gray-900 text-left"
+                        className="w-full px-3 sm:px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-all font-mono text-base sm:text-lg font-bold text-gray-900 text-left"
                         placeholder="MM/YY"
                         dir="ltr"
                         maxLength={5}
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-bold text-gray-700 mb-2">{t('cvv')}</label>
+                      <label className="block text-xs sm:text-sm font-bold text-gray-700 mb-1 sm:mb-2">{t('cvv')}</label>
                       <input 
                         type="text" 
                         required
-                        className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-all font-mono text-lg font-bold text-gray-900 text-left"
+                        className="w-full px-3 sm:px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-all font-mono text-base sm:text-lg font-bold text-gray-900 text-left"
                         placeholder="123"
                         dir="ltr"
                         maxLength={4}
@@ -1477,7 +1479,7 @@ function MainContent() {
       <div className="flex-1 flex flex-col min-w-0">
         {currentView !== 'login' && currentView !== 'signup' && renderMobileHeader()}
 
-        <main className={`flex-1 overflow-y-auto ${currentView !== 'login' && currentView !== 'signup' ? 'pb-24 lg:pb-8 p-4 sm:p-6 lg:p-8' : ''}`}>
+        <main className={`flex-1 overflow-y-auto ${currentView !== 'login' && currentView !== 'signup' ? 'pb-24 lg:pb-8 p-3 sm:p-6 lg:p-8' : ''}`}>
           {renderMainContent()}
         </main>
 
