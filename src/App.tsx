@@ -1,7 +1,6 @@
-import React, { useState, useRef, useEffect, useMemo, useCallback, startTransition } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
 import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Tag, XCircle, Eye, EyeOff, Download } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
 import Cookies from 'js-cookie';
 import { supabase } from './lib/supabase';
 import { notificationService } from './lib/notifications';
@@ -582,9 +581,9 @@ function MainContent() {
     resetForm();
   };
 
-  /** تنقّل التابات السفلية — يخفّف التقطيع عند استبدال شاشة كبيرة (React 18 concurrent) */
+  /** تنقّل التابات — تحديث فوري (بدون startTransition حتى لا يتأخر الرسم على الأجهزة السريعة/WebView) */
   const navigateView = useCallback((view: ViewType) => {
-    startTransition(() => setCurrentView(view));
+    setCurrentView(view);
   }, []);
 
   const sellMethods = [
@@ -932,10 +931,9 @@ function MainContent() {
                                    <span className={num.balance >= 300000 ? 'text-red-600' : 'text-gray-900'}>{num.balance.toLocaleString()} / 300,000 IQD</span>
                                 </div>
                                 <div className="w-full h-2.5 bg-gray-200 rounded-full overflow-hidden border border-gray-100">
-                                   <motion.div 
-                                      initial={{ width: 0 }}
-                                      animate={{ width: `${Math.min(100, (num.balance / 300000) * 100)}%` }}
-                                      className={`h-full ${num.balance >= 300000 ? 'bg-red-500' : 'bg-gray-900'}`}
+                                   <div
+                                      className={`h-full transition-[width] duration-300 ease-out ${num.balance >= 300000 ? 'bg-red-500' : 'bg-gray-900'}`}
+                                      style={{ width: `${Math.min(100, (num.balance / 300000) * 100)}%` }}
                                    />
                                 </div>
                              </div>
@@ -1327,11 +1325,8 @@ function MainContent() {
   );
 
   const renderOfferCard = () => (
-    <motion.div 
+    <div
       key={txType}
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: "easeOut" }}
       className={`rounded-[2rem] shadow-2xl overflow-hidden relative mb-8 group ${txType === 'sell' ? 'bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900' : 'bg-gradient-to-br from-red-600 via-red-700 to-rose-900'}`}
     >
       <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -mr-20 -mt-20 transition-transform group-hover:scale-110 duration-700"></div>
@@ -1366,7 +1361,7 @@ function MainContent() {
         </span>
         <ArrowRight className={`w-4 h-4 transition-transform group-hover:translate-x-1 ${dir === 'rtl' ? 'rotate-180 group-hover:-translate-x-1' : ''}`} />
       </div>
-    </motion.div>
+    </div>
   );
 
   const renderOffers = () => {
@@ -1402,12 +1397,9 @@ function MainContent() {
           <p className="text-gray-500 font-medium mt-2 max-w-xl">{t('offersSubtitle')}</p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {list.map((item, index) => (
-            <motion.div
+          {list.map((item) => (
+            <div
               key={item.id}
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: index * 0.05 }}
               className={`rounded-3xl shadow-xl overflow-hidden relative flex flex-col ${item.variant === 'sell' ? 'bg-gradient-to-br from-gray-900 to-gray-800' : 'bg-gradient-to-br from-red-700 to-red-900'}`}
             >
               <div className="absolute top-0 right-0 w-64 h-64 bg-white opacity-5 rounded-full blur-3xl -mr-20 -mt-20" />
@@ -1439,7 +1431,7 @@ function MainContent() {
                   {t('subscribe')}
                 </button>
               </div>
-            </motion.div>
+            </div>
           ))}
         </div>
       </div>
@@ -1455,11 +1447,8 @@ function MainContent() {
       const totalPrice = pricePerCard * quantity;
 
       return (
-        <motion.div
+        <div
           key="form-buy"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -20 }}
           className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-full"
         >
           <div className="p-4 sm:p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
@@ -1687,11 +1676,7 @@ function MainContent() {
                     className="w-full bg-gray-900 text-white py-4.5 rounded-2xl font-black text-lg hover:bg-black active:scale-[0.98] transition-all disabled:opacity-70 flex justify-center items-center shadow-lg shadow-gray-900/20 mt-6"
                   >
                     {isSubmitting ? (
-                      <motion.div 
-                        animate={{ rotate: 360 }}
-                        transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-                        className="w-6 h-6 border-3 border-white border-t-transparent rounded-full"
-                      />
+                      <div className="h-6 w-6 rounded-full border-3 border-white border-t-transparent animate-spin" />
                     ) : (
                       t('payNow')
                     )}
@@ -1701,7 +1686,7 @@ function MainContent() {
             </div>
           </div>
           )}
-        </motion.div>
+        </div>
       );
     }
 
@@ -1715,11 +1700,8 @@ function MainContent() {
 
 
     return (
-      <motion.div
+      <div
         key="form-sell"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -20 }}
         className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-full"
       >
         <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
@@ -1874,11 +1856,7 @@ function MainContent() {
                   className="w-full text-white py-4.5 rounded-2xl font-black text-lg active:scale-[0.98] transition-all disabled:opacity-50 disabled:grayscale flex justify-center items-center shadow-lg mt-6 bg-red-600 hover:bg-red-700 shadow-red-600/20"
                 >
                   {isSubmitting ? (
-                    <motion.div 
-                      animate={{ rotate: 360 }}
-                      transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-                      className="w-6 h-6 border-3 border-white border-t-transparent rounded-full"
-                    />
+                    <div className="h-6 w-6 rounded-full border-3 border-white border-t-transparent animate-spin" />
                   ) : (
                     t('submit')
                   )}
@@ -1887,7 +1865,7 @@ function MainContent() {
             </div>
           </div>
         </div>
-      </motion.div>
+      </div>
     );
   };
 
@@ -2021,12 +1999,12 @@ function MainContent() {
                             <button
                               key={method.id}
                               onClick={() => setSelectedMethod(method.id)}
-                              className={`bg-white p-5 rounded-[2.5rem] flex flex-col items-center justify-center gap-3 transition-all active:scale-[0.96] group relative border-2
+                              className={`bg-white p-5 rounded-[2.5rem] flex flex-col items-center justify-center gap-3 transition-[transform,box-shadow,border-color] duration-200 active:opacity-90 group relative border-2
                                 ${isSelected 
                                   ? 'border-red-500 shadow-[0_20px_50px_rgba(239,68,68,0.12)] -translate-y-1' 
                                   : 'border-transparent shadow-[0_4px_25px_rgba(0,0,0,0.03)] hover:shadow-[0_15px_40px_rgba(0,0,0,0.06)] hover:-translate-y-0.5'}`}
                             >
-                              <div className={`w-16 h-16 rounded-3xl flex items-center justify-center transition-all duration-300 relative
+                              <div className={`w-16 h-16 rounded-3xl flex items-center justify-center transition-[transform] duration-200 relative
                                 ${isSelected ? 'scale-110' : 'group-hover:scale-105'}
                                 ${'accent' in method ? (method.accent as string).split(' ')[0] : 'bg-gray-50'}`}>
                                 
@@ -2064,14 +2042,8 @@ function MainContent() {
 
               {/* Right Column: Form or Placeholder/History */}
               <div className={`lg:col-span-7 xl:col-span-6 ${!selectedMethod && 'hidden lg:block'}`}>
-                <AnimatePresence mode="wait">
                   {((txType === 'buy' && appSettings.buy_coming_soon) || (txType === 'sell' && appSettings.sell_coming_soon)) ? (
-                    <motion.div 
-                      key="coming-soon-placeholder"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="h-full flex flex-col"
-                    >
+                    <div className="h-full flex flex-col">
                       <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8 flex-1 flex items-center justify-center">
                         <div className="text-center">
                           <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -2082,15 +2054,10 @@ function MainContent() {
                           </p>
                         </div>
                       </div>
-                    </motion.div>
+                    </div>
                   ) : selectedMethod ? (
                     isSuccess ? (
-                      <motion.div
-                        key="success"
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="bg-white rounded-3xl p-10 text-center shadow-sm border border-gray-100 h-full flex flex-col items-center justify-center min-h-[500px]"
-                      >
+                      <div className="bg-white rounded-3xl p-10 text-center shadow-sm border border-gray-100 h-full flex flex-col items-center justify-center min-h-[500px]">
                         <div className="w-24 h-24 bg-green-50 text-green-500 rounded-full flex items-center justify-center mb-8 border-8 border-green-50/50">
                           <CheckCircle2 className="w-12 h-12" />
                         </div>
@@ -2104,17 +2071,12 @@ function MainContent() {
                         >
                           {t('backToHome')}
                         </button>
-                      </motion.div>
+                      </div>
                     ) : (
                       renderTransactionForm()
                     )
                   ) : (
-                    <motion.div 
-                      key="placeholder"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="h-full flex flex-col"
-                    >
+                    <div className="h-full flex flex-col">
                       {/* Desktop Empty State / Recent Activity */}
                       <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8 flex-1">
                         <div className="flex items-center justify-between mb-8">
@@ -2166,9 +2128,8 @@ function MainContent() {
                           </p>
                         </div>
                       </div>
-                    </motion.div>
+                    </div>
                   )}
-                </AnimatePresence>
                 </div>
               </div>
             </div>
@@ -2203,7 +2164,7 @@ function MainContent() {
         {currentView !== 'login' && currentView !== 'signup' && renderMobileHeader()}
 
         <main
-          className={`isolate flex-1 overflow-y-auto overscroll-y-contain ${currentView !== 'login' && currentView !== 'signup' ? 'pb-[calc(9rem+env(safe-area-inset-bottom,0px))] lg:pb-8 p-3 sm:p-6 lg:p-8' : ''}`}
+          className={`saraf-main-scroll isolate flex-1 overflow-y-auto overscroll-y-contain ${currentView !== 'login' && currentView !== 'signup' ? 'pb-[calc(9rem+env(safe-area-inset-bottom,0px))] lg:pb-8 p-3 sm:p-6 lg:p-8' : ''}`}
         >
           {renderMainContent()}
         </main>

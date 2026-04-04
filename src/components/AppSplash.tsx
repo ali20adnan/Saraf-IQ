@@ -1,4 +1,5 @@
 import {useEffect, useRef, useState} from 'react';
+import {Capacitor} from '@capacitor/core';
 import {motion} from 'motion/react';
 import {whenPrecacheReady} from '../lib/pwaRegister';
 import {BrandLogo} from './BrandLogo';
@@ -150,8 +151,13 @@ export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
     };
   }, []);
 
-  const phoneMotion = isPhoneViewport && !prefersReducedMotion && !lowEndDevice;
-  const phoneReduced = isPhoneViewport && (prefersReducedMotion || lowEndDevice);
+  /** WebView يُرهق الرسم حتى على الهواتف القوية — نفس مسار الوضع المخفّف */
+  const isNativeApp =
+    typeof window !== 'undefined' && Capacitor.isNativePlatform();
+  const phoneMotion =
+    isPhoneViewport && !prefersReducedMotion && !lowEndDevice && !isNativeApp;
+  const phoneReduced =
+    isPhoneViewport && (prefersReducedMotion || lowEndDevice || isNativeApp);
 
   useEffect(() => {
     if (!isPhoneViewport) {
