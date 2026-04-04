@@ -970,9 +970,9 @@ async function startServer() {
           .send(
             [
               "ملف APK غير موجود على السيرفر.",
-              "أضف الملف إلى: public/saraf-iq-debug.apk ثم npm run build وأعد النشر.",
+              "محليًا: ابنِ debug APK ثم npm run apk:copy ثم npm run build ثم ادفع public/saraf-iq-debug.apk مع الكود.",
               "",
-              "APK not found. Add public/saraf-iq-debug.apk to the project, rebuild, and redeploy.",
+              "APK not on server. Locally: build debug APK, run npm run apk:copy, npm run build, commit and push public/saraf-iq-debug.apk.",
             ].join("\n"),
           );
         return;

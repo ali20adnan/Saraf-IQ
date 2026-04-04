@@ -20,6 +20,7 @@
     "cap:ios": "cap add ios",
     "cap:open": "cap open android",
     "cap:build": "npm run build && cap sync android && cap open android",
+    "apk:copy": "node scripts/copy-apk-to-public.mjs",
     "build-apk": "rm -rf node_modules package-lock.json && npm cache clean --force && npm install && npm run build && npm install -g @capacitor/cli && npx cap add android && npx cap sync android && cd android && chmod +x gradlew && ./gradlew assembleDebug --stacktrace && cp app/build/outputs/apk/debug/app-debug.apk ../public/saraf-iq-debug.apk && echo 'APK available at /saraf-iq-debug.apk'"
   },
   "dependencies": {
