@@ -1,4 +1,5 @@
 # Debug APK فقط — assembleRelease يحتاج keystore غير موجود في CI
+# بعد نجاح البناء على main/master: رفع تلقائي إلى Release بوسم continuous
 name: Build Android APK
 
 on:
@@ -8,9 +9,14 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout code
@@ -59,3 +65,30 @@ jobs:
         run: |
           ls -lh android/app/build/outputs/apk/debug/app-debug.apk
           echo "Artifacts → saraf-iq-debug.apk"
+
+      - name: Publish APK to GitHub Release (main/master only)
+        if: success() && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          TAG="continuous"
+          REPO="${{ github.repository }}"
+          SHORT_SHA=$(echo "$GITHUB_SHA" | cut -c1-7)
+          REF_NAME="${GITHUB_REF_NAME}"
+          cp android/app/build/outputs/apk/debug/app-debug.apk saraf-iq-debug.apk
+          URL="https://github.com/${REPO}/releases/download/${TAG}/saraf-iq-debug.apk"
+          NOTES="**بناء تلقائي من CI** — \`${SHORT_SHA}\` على \`${REF_NAME}\`.  **تنزيل:** [saraf-iq-debug.apk](${URL})"
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "تحديث Release موجود: $TAG"
+            gh release upload "$TAG" saraf-iq-debug.apk --repo "$REPO" --clobber
+            gh release edit "$TAG" --repo "$REPO" --notes "$NOTES" || true
+          else
+            echo "إنشاء Release: $TAG"
+            gh release create "$TAG" saraf-iq-debug.apk \
+              --repo "$REPO" \
+              --title "Saraf IQ — آخر بناء (continuous)" \
+              --notes "$NOTES" \
+              --prerelease
+          fi
+          echo "OK → https://github.com/${REPO}/releases/tag/${TAG}"
