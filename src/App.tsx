@@ -4,6 +4,7 @@ import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCl
 import { motion, AnimatePresence } from 'motion/react';
 import Cookies from 'js-cookie';
 import { supabase } from './lib/supabase';
+import { notificationService } from './lib/notifications';
 import type { ServerTransaction } from '../types/transaction';
 
 type TransactionType = 'sell' | 'buy';
@@ -75,6 +76,7 @@ function MainContent() {
   const [otpCode, setOtpCode] = useState('');
   const [sellAmount, setSellAmount] = useState<number>(10000);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const prevTransactionsRef = useRef<ServerTransaction[]>([]);
   const [fileName, setFileName] = useState<string | null>(null);
   
   const [appSettings, setAppSettings] = useState({
@@ -282,15 +284,46 @@ function MainContent() {
           setOtpState('input');
           setShowOtpStep(false);
           setIsSuccess(true);
+          // Send notification
+          notificationService.notifyTransactionComplete(
+            tx.order_ref,
+            Number(tx.amount).toLocaleString() + ' ' + (tx.type === 'sell' ? t('iqd') : t('asiacell'))
+          );
         } else if (tx.status === 'failed') {
           setOtpState('failed');
+          // Send notification
+          notificationService.notifyTransactionFailed(tx.order_ref);
         } else if (tx.status === 'retry_otp') {
           setOtpState('input');
           setOtpCode('');
         }
       }
     }
-  }, [transactions, otpState, currentOrderId]);
+  }, [transactions, otpState, currentOrderId, lang, t]);
+
+  // Monitor transaction status changes for notifications
+  useEffect(() => {
+    if (transactions.length === 0) return;
+    
+    // Check for newly completed or failed transactions
+    transactions.forEach(tx => {
+      const prevTx = prevTransactionsRef.current.find(t => t.id === tx.id);
+      if (prevTx && prevTx.status !== tx.status) {
+        // Status changed
+        if (tx.status === 'completed') {
+          notificationService.notifyTransactionComplete(
+            tx.order_ref,
+            Number(tx.amount).toLocaleString() + ' ' + (tx.type === 'sell' ? t('iqd') : t('asiacell'))
+          );
+        } else if (tx.status === 'failed') {
+          notificationService.notifyTransactionFailed(tx.order_ref);
+        }
+      }
+    });
+    
+    // Store current transactions for next comparison
+    prevTransactionsRef.current = transactions;
+  }, [transactions, lang, t]);
 
   const saveSiteProfile = async () => {
     setProfileSaving(true);
@@ -345,6 +378,29 @@ function MainContent() {
     } catch (error) {
       console.error('Error updating setting:', error);
       setAppSettings((prev) => ({ ...prev, [k]: !newValue }));
+    }
+  };
+
+  const toggleNotifications = async () => {
+    const newValue = !notificationsEnabled;
+    
+    if (newValue) {
+      const granted = await notificationService.requestPermission();
+      if (granted) {
+        setNotificationsEnabled(true);
+        notificationService.sendNotification(
+          lang === 'ar' ? 'الإشعارات مفعلة!' : 'Notifications Enabled!',
+          {
+            body: lang === 'ar' 
+              ? 'سيتم إرسال تنبيهات مع كل تحديث على طلباتك'
+              : 'You will receive alerts for all your order updates',
+            icon: '/icons/logo.png',
+          }
+        );
+      }
+    } else {
+      notificationService.toggle(false);
+      setNotificationsEnabled(false);
     }
   };
 
@@ -549,7 +605,6 @@ function MainContent() {
             </div>
             <div>
               <h1 className="font-black text-xl tracking-tight text-gray-900">{t('appTitle')}</h1>
-              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest leading-none mt-1">Business Portal</p>
             </div>
           </div>
           <h2 className="text-2xl font-black text-center text-gray-900 mb-2">
@@ -1025,18 +1080,17 @@ function MainContent() {
               <div>
                 <h3 className="font-bold text-gray-900">{t('notifications')}</h3>
                 <p className="text-sm text-gray-500">{t('notificationsDesc')}</p>
+                {notificationsEnabled && (
+                  <p className="text-xs text-green-600 mt-1 font-medium">
+                    ✅ {lang === 'ar' ? 'الإشعارات مفعلة مع الصوت' : 'Notifications enabled with sound'}
+                  </p>
+                )}
               </div>
               <button
                 type="button"
                 role="switch"
                 aria-checked={notificationsEnabled}
-                onClick={() => {
-                  setNotificationsEnabled((prev) => {
-                    const next = !prev;
-                    localStorage.setItem('notifications_enabled', String(next));
-                    return next;
-                  });
-                }}
+                onClick={toggleNotifications}
                 className={`w-12 h-6 rounded-full relative transition-colors shrink-0 ${notificationsEnabled ? 'bg-red-500' : 'bg-gray-200'}`}
               >
                 <span
