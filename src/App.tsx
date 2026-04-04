@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
-import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Tag, XCircle, Eye, EyeOff } from 'lucide-react';
+import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Tag, XCircle, Eye, EyeOff, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Cookies from 'js-cookie';
 import { supabase } from './lib/supabase';
@@ -54,6 +54,9 @@ type ActiveAgentNumber = {
   agentId: string;
   numberId: string;
 };
+
+const APK_DOWNLOAD_HREF =
+  (import.meta.env.VITE_APK_URL && String(import.meta.env.VITE_APK_URL).trim()) || '/saraf-iq-debug.apk';
 
 function MainContent() {
   const { t, lang, toggleLanguage, dir } = useLanguage();
@@ -657,13 +660,21 @@ function MainContent() {
             </button>
           </form>
 
-          <div className="mt-8 text-center">
+          <div className="mt-8 text-center space-y-4">
             <button 
               onClick={() => { setAuthMode(authMode === 'signin' ? 'signup' : 'signin'); setAuthError(null); setShowPassword(false); }}
               className="text-gray-500 hover:text-gray-900 font-bold transition-colors text-sm"
             >
               {authMode === 'signin' ? t('noAccountText', 'ليس لديك حساب؟ أنشئ حساباً') : t('hasAccountText', 'لديك حساب بالفعل؟ سجل دخولك')}
             </button>
+            <a
+              href={APK_DOWNLOAD_HREF}
+              download
+              className="flex items-center justify-center gap-2 text-sm font-bold text-red-600 hover:text-red-700"
+            >
+              <Download className="w-4 h-4 shrink-0" />
+              {t('downloadApk')}
+            </a>
           </div>
           
           {window.location.pathname === '/admin' && (
@@ -1111,6 +1122,24 @@ function MainContent() {
               >
                 {lang === 'ar' ? 'English' : 'العربية'}
               </button>
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-6 border-t border-gray-100">
+              <div>
+                <h3 className="font-bold text-gray-900">{t('downloadAndroidApp')}</h3>
+                <p className="text-sm text-gray-500">{t('downloadAndroidAppDesc')}</p>
+                <p className="text-xs text-gray-400 mt-2 font-mono break-all" dir="ltr">
+                  {typeof window !== 'undefined' ? `${window.location.origin}/saraf-iq-debug.apk` : '/saraf-iq-debug.apk'}
+                </p>
+              </div>
+              <a
+                href={APK_DOWNLOAD_HREF}
+                download
+                className="inline-flex items-center justify-center gap-2 shrink-0 px-5 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-colors shadow-sm"
+              >
+                <Download className="w-5 h-5" />
+                {t('downloadApk')}
+              </a>
             </div>
           </div>
         </div>

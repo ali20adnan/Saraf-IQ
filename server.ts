@@ -36,6 +36,22 @@ async function startServer() {
   app.use(express.json());
   app.set("trust proxy", true);
 
+  const APK_PUBLIC_PATH = "/saraf-iq-debug.apk";
+  app.get("/api/apk-link", (req, res) => {
+    const host = req.get("host") || "localhost";
+    const proto =
+      (req.get("x-forwarded-proto") as string)?.split(",")[0]?.trim() ||
+      req.protocol ||
+      "https";
+    const origin = `${proto}://${host}`;
+    res.json({
+      url: `${origin}${APK_PUBLIC_PATH}`,
+      path: APK_PUBLIC_PATH,
+      hint:
+        "After building the Android app, copy the APK to public/saraf-iq-debug.apk and redeploy so this URL serves the file.",
+    });
+  });
+
   const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
   let bot: TelegramBotInstance | null = null;
 

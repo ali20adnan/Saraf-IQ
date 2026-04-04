@@ -120,7 +120,10 @@ export const translations = {
     batchesCount: "This will be processed in {n} batches of 60,000 IQD.",
     comingSoon: "Coming Soon",
     maintenanceDesc: "This section is under maintenance and will be available shortly.",
-    serviceUnavailable: "Service temporarily unavailable."
+    serviceUnavailable: "Service temporarily unavailable.",
+    downloadAndroidApp: "Android app",
+    downloadAndroidAppDesc: "Install Saraf on your phone (debug APK).",
+    downloadApk: "Download APK"
   },
   ar: {
     appTitle: "صراف",
@@ -243,6 +246,9 @@ export const translations = {
     batchesCount: "سيتم إرسال المبلغ على شكل {n} دفعات (كل دفعة 60,000 دينار).",
     comingSoon: "قريباً",
     maintenanceDesc: "هذا القسم قيد الصيانة حالياً وسيكون متاحاً قريباً.",
-    serviceUnavailable: "الخدمة غير متوفرة حالياً."
+    serviceUnavailable: "الخدمة غير متوفرة حالياً.",
+    downloadAndroidApp: "تطبيق أندرويد",
+    downloadAndroidAppDesc: "ثبّت صراف على هاتفك (ملف APK).",
+    downloadApk: "تحميل APK"
   }
 };
