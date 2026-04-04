@@ -1,5 +1,6 @@
 import {useEffect, useRef, useState} from 'react';
 import {motion} from 'motion/react';
+import {whenPrecacheReady} from '../lib/pwaRegister';
 import {BrandLogo} from './BrandLogo';
 
 /** أصول واجهة تُحمَّل أثناء الشاشة لتصفح أخف لاحقاً */
@@ -16,7 +17,19 @@ const REDUCED_MOTION_HOLD_MS = 1_000;
 const DESKTOP_INTRO_MS = 650;
 /** مدة كافية لعرض الحركة على الهاتف بدون فيديو ثقيل — أسلس للـ APK */
 const PHONE_MOTION_INTRO_MS = 2_400;
+/** أجهزة ضعيفة: إدخال أقصر وبدون خلفية متحركة ثقيلة */
+const PHONE_LOW_END_INTRO_MS = 900;
 const PHONE_MAX_WIDTH_PX = 767;
+
+function useLowEndDevice() {
+  const [low, setLow] = useState(false);
+  useEffect(() => {
+    const cores = typeof navigator !== 'undefined' ? (navigator.hardwareConcurrency ?? 8) : 8;
+    const mem = typeof navigator !== 'undefined' ? ((navigator as Navigator & {deviceMemory?: number}).deviceMemory ?? 8) : 8;
+    setLow(cores <= 4 || mem <= 4);
+  }, []);
+  return low;
+}
 
 type Props = {
   appTitle: string;
@@ -93,6 +106,27 @@ export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
   const [introDone, setIntroDone] = useState(false);
   const [visible, setVisible] = useState(true);
   const [bootAssetsReady, setBootAssetsReady] = useState(false);
+  const [swCacheReady, setSwCacheReady] = useState(false);
+  const lowEndDevice = useLowEndDevice();
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    if (lowEndDevice) {
+      document.documentElement.classList.add('saraf-low-end');
+    } else {
+      document.documentElement.classList.remove('saraf-low-end');
+    }
+  }, [lowEndDevice]);
+
+  useEffect(() => {
+    let cancelled = false;
+    whenPrecacheReady.then(() => {
+      if (!cancelled) setSwCacheReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -116,8 +150,8 @@ export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
     };
   }, []);
 
-  const phoneMotion = isPhoneViewport && !prefersReducedMotion;
-  const phoneReduced = isPhoneViewport && prefersReducedMotion;
+  const phoneMotion = isPhoneViewport && !prefersReducedMotion && !lowEndDevice;
+  const phoneReduced = isPhoneViewport && (prefersReducedMotion || lowEndDevice);
 
   useEffect(() => {
     if (!isPhoneViewport) {
@@ -125,7 +159,8 @@ export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
       return () => window.clearTimeout(t);
     }
     if (phoneReduced) {
-      const t = window.setTimeout(() => setIntroDone(true), REDUCED_MOTION_HOLD_MS);
+      const ms = lowEndDevice ? PHONE_LOW_END_INTRO_MS : REDUCED_MOTION_HOLD_MS;
+      const t = window.setTimeout(() => setIntroDone(true), ms);
       return () => window.clearTimeout(t);
     }
     const t = window.setTimeout(() => setIntroDone(true), PHONE_MOTION_INTRO_MS);
@@ -134,10 +169,10 @@ export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
       window.clearTimeout(t);
       window.clearTimeout(cap);
     };
-  }, [isPhoneViewport, phoneReduced]);
+  }, [isPhoneViewport, phoneReduced, lowEndDevice]);
 
   useEffect(() => {
-    if (!settingsReady || !introDone || !bootAssetsReady) return;
+    if (!settingsReady || !introDone || !bootAssetsReady || !swCacheReady) return;
     const elapsed = Date.now() - mountRef.current;
     const wait = Math.max(0, MIN_VISIBLE_MS - elapsed);
     const timer = window.setTimeout(() => {
@@ -145,7 +180,7 @@ export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
       window.setTimeout(() => onCompleteRef.current(), 300);
     }, wait);
     return () => window.clearTimeout(timer);
-  }, [settingsReady, introDone, bootAssetsReady]);
+  }, [settingsReady, introDone, bootAssetsReady, swCacheReady]);
 
   const darkPhone = phoneMotion;
 
