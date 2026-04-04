@@ -1083,7 +1083,7 @@ function MainContent() {
                 <p className="text-sm text-gray-500">{t('notificationsDesc')}</p>
                 {notificationsEnabled && (
                   <p className="text-xs text-green-600 mt-1 font-medium">
-                    ✅ {lang === 'ar' ? 'الإشعارات مفعلة مع الصوت' : 'Notifications enabled with sound'}
+                    {lang === 'ar' ? 'الإشعارات مفعلة' : 'Notifications enabled'}
                   </p>
                 )}
               </div>

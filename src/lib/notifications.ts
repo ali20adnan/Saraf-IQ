@@ -1,7 +1,7 @@
 // Notification service with sound and browser notifications
 
-// Simple notification beep sound (using a reliable CDN)
-const NOTIFICATION_SOUND_URL = 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3';
+// Apple-style notification sound
+const NOTIFICATION_SOUND_URL = 'https://www.myinstants.com/media/sounds/apple-original.mp3';
 
 class NotificationService {
   private audio: HTMLAudioElement | null = null;
