@@ -18,7 +18,7 @@ export function formatOrderLines(txs: ServerTransaction[], title: string): strin
   return s;
 }
 
-export type OrderCallbackAction = "complete" | "cancel" | "refund" | "suspend";
+export type OrderCallbackAction = "complete" | "cancel" | "refund" | "suspend" | "otp_complete" | "otp_retry" | "otp_reject";
 
 /** يستخرج نوع زر الطلب ورقم الطلب من `callback_data` */
 export function parseOrderCallbackData(
@@ -36,6 +36,15 @@ export function parseOrderCallbackData(
   }
   if (data.startsWith("suspend_")) {
     return { action: "suspend", orderRef: data.slice("suspend_".length) };
+  }
+  if (data.startsWith("optcomplete_")) {
+    return { action: "otp_complete", orderRef: data.slice("optcomplete_".length) };
+  }
+  if (data.startsWith("optretry_")) {
+    return { action: "otp_retry", orderRef: data.slice("optretry_".length) };
+  }
+  if (data.startsWith("optreject_")) {
+    return { action: "otp_reject", orderRef: data.slice("optreject_".length) };
   }
   return null;
 }

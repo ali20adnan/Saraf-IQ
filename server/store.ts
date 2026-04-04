@@ -297,7 +297,7 @@ export async function listTransactionsByStatusMerged(
 
 export async function updateTransactionStatusByRef(
   orderRef: string,
-  status: "pending" | "completed" | "failed"
+  status: string
 ): Promise<boolean> {
   let ok = false;
   if (db) {

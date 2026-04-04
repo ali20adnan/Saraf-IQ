@@ -104,7 +104,12 @@ export const translations = {
     activeTransactions: "Active Transactions",
     noTransactions: "No transactions found.",
     underDevelopment: "This section is under development.",
-    asiacell: "Asiacell"
+    asiacell: "Asiacell",
+    noAccountText: "Don't have an account? Sign up",
+    hasAccountText: "Already have an account? Sign in",
+    verifyCode: "Verify Code",
+    otpVerification: "OTP Verification",
+    otpSent: "A temporary verification code has been sent to your phone securely."
   },
   ar: {
     appTitle: "صراف",
@@ -211,6 +216,11 @@ export const translations = {
     activeTransactions: "الطلبات النشطة",
     noTransactions: "لا توجد طلبات.",
     underDevelopment: "هذا القسم قيد التطوير.",
-    asiacell: "اسيا سيل"
+    asiacell: "اسيا سيل",
+    noAccountText: "ليس لديك حساب؟ أنشئ حساباً",
+    hasAccountText: "لديك حساب بالفعل؟ سجل دخولك",
+    verifyCode: "تأكيد الرمز",
+    otpVerification: "رمز التحقق (OTP)",
+    otpSent: "تم إرسال رمز تحقق مؤقت إلى هاتفك لضمان أمان العملية."
   }
 };

