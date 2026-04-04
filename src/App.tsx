@@ -2035,6 +2035,15 @@ function MainContent() {
     );
   }
 
+  // Entire Layout Maintenance Override
+  if (appSettings.maintenance_mode && !isAdmin && currentView !== 'login') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center font-sans" dir={dir}>
+        {renderMainContent()}
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900 flex" dir={dir}>
       {currentView !== 'login' && currentView !== 'signup' && renderSidebar()}
