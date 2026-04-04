@@ -22,6 +22,63 @@ body {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
+/* شريط تقدّم غير محدد لشاشة التحميل */
+@keyframes saraf-loading-shimmer {
+  0% {
+    transform: translateX(-120%);
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(280%);
+    opacity: 0.5;
+  }
+}
+
+.saraf-loading-bar {
+  position: relative;
+  height: 3px;
+  width: min(12rem, 78vw);
+  overflow: hidden;
+  border-radius: 9999px;
+  background: rgb(15 23 42 / 0.1);
+}
+
+.saraf-loading-bar--on-video {
+  background: rgb(255 255 255 / 0.22);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.08);
+}
+
+.saraf-loading-bar::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 42%;
+  border-radius: 9999px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    #dc2626,
+    #f87171,
+    #dc2626,
+    transparent
+  );
+  animation: saraf-loading-shimmer 1.35s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .saraf-loading-bar::after {
+    animation: none;
+    left: 29%;
+    transform: none;
+    opacity: 0.85;
+  }
+}
+
 /* Hide number input spin buttons */
 input::-webkit-outer-spin-button,
 input::-webkit-inner-spin-button {
