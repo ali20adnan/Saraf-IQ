@@ -394,6 +394,7 @@ async function startServer() {
                   inline_keyboard: [
                     [{ text: a.is_active ? "❌ تعطيل" : "✅ تفعيل", callback_data: `admin_toggle_agent_${a.id}` }],
                     [{ text: "⚖️ إدارة الصلاحيات", callback_data: `admin_agent_perms_${a.id}` }],
+                    [{ text: "❌ حذف الوكيل", callback_data: `admin_delete_agent_${a.id}` }],
                     [{ text: "🔙 القائمة", callback_data: "admin_agents" }]
                   ]
                 }
@@ -425,6 +426,7 @@ async function startServer() {
                     inline_keyboard: [
                       [{ text: updatedA.is_active ? "❌ تعطيل" : "✅ تفعيل", callback_data: `admin_toggle_agent_${updatedA.id}` }],
                       [{ text: "⚖️ إدارة الصلاحيات", callback_data: `admin_agent_perms_${updatedA.id}` }],
+                      [{ text: "❌ حذف الوكيل", callback_data: `admin_delete_agent_${updatedA.id}` }],
                       [{ text: "🔙 القائمة", callback_data: "admin_agents" }]
                     ]
                   }
@@ -432,6 +434,18 @@ async function startServer() {
               }
               return;
             }
+          }
+
+          if (data.startsWith("admin_delete_agent_")) {
+             const aid = data.replace("admin_delete_agent_", "");
+             await store.deleteAgent(aid);
+             await answer("تم حذف الوكيل بنجاح");
+             const updatedAgents = await store.listAgents();
+             const buttons = updatedAgents.map(a => ([{ text: `${a.is_active ? '✅' : '⚪️'} ${a.name}`, callback_data: `admin_view_agent_${a.id}` }]));
+             buttons.push([{ text: "➕ إضافة وكيل جديد", callback_data: "admin_agents_help" }]);
+             buttons.push([{ text: "🔙 رجوع", callback_data: "admin_home" }]);
+             await bot?.editMessageText("👥 <b>قائمة الوكلاء</b>\nتم الحذف بنجاح. اختر وكيلاً آخر للإدارة:", { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } });
+             return;
           }
 
           if (data.startsWith("admin_agent_perms_")) {

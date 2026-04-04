@@ -661,8 +661,15 @@ export async function toggleAdminPermission(adminId: string, permission: string)
 }
 
 export async function deleteAdmin(id: string): Promise<void> {
-  if (db) await db.from("admins").delete().eq("id", id);
   const st = loadFileStore();
+  const admin = st.admins.find(a => a.id === id);
+  
+  // Safety: Cannot delete Super Admin from the list if they were added
+  if (admin && admin.telegram_id.toString() === process.env.TELEGRAM_CHAT_ID) {
+    return;
+  }
+
+  if (db) await db.from("admins").delete().eq("id", id);
   st.admins = st.admins.filter(a => a.id !== id);
   saveFileStore(st);
 }
