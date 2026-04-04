@@ -7,26 +7,35 @@
 
 html {
   height: 100%;
+  max-height: 100%;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 body {
-  min-height: 100%;
-  min-height: 100dvh;
+  height: 100%;
+  max-height: 100%;
+  margin: 0;
+  overflow: hidden;
   font-family: var(--font-sans);
   background-color: #F8FAFC;
   -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
+  /* manipulation يمكن أن يتعارض مع تمرير عمودي في WebView */
+  touch-action: pan-y pinch-zoom;
   overscroll-behavior-y: none;
 }
 
-/* تمرير أخف في WebView (Capacitor) — طبقة مركّبة للتمرير */
+#root {
+  height: 100%;
+  min-height: 0;
+}
+
+/* تمرير في WebView — بدون transform يتعارض مع hit-testing على بعض الأجهزة */
 .saraf-main-scroll {
   -webkit-overflow-scrolling: touch;
-  transform: translateZ(0);
-  backface-visibility: hidden;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
 }
 
 .pb-safe {

@@ -1338,39 +1338,36 @@ function MainContent() {
   const renderOfferCard = () => (
     <div
       key={txType}
-      className={`rounded-[2rem] shadow-2xl overflow-hidden relative mb-8 group ${txType === 'sell' ? 'bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900' : 'bg-gradient-to-br from-red-600 via-red-700 to-rose-900'}`}
+      className={`relative mb-8 overflow-hidden rounded-[2rem] border border-black/10 shadow-md [contain:layout_paint] ${txType === 'sell' ? 'bg-gray-900' : 'bg-red-700'}`}
     >
-      <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -mr-20 -mt-20 transition-transform group-hover:scale-110 duration-700"></div>
-      <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10 mix-blend-overlay pointer-events-none"></div>
-      
-      <div className="p-8 relative z-10">
-        <div className="flex justify-between items-start mb-10">
-          <div className="inline-flex items-center gap-1.5 bg-white/10 text-white border border-white/20 px-3 py-1.5 rounded-full text-xs font-bold backdrop-blur-md shadow-sm">
-            <Zap className="w-3.5 h-3.5 fill-current" />
+      <div className="relative z-10 p-8">
+        <div className="mb-10 flex items-start justify-between">
+          <div className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/15 px-3 py-1.5 text-xs font-bold text-white">
+            <Zap className="h-3.5 w-3.5 fill-current" />
             {t('recommended')}
           </div>
-          <span className="text-xs font-bold text-white/80 bg-black/20 px-3 py-1.5 rounded-full border border-white/10 backdrop-blur-md">
+          <span className="rounded-full border border-white/15 bg-black/25 px-3 py-1.5 text-xs font-bold text-white/90">
             {t('days')}
           </span>
         </div>
-        
-        <h3 className="font-medium text-white/60 mb-1 text-sm tracking-wide uppercase">
+
+        <h3 className="mb-1 text-sm font-medium uppercase tracking-wide text-white/70">
           {txType === 'sell' ? t('offerTitle') : t('buyOfferTitle')}
         </h3>
         <div className="flex items-baseline gap-2">
-          <span className="text-5xl font-black tracking-tighter text-white drop-shadow-md">
+          <span className="text-5xl font-black tracking-tighter text-white">
             {txType === 'sell' ? '95,000' : '100,000'}
           </span>
-          <span className="text-lg text-white/80 font-bold ml-1">
-            {txType === 'sell' ? t('iqd') : 'Asiacell'}
-          </span>
+          <span className="ml-1 text-lg font-bold text-white/85">{txType === 'sell' ? t('iqd') : 'Asiacell'}</span>
         </div>
       </div>
-      <div className={`py-4 px-8 text-sm font-bold flex items-center justify-between border-t border-white/10 ${txType === 'sell' ? 'bg-red-600/90 text-white backdrop-blur-md' : 'bg-gray-900/90 text-white backdrop-blur-md'}`}>
+      <div
+        className={`flex items-center justify-between border-t border-white/10 px-8 py-4 text-sm font-bold text-white ${txType === 'sell' ? 'bg-red-600' : 'bg-gray-900'}`}
+      >
         <span className="flex items-center gap-2 uppercase tracking-wider">
-          <CheckCircle2 className="w-4 h-4" /> {t('limitedOffer')}
+          <CheckCircle2 className="h-4 w-4" /> {t('limitedOffer')}
         </span>
-        <ArrowRight className={`w-4 h-4 transition-transform group-hover:translate-x-1 ${dir === 'rtl' ? 'rotate-180 group-hover:-translate-x-1' : ''}`} />
+        <ArrowRight className={`h-4 w-4 ${dir === 'rtl' ? 'rotate-180' : ''}`} />
       </div>
     </div>
   );
@@ -1407,37 +1404,42 @@ function MainContent() {
           <h1 className="text-2xl sm:text-3xl font-black text-gray-900">{t('bundles')}</h1>
           <p className="text-gray-500 font-medium mt-2 max-w-xl">{t('offersSubtitle')}</p>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 gap-5 pb-2 md:grid-cols-2 md:gap-6">
           {list.map((item) => (
             <div
               key={item.id}
-              className={`rounded-3xl shadow-xl overflow-hidden relative flex flex-col ${item.variant === 'sell' ? 'bg-gradient-to-br from-gray-900 to-gray-800' : 'bg-gradient-to-br from-red-700 to-red-900'}`}
+              className={`relative flex flex-col overflow-hidden rounded-3xl border border-black/10 shadow-sm [contain:layout_paint] ${
+                item.variant === 'sell' ? 'bg-gray-900' : 'bg-red-700'
+              }`}
             >
-              <div className="absolute top-0 right-0 w-64 h-64 bg-white opacity-5 rounded-full blur-3xl -mr-20 -mt-20" />
-              <div className="p-6 sm:p-8 relative z-10 flex-1">
-                <div className="flex justify-between items-start mb-6">
-                  <div className="inline-flex items-center gap-1.5 bg-white/10 text-white border border-white/20 px-3 py-1.5 rounded-full text-xs font-bold backdrop-blur-sm">
-                    <Zap className="w-3.5 h-3.5 fill-current" />
+              <div className="relative z-10 flex-1 p-6 sm:p-8">
+                <div className="mb-6 flex items-start justify-between gap-2">
+                  <div className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/15 px-3 py-1.5 text-xs font-bold text-white">
+                    <Zap className="h-3.5 w-3.5 shrink-0 fill-current" />
                     {t('recommended')}
                   </div>
-                  <span className="text-xs font-bold text-white/80 bg-black/20 px-3 py-1.5 rounded-full border border-white/10 backdrop-blur-sm">
+                  <span className="shrink-0 rounded-full border border-white/15 bg-black/25 px-3 py-1.5 text-xs font-bold text-white/90">
                     {t('days')}
                   </span>
                 </div>
-                <h3 className="font-medium text-white/90 mb-2 text-sm leading-relaxed">{item.title}</h3>
-                <div className="flex items-baseline gap-2 flex-wrap">
-                  <span className="text-4xl sm:text-5xl font-black tracking-tight text-white">{item.amount}</span>
-                  <span className="text-base text-white/80 font-bold">{item.unit}</span>
+                <h3 className="mb-2 text-sm font-medium leading-relaxed text-white/90">{item.title}</h3>
+                <div className="flex flex-wrap items-baseline gap-2">
+                  <span className="text-4xl font-black tracking-tight text-white sm:text-5xl">{item.amount}</span>
+                  <span className="text-base font-bold text-white/85">{item.unit}</span>
                 </div>
               </div>
-              <div className={`py-3.5 px-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ${item.variant === 'sell' ? 'bg-red-600' : 'bg-gray-900'}`}>
-                <span className="text-xs font-bold text-white/90 uppercase tracking-wider flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 shrink-0" /> {t('limitedOffer')}
+              <div
+                className={`flex flex-col gap-3 px-6 py-3.5 sm:flex-row sm:items-center sm:justify-between ${
+                  item.variant === 'sell' ? 'bg-red-600' : 'bg-gray-900'
+                }`}
+              >
+                <span className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-white/95">
+                  <CheckCircle2 className="h-4 w-4 shrink-0" /> {t('limitedOffer')}
                 </span>
                 <button
                   type="button"
                   onClick={() => goExchange(item.variant)}
-                  className="w-full sm:w-auto text-center bg-white/15 hover:bg-white/25 text-white text-sm font-black py-2.5 px-5 rounded-xl border border-white/20 transition-colors"
+                  className="w-full rounded-xl border border-white/25 bg-white/15 py-2.5 text-center text-sm font-black text-white active:bg-white/25 sm:w-auto sm:px-5"
                 >
                   {t('subscribe')}
                 </button>
@@ -2212,21 +2214,24 @@ function MainContent() {
   // Entire Layout Maintenance Override
   if (appSettings.maintenance_mode && !isAdmin && currentView !== 'login') {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center font-sans" dir={dir}>
+      <div className="flex h-[100dvh] min-h-0 items-center justify-center bg-gray-50 font-sans" dir={dir}>
         {renderMainContent()}
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans text-gray-900 flex" dir={dir}>
+    <div
+      className="h-[100dvh] min-h-0 max-h-[100dvh] overflow-hidden bg-gray-50 font-sans text-gray-900 flex"
+      dir={dir}
+    >
       {currentView !== 'login' && currentView !== 'signup' && renderSidebar()}
 
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {currentView !== 'login' && currentView !== 'signup' && renderMobileHeader()}
 
         <main
-          className={`saraf-main-scroll isolate flex-1 overflow-y-auto overscroll-y-contain ${currentView !== 'login' && currentView !== 'signup' ? 'pb-[calc(9rem+env(safe-area-inset-bottom,0px))] lg:pb-8 p-3 sm:p-6 lg:p-8' : ''}`}
+          className={`saraf-main-scroll min-h-0 flex-1 overflow-y-auto overscroll-y-contain ${currentView !== 'login' && currentView !== 'signup' ? 'pb-[calc(9rem+env(safe-area-inset-bottom,0px))] lg:pb-8 p-3 sm:p-6 lg:p-8' : ''}`}
         >
           {renderMainContent()}
         </main>
