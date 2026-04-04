@@ -5,8 +5,12 @@ import {BrandLogo} from './BrandLogo';
 const INTRO_MAX_MS = 14_000;
 const MIN_VISIBLE_MS = 900;
 const REDUCED_MOTION_HOLD_MS = 1_000;
+/** على سطح المكتب: لا فيديو — إغلاق سريع للشاشة */
+const DESKTOP_INTRO_MS = 650;
+/** عرض ≤ هذا يُعرَض فيه فيديو loading.mp4 */
+const PHONE_MAX_WIDTH_PX = 767;
 
-/** فيديو التحميل: ضع الملف في public/icons/loading.mp4 */
+/** فيديو التحميل: public/icons/loading.mp4 — يُعرض على أبعاد الهاتف فقط */
 const LOADING_VIDEO = '/icons/loading.mp4';
 
 type Props = {
@@ -15,9 +19,24 @@ type Props = {
   onComplete: () => void;
 };
 
+function usePhoneViewport() {
+  const [isPhone, setIsPhone] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia(`(max-width: ${PHONE_MAX_WIDTH_PX}px)`).matches : false,
+  );
+
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${PHONE_MAX_WIDTH_PX}px)`);
+    const onChange = () => setIsPhone(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  return isPhone;
+}
+
 /**
- * شاشة تحميل: تعرض loading.mp4 مع طبقة تدرّج وشريط تقدّم غير محدد.
- * بدون فيديو (خطأ / تقليل الحركة): شعار + نفس الشريط على خلفية فاتحة.
+ * فيديو loading.mp4 فقط عندما يكون عرض المتصفح ≤767px (هاتف).
+ * على الشاشات العريضة: شعار خفيف + شريط تحميل قصير ثم الدخول للتطبيق.
  */
 export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
   const mountRef = useRef<number>(Date.now());
@@ -25,12 +44,16 @@ export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
   onCompleteRef.current = onComplete;
   const videoRef = useRef<HTMLVideoElement>(null);
 
+  const isPhoneViewport = usePhoneViewport();
+
   const [introDone, setIntroDone] = useState(false);
   const [visible, setVisible] = useState(true);
 
   const [wantsVideo, setWantsVideo] = useState(() => {
     if (typeof window === 'undefined') return false;
-    return !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
+    if (!window.matchMedia(`(max-width: ${PHONE_MAX_WIDTH_PX}px)`).matches) return false;
+    return true;
   });
 
   useEffect(() => {
@@ -40,10 +63,17 @@ export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
       const t = window.setTimeout(() => setIntroDone(true), REDUCED_MOTION_HOLD_MS);
       return () => window.clearTimeout(t);
     }
+
+    if (!isPhoneViewport) {
+      setWantsVideo(false);
+      const t = window.setTimeout(() => setIntroDone(true), DESKTOP_INTRO_MS);
+      return () => window.clearTimeout(t);
+    }
+
     setWantsVideo(true);
     const maxTimer = window.setTimeout(() => setIntroDone(true), INTRO_MAX_MS);
     return () => window.clearTimeout(maxTimer);
-  }, []);
+  }, [isPhoneViewport]);
 
   const tryPlay = useCallback(() => {
     const el = videoRef.current;
@@ -71,7 +101,7 @@ export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
     setIntroDone(true);
   };
 
-  const showVideo = wantsVideo;
+  const showVideo = isPhoneViewport && wantsVideo;
 
   return (
     <motion.div
@@ -110,7 +140,6 @@ export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
         </video>
       )}
 
-      {/* تدرّج للقراءة + إحساس بـ «طبقة علوية» احترافية */}
       <div
         className={`pointer-events-none absolute inset-0 ${
           showVideo
