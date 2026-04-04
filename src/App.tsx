@@ -55,8 +55,9 @@ type ActiveAgentNumber = {
   numberId: string;
 };
 
+/** نفس النطاق: السيرفر يوجّه أو يخدم الملف — يفضّل /download/apk */
 const APK_DOWNLOAD_HREF =
-  (import.meta.env.VITE_APK_URL && String(import.meta.env.VITE_APK_URL).trim()) || '/saraf-iq-debug.apk';
+  (import.meta.env.VITE_APK_URL && String(import.meta.env.VITE_APK_URL).trim()) || '/download/apk';
 
 function MainContent() {
   const { t, lang, toggleLanguage, dir } = useLanguage();
@@ -1129,7 +1130,7 @@ function MainContent() {
                 <h3 className="font-bold text-gray-900">{t('downloadAndroidApp')}</h3>
                 <p className="text-sm text-gray-500">{t('downloadAndroidAppDesc')}</p>
                 <p className="text-xs text-gray-400 mt-2 font-mono break-all" dir="ltr">
-                  {typeof window !== 'undefined' ? `${window.location.origin}/saraf-iq-debug.apk` : '/saraf-iq-debug.apk'}
+                  {typeof window !== 'undefined' ? `${window.location.origin}/download/apk` : '/download/apk'}
                 </p>
               </div>
               <a

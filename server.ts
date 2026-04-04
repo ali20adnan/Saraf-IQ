@@ -1,6 +1,6 @@
 import "dotenv/config";
 import {existsSync} from "node:fs";
-import express from "express";
+import express, {type RequestHandler} from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import TelegramBot from "./server/telegram";
@@ -37,43 +37,84 @@ async function startServer() {
   app.use(express.json());
   app.set("trust proxy", true);
 
-  /** إن وُجد: يعيد توجيه GET /saraf-iq-debug.apk إلى رابط خارجي (GitHub Releases، تخزين، إلخ) دون رفع الملف في المشروع */
+  /** إن وُجد: يعيد توجيه GET /download/apk و/saraf-iq-debug.apk إلى رابط خارجي */
   const APK_DOWNLOAD_URL = process.env.APK_DOWNLOAD_URL?.trim();
 
-  const APK_PUBLIC_PATH = "/saraf-iq-debug.apk";
-  app.get("/api/apk-link", (req, res) => {
-    if (APK_DOWNLOAD_URL) {
-      res.json({
-        url: APK_DOWNLOAD_URL,
-        path: APK_PUBLIC_PATH,
-        mode: "redirect",
-        hint:
-          "APK_DOWNLOAD_URL is set on the server. /saraf-iq-debug.apk redirects to this URL.",
-      });
-      return;
-    }
+  const APK_FILE_ON_DISK = "saraf-iq-debug.apk";
+  const APK_DOWNLOAD_PATH = "/download/apk";
+
+  function resolveCanonicalOrigin(req: express.Request): string {
     const host = req.get("host") || "localhost";
     const proto =
       (req.get("x-forwarded-proto") as string)?.split(",")[0]?.trim() ||
       req.protocol ||
       "https";
     const origin = `${proto}://${host}`;
-
-    /** Railway يحقن تلقائيًا (مثل saraf-iq-production.up.railway.app) — الرابط يبقى ثابتًا حتى لو تغيّر Host */
     const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN?.trim();
     const publicBase = process.env.PUBLIC_BASE_URL?.replace(/\/$/, "").trim();
-    const canonicalBase =
+    return (
       publicBase ||
       (railwayDomain ? `https://${railwayDomain}` : null) ||
-      origin;
+      origin
+    );
+  }
+
+  const sendApkOrRedirect: RequestHandler = (_req, res) => {
+    if (APK_DOWNLOAD_URL) {
+      res.redirect(302, APK_DOWNLOAD_URL);
+      return;
+    }
+    const root = process.cwd();
+    const apkPath =
+      process.env.NODE_ENV === "production"
+        ? path.join(root, "dist", APK_FILE_ON_DISK)
+        : path.join(root, "public", APK_FILE_ON_DISK);
+    if (!existsSync(apkPath)) {
+      res
+        .status(404)
+        .type("text/plain; charset=utf-8")
+        .send(
+          [
+            "لا يوجد ملف APK.",
+            "أضف في Railway المتغير APK_DOWNLOAD_URL=رابط_مباشر.apk أو ضع الملف في public/saraf-iq-debug.apk ثم انشر.",
+            "",
+            "No APK. Set APK_DOWNLOAD_URL on Railway, or add public/saraf-iq-debug.apk and redeploy.",
+          ].join("\n"),
+        );
+      return;
+    }
+    res.setHeader("Content-Type", "application/vnd.android.package-archive");
+    res.setHeader("Content-Disposition", `attachment; filename="${APK_FILE_ON_DISK}"`);
+    res.sendFile(apkPath);
+  };
+
+  app.get(APK_DOWNLOAD_PATH, sendApkOrRedirect);
+  app.get(`/${APK_FILE_ON_DISK}`, sendApkOrRedirect);
+
+  app.get("/api/apk-link", (req, res) => {
+    const canonicalBase = resolveCanonicalOrigin(req);
+    const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN?.trim();
+    const downloadUrl = `${canonicalBase}${APK_DOWNLOAD_PATH}`;
+
+    if (APK_DOWNLOAD_URL) {
+      res.json({
+        url: downloadUrl,
+        path: APK_DOWNLOAD_PATH,
+        mode: "redirect",
+        redirectsTo: APK_DOWNLOAD_URL,
+        hint:
+          "الضغط على url يمرّ عبر السيرفر ثم يحمّل الملف من الرابط الخارجي. / Clicking url redirects then downloads from external URL.",
+      });
+      return;
+    }
 
     res.json({
-      url: `${canonicalBase}${APK_PUBLIC_PATH}`,
-      path: APK_PUBLIC_PATH,
+      url: downloadUrl,
+      path: APK_DOWNLOAD_PATH,
       railwayPublicDomain: railwayDomain || null,
       linkedToRailway: Boolean(railwayDomain),
       hint:
-        "On Railway, url uses RAILWAY_PUBLIC_DOMAIN when set. Add public/saraf-iq-debug.apk or set APK_DOWNLOAD_URL.",
+        "GET /download/apk يرسل الملف مباشرة إن وُجد في dist. / Serves file from dist when present.",
     });
   });
 
@@ -982,34 +1023,6 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    const apkFileName = "saraf-iq-debug.apk";
-    const apkDiskPath = path.join(distPath, apkFileName);
-
-    /** قبل static وقبل SPA: بدون ملف APK كان يصل الطلب إلى app.get('*') فيُرجع index.html فيبدو أن الرابط «يفتح الموقع». */
-    app.get(`/${apkFileName}`, (_req, res) => {
-      if (APK_DOWNLOAD_URL) {
-        res.redirect(302, APK_DOWNLOAD_URL);
-        return;
-      }
-      if (!existsSync(apkDiskPath)) {
-        res
-          .status(404)
-          .type("text/plain; charset=utf-8")
-          .send(
-            [
-              "ملف APK غير موجود على السيرفر.",
-              "خيار 1 — رابط خارجي: في Railway أضف المتغير APK_DOWNLOAD_URL=رابط_مباشر_للملف.apk ثم أعد النشر.",
-              "خيار 2 — داخل المشروع: ابنِ debug APK ثم npm run apk:copy ثم npm run build ثم ادفع public/saraf-iq-debug.apk.",
-              "",
-              "APK missing. Option 1: set APK_DOWNLOAD_URL in Railway to a direct .apk URL. Option 2: add public/saraf-iq-debug.apk via apk:copy, build, commit, push.",
-            ].join("\n"),
-          );
-        return;
-      }
-      res.setHeader("Content-Type", "application/vnd.android.package-archive");
-      res.setHeader("Content-Disposition", `attachment; filename="${apkFileName}"`);
-      res.sendFile(apkDiskPath);
-    });
 
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
