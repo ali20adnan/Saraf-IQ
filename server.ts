@@ -233,6 +233,19 @@ async function startServer() {
           return bot?.sendMessage(msg.chat.id, `✅ تم إضافة المسؤول <b>${name}</b> بنجاح.`, { parse_mode: "HTML" });
         }
 
+        // Add Agent (Admins only)
+        if (text.startsWith("ADD_AGENT ")) {
+          const hasPerm = isAdmin || (secondaryAdmin && secondaryAdmin.permissions.includes('manage_agents'));
+          if (!hasPerm) return;
+          const parts = text.split(" ");
+          if (parts.length < 3) return bot?.sendMessage(msg.chat.id, "⚠️ استخدام خاطئ. أرسل:\n<code>ADD_AGENT [ID] [NAME]</code>", { parse_mode: "HTML" });
+          const targetId = parseInt(parts[1]);
+          const name = parts.slice(2).join(" ");
+          if (isNaN(targetId)) return bot?.sendMessage(msg.chat.id, "⚠️ معرف (ID) غير صالح.");
+          await store.createAgent({ telegram_id: targetId, name });
+          return bot?.sendMessage(msg.chat.id, `✅ تم إضافة الوكيل <b>${name}</b> بنجاح.\nيمكنه الآن البدء باستخدام البوت الخاص به عبر /start.`, { parse_mode: "HTML" });
+        }
+
         // Activate Agent Shortcut
         if (text.startsWith("/activate ")) {
           const hasPerm = isAdmin || (secondaryAdmin && secondaryAdmin.permissions.includes('manage_agents'));
@@ -355,8 +368,14 @@ async function startServer() {
 
           if (data === "admin_agents") {
             const buttons = agentsList.map(a => ([{ text: `${a.is_active ? '✅' : '⚪️'} ${a.name}`, callback_data: `admin_view_agent_${a.id}` }]));
+            buttons.push([{ text: "➕ إضافة وكيل جديد", callback_data: "admin_agents_help" }]);
             buttons.push([{ text: "🔙 رجوع", callback_data: "admin_home" }]);
             await bot?.editMessageText("👥 <b>قائمة الوكلاء</b>\nاختر وكيلاً للإدارة:", { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } });
+            return answer();
+          }
+
+          if (data === "admin_agents_help") {
+            await bot?.sendMessage(chatId, "👥 <b>إضافة وكيل جديد</b>\nلإضافة شخص كوكيل، اطلب منه إرسال معرفه الرقمي (Telegram ID)، ثم أرسل:\n<code>ADD_AGENT [ID] [NAME]</code>\n\nمثال: <code>ADD_AGENT 12345678 محمد أحمد</code>", { parse_mode: "HTML" });
             return answer();
           }
 
