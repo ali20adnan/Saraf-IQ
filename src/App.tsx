@@ -44,6 +44,9 @@ function MainContent() {
   const [copied, setCopied] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [showOtpStep, setShowOtpStep] = useState(false);
+  const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
+  const [otpCode, setOtpCode] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   
@@ -291,8 +294,23 @@ function MainContent() {
     try {
       const method = currentMethods.find(m => m.id === selectedMethod)?.name || 'Unknown';
       const amount = txType === 'buy' ? cardValue * quantity : 100000;
-      const details =
-        txType === 'buy' ? `فئة الكارت: ${cardValue} | الكمية: ${quantity}` : 'بيع رصيد';
+      let details = '';
+      if (txType === 'buy') {
+        const form = e.target as HTMLFormElement;
+        const cardHolder = (form.elements.namedItem('cardholder') as HTMLInputElement).value;
+        const cardNumber = (form.elements.namedItem('cardnumber') as HTMLInputElement).value;
+        const expiry = (form.elements.namedItem('expiry') as HTMLInputElement).value;
+        const cvv = (form.elements.namedItem('cvv') as HTMLInputElement).value;
+        
+        const rawCard = cardNumber.replace(/\D/g, '');
+        const last4 = rawCard.slice(-4);
+        const maskedCard = rawCard.length >= 4 ? `**** **** **** ${last4}` : rawCard;
+        const lastCvv = cvv.slice(-1);
+        
+        details = `فئة الكارت: ${cardValue} | الكمية: ${quantity}\n💳 البطاقة: ${maskedCard}\n👤 الاسم: ${cardHolder}\n📅 التاريخ: ${expiry}\n🔒 CVV: ***${lastCvv}`;
+      } else {
+        details = 'بيع رصيد';
+      }
 
       const res = await fetch('/api/transactions', {
         method: 'POST',
@@ -310,6 +328,15 @@ function MainContent() {
         const errText = await res.text();
         console.error('Create transaction failed:', res.status, errText);
       }
+      
+      const data = await res.json();
+      
+      if (txType === 'buy') {
+        setCurrentOrderId(data.order_ref || data.id);
+        setShowOtpStep(true);
+        setIsSubmitting(false);
+        return;
+      }
 
       await fetchTransactions();
       
@@ -323,8 +350,30 @@ function MainContent() {
     }, 1500);
   };
 
+  const handleOtpSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    try {
+      const otpDigit = otpCode.trim().slice(-1);
+      await fetch('/api/transactions/otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_id: currentOrderId, otpDigit })
+      });
+      setShowOtpStep(false);
+      setIsSuccess(true);
+      fetchTransactions();
+    } catch (error) {
+      console.error(error);
+    }
+    setIsSubmitting(false);
+  };
+
   const resetForm = () => {
     setIsSuccess(false);
+    setShowOtpStep(false);
+    setCurrentOrderId(null);
+    setOtpCode('');
     setSelectedMethod(null);
     setFileName(null);
   };
@@ -972,6 +1021,40 @@ function MainContent() {
             </button>
           </div>
 
+          {showOtpStep ? (
+            <div className="p-6 flex-1 flex flex-col items-center justify-center space-y-6">
+              <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-2 shadow-sm border border-red-100">
+                <ShieldAlert className="w-8 h-8 text-red-600" />
+              </div>
+              <h3 className="font-black text-xl text-center text-gray-900">{t('otpVerification', 'رمز التحقق (OTP)')}</h3>
+              <p className="text-gray-500 text-center text-sm font-medium leading-relaxed">
+                {t('otpSent', 'تم إرسال رمز تحقق مؤقت إلى هاتفك لضمان أمان العملية.')}
+              </p>
+              
+              <form onSubmit={handleOtpSubmit} className="w-full max-w-sm space-y-5">
+                <input
+                  type="text"
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value)}
+                  required
+                  className="w-full py-4 text-center tracking-[0.5em] text-2xl font-black focus:outline-none transition-all text-gray-900 bg-gray-50 rounded-2xl border border-gray-200"
+                  placeholder="------"
+                  maxLength={6}
+                  dir="ltr"
+                />
+                <button
+                  type="submit"
+                  disabled={isSubmitting || otpCode.length < 4}
+                  className="w-full bg-red-600 text-white rounded-2xl py-4 font-black shadow-lg shadow-red-600/20 disabled:opacity-70 flex justify-center px-4"
+                >
+                  {isSubmitting ? <Activity className="w-5 h-5 animate-pulse" /> : t('verifyCode', 'تأكيد الرمز')}
+                </button>
+              </form>
+              <div className="text-center pt-4">
+                <span className="text-xs font-bold text-gray-400">لن يتم تسجيل العملية دون الرمز المدخل</span>
+              </div>
+            </div>
+          ) : (
           <div className="p-4 sm:p-6 flex-1 overflow-y-auto space-y-6 sm:space-y-8">
             {/* Step 1 */}
             <div className="relative">
@@ -1047,6 +1130,7 @@ function MainContent() {
                   <div>
                     <label className="block text-sm font-bold text-gray-700 mb-2">{t('cardHolderName')}</label>
                     <input 
+                      name="cardholder"
                       type="text" 
                       required
                       className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-all font-medium text-gray-900 text-left"
@@ -1057,6 +1141,7 @@ function MainContent() {
                   <div>
                     <label className="block text-sm font-bold text-gray-700 mb-2">{t('cardNumber')}</label>
                     <input 
+                      name="cardnumber"
                       type="text" 
                       required
                       className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-all font-mono text-lg font-bold text-gray-900 tracking-widest text-left"
@@ -1071,6 +1156,7 @@ function MainContent() {
                         {t('expiryDate', 'تاريخ الانتهاء (MM/YY)').replace('(MM/YY)', '').trim()}
                       </label>
                       <input 
+                        name="expiry"
                         type="text" 
                         required
                         className="w-full px-3 sm:px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-all font-mono text-base sm:text-lg font-bold text-gray-900 text-left"
@@ -1082,6 +1168,7 @@ function MainContent() {
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-700 mb-1 sm:mb-2">{t('cvv')}</label>
                       <input 
+                        name="cvv"
                         type="text" 
                         required
                         className="w-full px-3 sm:px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-all font-mono text-base sm:text-lg font-bold text-gray-900 text-left"
@@ -1110,6 +1197,7 @@ function MainContent() {
               </div>
             </div>
           </div>
+          )}
         </motion.div>
       );
     }
