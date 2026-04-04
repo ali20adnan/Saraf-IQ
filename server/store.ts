@@ -136,7 +136,17 @@ function isValidHttpUrl(s: string): boolean {
 function getSupabase(): SupabaseClient | null {
   const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "").trim();
   const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
-  if (!url || !key || !isValidHttpUrl(url)) return null;
+  
+  if (!url || !key) {
+    console.warn("⚠️  Supabase Config Missing: Please set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in your environment.");
+    return null;
+  }
+
+  if (!isValidHttpUrl(url)) {
+    console.warn("⚠️  Supabase URL is invalid:", url);
+    return null;
+  }
+
   return createClient(url, key);
 }
 
@@ -303,23 +313,28 @@ export async function createTransaction(input: {
 /** جميع الطلبات (ملف + قاعدة) لإحصاءات البوت ولوحة التحكم */
 export async function listAllTransactionsMerged(): Promise<ServerTransaction[]> {
   const map = new Map<string, ServerTransaction>();
-  for (const t of loadFileStore().transactions) {
-    map.set(t.id, t);
-  }
+  
   if (db) {
     const { data, error } = await db
       .from("transactions")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(5000);
-    if (error) console.error("listAllTransactionsMerged:", error);
-    else if (data?.length) {
+    
+    if (!error && data?.length) {
       for (const row of data) {
         const tx = rowToTx(row as Record<string, unknown>);
         map.set(tx.id, tx);
       }
+      return Array.from(map.values());
     }
   }
+
+  // Fallback to file only if DB fails or is empty
+  for (const t of loadFileStore().transactions) {
+    map.set(t.id, t);
+  }
+  
   return Array.from(map.values()).sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   );
@@ -439,20 +454,29 @@ export type AppSettingsPublic = {
 const APP_SETTING_KEYS = ["maintenance_mode", "buy_coming_soon", "sell_coming_soon"] as const;
 
 export async function getAppSettings(): Promise<AppSettingsPublic> {
-  const merged: Record<string, string> = { ...defaultAppSettings, ...loadFileStore().app_settings };
+  const merged: Record<string, string> = { ...defaultAppSettings };
+  
   if (db) {
     const { data, error } = await db.from("settings").select("key, value");
-    if (error) console.error("getAppSettings db:", error);
-    else if (data?.length) {
+    if (!error && data?.length) {
       for (const row of data as { key: string; value: string }[]) {
         if (row.key && typeof row.value === "string") merged[row.key] = row.value;
       }
+      return {
+        maintenance_mode: merged.maintenance_mode === "true",
+        buy_coming_soon: merged.buy_coming_soon === "true",
+        sell_coming_soon: merged.sell_coming_soon === "true",
+      };
     }
   }
+
+  // Fallback to local file settings
+  const fileSettings = loadFileStore().app_settings;
+  const final = { ...merged, ...fileSettings };
   return {
-    maintenance_mode: merged.maintenance_mode === "true",
-    buy_coming_soon: merged.buy_coming_soon === "true",
-    sell_coming_soon: merged.sell_coming_soon === "true",
+    maintenance_mode: final.maintenance_mode === "true",
+    buy_coming_soon: final.buy_coming_soon === "true",
+    sell_coming_soon: final.sell_coming_soon === "true",
   };
 }
 
@@ -476,7 +500,7 @@ export async function setAppSetting(key: string, value: boolean): Promise<AppSet
 export async function listAgents(): Promise<Agent[]> {
   if (db) {
     const { data, error } = await db.from("agents").select("*").order("created_at", { ascending: false });
-    if (!error && data) return data as Agent[];
+    if (!error && data?.length) return data as Agent[];
   }
   return loadFileStore().agents;
 }
@@ -530,7 +554,7 @@ export async function listAgentNumbers(agentId?: string): Promise<AgentNumber[]>
     let query = db.from("agent_numbers").select("*").order("sort_order", { ascending: true });
     if (agentId) query = query.eq("agent_id", agentId);
     const { data, error } = await query;
-    if (!error && data) return data as AgentNumber[];
+    if (!error && data?.length) return data as AgentNumber[];
   }
   const nums = loadFileStore().agent_numbers;
   return agentId ? nums.filter(n => n.agent_id === agentId).sort((a,b) => a.sort_order - b.sort_order) : nums;
@@ -634,7 +658,7 @@ export async function toggleAgentPermission(agentId: string, permission: string)
 export async function listAdmins(): Promise<Admin[]> {
   if (db) {
     const { data, error } = await db.from("admins").select("*").order("created_at", { ascending: false });
-    if (!error && data) return data as Admin[];
+    if (!error && data?.length) return data as Admin[];
   }
   return loadFileStore().admins;
 }
@@ -687,6 +711,12 @@ export async function deleteAdmin(id: string): Promise<void> {
  * Bot Users Management (for Broadcasts)
  */
 export async function registerBotUser(telegramId: number) {
+  // Always check DB first as the primary truth
+  if (db) {
+    const { data, error } = await db.from("bot_users").select("*").eq("telegram_id", telegramId).maybeSingle();
+    if (!error && data) return data as BotUser;
+  }
+
   const store = loadFileStore();
   const exists = store.bot_users.find((u) => u.telegram_id === telegramId);
   if (exists) return exists;
@@ -696,15 +726,17 @@ export async function registerBotUser(telegramId: number) {
     telegram_id: telegramId,
     created_at: new Date().toISOString(),
   };
-  store.bot_users.push(newUser);
-  saveFileStore(store);
 
   if (db) {
-    await db.from("bot_users").upsert({
+    const { error } = await db.from("bot_users").upsert({
       telegram_id: telegramId,
       created_at: newUser.created_at,
     });
+    if (error) console.error("registerBotUser DB failure:", error);
   }
+
+  store.bot_users.push(newUser);
+  saveFileStore(store);
   return newUser;
 }
 
