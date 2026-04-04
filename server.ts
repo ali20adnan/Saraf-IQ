@@ -43,7 +43,24 @@ async function startServer() {
     /** polling: false ثم deleteWebHook — إن وُجد webhook يمنع getUpdates من العمل */
     bot = new TelegramBot(botToken, { polling: false });
 
-    const sendSiteSettingsMenu = async (chatId: number, messageId: number) => {
+    const sendAdminHome = async (chatId: number, messageId?: number) => {
+      const msg = `👔 <b>لوحة تحكم الإدارة</b>\nمرحباً بك، يمكنك إدارة الوكلاء، المسؤولين ومراقبة النظام.`;
+      const reply_markup = {
+        inline_keyboard: [
+          [{ text: "📊 حالة النظام", callback_data: "admin_status" }, { text: "👥 الوكلاء", callback_data: "admin_agents" }],
+          [{ text: "🖥️ إحصائيات عامة", callback_data: "menu_orders" }, { text: "🛡️ إدارة المسؤولين", callback_data: "admin_mgmt_list" }],
+          [{ text: "📦 إدارة العروض", callback_data: "omv_" }],
+          [{ text: "⚙️ إعدادات الموقع", callback_data: "menu_site_settings" }],
+        ]
+      };
+      if (messageId) {
+        await bot?.editMessageText(msg, { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup });
+      } else {
+        await bot?.sendMessage(chatId, msg, { parse_mode: "HTML", reply_markup });
+      }
+    };
+
+    const sendSiteSettingsMenu = async (chatId: number, messageId?: number) => {
       const s = await store.getAppSettings();
       const line = (on: boolean) => (on ? "✅ تشغيل" : "⛔ إيقاف");
       const text =
@@ -52,65 +69,36 @@ async function startServer() {
         `🛒 شراء (قريباً): ${line(s.buy_coming_soon)}\n` +
         `💰 بيع (قريباً): ${line(s.sell_coming_soon)}\n\n` +
         `<i>اضغط للتبديل — التأثير فوري على الواجهة.</i>`;
-      const options: TelegramBotTypes.EditMessageTextOptions = {
-        chat_id: chatId,
-        message_id: messageId,
-        parse_mode: "HTML",
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: s.maintenance_mode ? "⛔ إيقاف الصيانة" : "🔧 تفعيل الصيانة", callback_data: "site_toggle_maintenance_mode" }],
-            [{ text: s.buy_coming_soon ? "⛔ إيقاف «قريباً» شراء" : "🛒 تفعيل «قريباً» شراء", callback_data: "site_toggle_buy_coming_soon" }],
-            [{ text: s.sell_coming_soon ? "⛔ إيقاف «قريباً» بيع" : "💰 تفعيل «قريباً» بيع", callback_data: "site_toggle_sell_coming_soon" }],
-            [{ text: "👥 إدارة الوكلاء", callback_data: "admin_agents" }, { text: "👔 المسؤولين", callback_data: "admin_mgmt_list" }],
-            [{ text: "🔙 رجوع", callback_data: "admin_home" }],
-          ],
-        },
-      };
-      await bot?.editMessageText(text, options);
-    };
-
-    const sendMainMenu = (chatId: number, messageId?: number) => {
-      const text = "<b>القائمة الرئيسية</b>\nاختر من الخيارات أدناه:";
-      const options: TelegramBotTypes.SendMessageOptions = {
-        parse_mode: "HTML",
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "الطلبات 🛒", callback_data: "menu_orders" }],
-            [{ text: "البروفايلات 👤", callback_data: "menu_profiles" }],
-            [{ text: "إعدادات الموقع 🌐", callback_data: "menu_site_settings" }],
-            [{ text: "تعديل سعر الصرف 💱", callback_data: "menu_exchange_rate" }],
-          ],
-        },
-      };
+      
+      const buttons = [
+        [{ text: s.maintenance_mode ? "⛔ إيقاف الصيانة" : "🔧 تفعيل الصيانة", callback_data: "site_toggle_maintenance_mode" }],
+        [{ text: s.buy_coming_soon ? "⛔ إيقاف «قريباً» شراء" : "🛒 تفعيل «قريباً» شراء", callback_data: "site_toggle_buy_coming_soon" }],
+        [{ text: s.sell_coming_soon ? "⛔ إيقاف «قريباً» بيع" : "💰 تفعيل «قريباً» بيع", callback_data: "site_toggle_sell_coming_soon" }],
+        [{ text: "🔙 رجوع", callback_data: "admin_home" }],
+      ];
 
       if (messageId) {
-        void bot?.editMessageText(text, {
-          chat_id: chatId,
-          message_id: messageId,
-          ...(options as TelegramBotTypes.EditMessageTextOptions),
-        }).catch((e) => console.error("Telegram editMessageText (main menu):", e));
+        await bot?.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } });
       } else {
-        void bot
-          ?.sendMessage(chatId, text, options)
-          .catch((e) => console.error("Telegram sendMessage (main menu):", e));
+        await bot?.sendMessage(chatId, text, { parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } });
       }
     };
 
-    // --- HELPER: MENU & UI BUILDERS ---
+    const sendOffersMenu = async (chatId: number, messageId?: number) => {
+      const offers = await store.listOffers();
+      let text = "📦 <b>إدارة العروض (Offers)</b>\n\nالقائمة المعروضة حالياً على الموقع:\n\n";
+      
+      const buttons = offers.map(o => ([
+        { text: `❌ ${o.title_ar}`, callback_data: `od_${o.id}` }
+      ]));
 
-    const sendAdminHome = async (chatId: number, messageId?: number) => {
-      const msg = `👔 <b>لوحة تحكم الإدارة</b>\nمرحباً بك، يمكنك إدارة الوكلاء، المسؤولين ومراقبة النظام.`;
-      const reply_markup = {
-        inline_keyboard: [
-          [{ text: "📊 حالة النظام", callback_data: "admin_status" }, { text: "👥 الوكلاء", callback_data: "admin_agents" }],
-          [{ text: "🖥️ إحصائيات عامة", callback_data: "menu_orders" }, { text: "🛡️ إدارة المسؤولين", callback_data: "admin_mgmt_list" }],
-          [{ text: "⚙️ إعدادات الموقع", callback_data: "menu_site_settings" }],
-        ]
-      };
+      buttons.push([{ text: "➕ إضافة عرض جديد", callback_data: "oah_" }]);
+      buttons.push([{ text: "🔙 رجوع", callback_data: "admin_home" }]);
+
       if (messageId) {
-        await bot?.editMessageText(msg, { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup });
+        await bot?.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } });
       } else {
-        await bot?.sendMessage(chatId, msg, { parse_mode: "HTML", reply_markup });
+        await bot?.sendMessage(chatId, text, { parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } });
       }
     };
 
@@ -288,7 +276,6 @@ async function startServer() {
              try {
                await bot?.sendMessage(u.telegram_id, broadcastText, { parse_mode: "HTML" });
                count++;
-               // Small delay to avoid flood limits
                await new Promise(r => setTimeout(r, 50)); 
              } catch (e) { /* ignore blocked users */ }
           }
@@ -302,7 +289,7 @@ async function startServer() {
 
            const parts = text.split(" ");
            if (parts.length < 7) {
-             return bot?.sendMessage(msg.chat.id, "⚠️ استخدام خاطئ. أرسل:\n<code>ADD_OFFER [buy/sell] [العنوان_عربي] [العنوان_انجليزي] [المبلغ] [الوحدة_عربي] [الوحدة_انجليزي]</code>\n\nمثال:\n<code>ADD_OFFER sell \"بيع 100\" \"Sell 100\" \"95,000\" \"دينار\" \"IQD\"</code>", { parse_mode: "HTML" });
+             return bot?.sendMessage(msg.chat.id, "⚠️ استخدام خاطئ. أرسل:\n<code>ADD_OFFER [buy/sell] [العنوان_عربي] [العنوان_انجليزي] [المبلغ] [الوحدة_عربي] [الوحدة_انجليزي]</code>", { parse_mode: "HTML" });
            }
 
            const type = parts[1].toLowerCase() as "buy" | "sell";
@@ -319,7 +306,7 @@ async function startServer() {
              amount_display: amount,
              unit_ar: unitAr,
              unit_en: unitEn,
-             sort_order: 10, // Default bottom
+             sort_order: 10,
            });
 
            return bot?.sendMessage(msg.chat.id, `✅ تم إضافة العرض: <b>${titleAr}</b> بنجاح إلى الموقع.`, { parse_mode: "HTML" });
@@ -329,7 +316,6 @@ async function startServer() {
         console.error("Telegram onMessage error:", e);
       }
     });
-
 
     // --- CALLBACK QUERY HANDLER ---
 
@@ -350,8 +336,8 @@ async function startServer() {
         const agentsList = await store.listAgents();
         const agent = agentsList.find(a => a.telegram_id === userId);
 
-        const answer = async (text?: string) => {
-          try { await bot?.answerCallbackQuery(query.id, { text }); } catch (e) { /* ignore */ }
+        const answer = async (t?: string) => {
+          try { await bot?.answerCallbackQuery(query.id, { text: t }); } catch (e) { /* ignore */ }
         };
 
         // 1. Transaction Workflow Actions
@@ -365,17 +351,7 @@ async function startServer() {
               const allTxs = await store.listAllTransactionsMerged();
               const tx = allTxs.find(t => t.order_ref === orderRef);
               if (tx && tx.type === "sell" && tx.agent_number_id) {
-                const res = await store.incrementNumberBalance(tx.agent_number_id, tx.amount);
-                if (res?.exhausted) {
-                  const numbers = await store.listAgentNumbers(res.agentId);
-                  const num = numbers.find(n => n.id === tx.agent_number_id);
-                  const allExhausted = numbers.every(n => n.is_exhausted);
-                  let notifyMsg = `⚠️ <b>تنبيه: وصول الحد الأقصى</b>\n`;
-                  notifyMsg += `📱 الرقم: <code>${num?.phone_number}</code> وصل إلى 300,000 IQD.\n`;
-                  if (allExhausted) notifyMsg += `🛑 <b>جميع أرقام الوكيل استنفذت!</b> يرجى تفعيل وكيل آخر.`;
-                  else notifyMsg += `🔄 تم الانتقال للرقم التالي تلقائياً.`;
-                  await bot?.sendMessage(chatId, notifyMsg, { parse_mode: "HTML" });
-                }
+                await store.incrementNumberBalance(tx.agent_number_id, tx.amount);
               }
               await answer("تم إكمال الطلب ✅");
             }
@@ -386,16 +362,7 @@ async function startServer() {
             await store.updateTransactionStatusByRef(orderRef, "failed");
             return answer(action === "cancel" ? "تم إلغاء الطلب ❌" : "تم التحديث");
           }
-
-          if (action.startsWith("otp_")) {
-            const statusMap: Record<string, any> = { "otp_complete": "completed", "otp_retry": "retry_otp", "otp_reject": "failed" };
-            const status = statusMap[action];
-            if (status) await store.updateTransactionStatusByRef(orderRef, status);
-            return answer("تم تحديث حالة الـ OTP");
-          }
         }
-
-        if (data?.startsWith("ban_")) return answer("غير متصل بالنظام بعد");
 
         // 2. Admin Logic
         if (isAdmin) {
@@ -415,9 +382,7 @@ async function startServer() {
             msg += `\n⚙️ الإعدادات: صيانة (${s.maintenance_mode ? '🔴' : '🟢'}), شراء (${s.buy_coming_soon ? '⏳' : '🟢'}), بيع (${s.sell_coming_soon ? '⏳' : '🟢'})`;
             
             await bot?.editMessageText(msg, {
-              chat_id: chatId,
-              message_id: messageId,
-              parse_mode: "HTML",
+              chat_id: chatId, message_id: messageId, parse_mode: "HTML",
               reply_markup: { inline_keyboard: [[{ text: "🔄 تحديث", callback_data: "admin_status" }], [{ text: "🔙 رجوع", callback_data: "admin_home" }]] }
             });
             return answer();
@@ -427,12 +392,12 @@ async function startServer() {
             const buttons = agentsList.map(a => ([{ text: `${a.is_active ? '✅' : '⚪️'} ${a.name}`, callback_data: `ava_${a.id}` }]));
             buttons.push([{ text: "➕ إضافة وكيل جديد", callback_data: "admin_agents_help" }]);
             buttons.push([{ text: "🔙 رجوع", callback_data: "admin_home" }]);
-            await bot?.editMessageText("👥 <b>قائمة الوكلاء</b>\nاختر وكيلاً للإدارة:", { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } });
+            await bot?.editMessageText("👥 <b>قائمة الوكلاء</b>", { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } });
             return answer();
           }
 
           if (data === "admin_agents_help") {
-            await bot?.sendMessage(chatId, "👥 <b>إضافة وكيل جديد</b>\nلإضافة شخص كوكيل، اطلب منه إرسال معرفه الرقمي (Telegram ID)، ثم أرسل:\n<code>ADD_AGENT [ID] [NAME]</code>\n\nمثال: <code>ADD_AGENT 12345678 محمد أحمد</code>", { parse_mode: "HTML" });
+            await bot?.sendMessage(chatId, "👥 أرسل: <code>ADD_AGENT [ID] [NAME]</code>", { parse_mode: "HTML" });
             return answer();
           }
 
@@ -441,12 +406,10 @@ async function startServer() {
             const a = agentsList.find(x => x.id === aid);
             if (a) {
               const nums = await store.listAgentNumbers(aid);
-              let msg = `👤 <b>وكيل: ${a.name}</b>\nالحالة: ${a.is_active ? 'نشط ✅' : 'معطل ⚪️'}\n\n`;
+              let msg = `👤 <b>وكيل: ${a.name}</b>\n`;
               nums.forEach((n, i) => msg += `${i+1}. <code>${n.phone_number}</code> (${n.balance.toLocaleString()} IQD)\n`);
               await bot?.editMessageText(msg, {
-                chat_id: chatId,
-                message_id: messageId,
-                parse_mode: "HTML",
+                chat_id: chatId, message_id: messageId, parse_mode: "HTML",
                 reply_markup: {
                   inline_keyboard: [
                     [{ text: a.is_active ? "❌ تعطيل" : "✅ تفعيل", callback_data: `ata_${a.id}` }],
@@ -469,12 +432,11 @@ async function startServer() {
                 for (const other of agentsList) if (other.id !== aid && other.is_active) await store.toggleAgentActive(other.id, false);
               }
               await store.toggleAgentActive(aid, next);
-              await answer(next ? "تم التفعيل ✅" : "تم التعطيل ⚪️");
-              // Refresh view
-              const nums = await store.listAgentNumbers(aid);
+              await answer("تم التحديث");
               const updatedAgents = await store.listAgents();
               const updatedA = updatedAgents.find(x => x.id === aid);
               if (updatedA) {
+                const nums = await store.listAgentNumbers(aid);
                 let msg = `👤 <b>وكيل: ${updatedA.name}</b>\nالحالة: ${updatedA.is_active ? 'نشط ✅' : 'معطل ⚪️'}\n\n`;
                 nums.forEach((n, i) => msg += `${i+1}. <code>${n.phone_number}</code> (${n.balance.toLocaleString()} IQD)\n`);
                 await bot?.editMessageText(msg, {
@@ -496,13 +458,8 @@ async function startServer() {
           if (data.startsWith("ada_")) {
              const aid = data.replace("ada_", "");
              await store.deleteAgent(aid);
-             await answer("تم حذف الوكيل بنجاح");
-             const updatedAgents = await store.listAgents();
-             const buttons = updatedAgents.map(a => ([{ text: `${a.is_active ? '✅' : '⚪️'} ${a.name}`, callback_data: `ava_${a.id}` }]));
-             buttons.push([{ text: "➕ إضافة وكيل جديد", callback_data: "admin_agents_help" }]);
-             buttons.push([{ text: "🔙 رجوع", callback_data: "admin_home" }]);
-             await bot?.editMessageText("👥 <b>قائمة الوكلاء</b>\nتم الحذف بنجاح. اختر وكيلاً آخر للإدارة:", { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } });
-             return;
+             await answer("تم حذف الوكيل");
+             return sendAdminHome(chatId, messageId);
           }
 
           if (data.startsWith("aap_")) {
@@ -515,14 +472,13 @@ async function startServer() {
             const aid = parts[1];
             const perm = parts.slice(2).join("_");
             await store.toggleAgentPermission(aid, perm);
-            await answer("تم تحديث الصلاحية");
+            await answer("تم التحديث");
             return sendAgentPermissionsMenu(chatId, aid, messageId);
           }
 
-          // Admins Management
-          if (data === "aml") return sendAdminManagementMenu(chatId, messageId);
+          if (data === "admin_mgmt_list") return sendAdminManagementMenu(chatId, messageId);
           if (data === "amh") {
-            await bot?.sendMessage(chatId, "🛡️ <b>إضافة مسؤول جديد</b>\nلإضافة شخص كمسؤول، اطلب منه إرسال معرفه الرقمي لك، ثم أرسل:\n<code>ADD_ADMIN [ID] [NAME]</code>\n\nمثال: <code>ADD_ADMIN 12345678 علي حسن</code>", { parse_mode: "HTML" });
+            await bot?.sendMessage(chatId, "🛡️ أرسل: <code>ADD_ADMIN [ID] [NAME]</code>", { parse_mode: "HTML" });
             return answer();
           }
           if (data.startsWith("amv_")) {
@@ -534,7 +490,7 @@ async function startServer() {
             const aid = parts[1];
             const perm = parts.slice(2).join("_");
             await store.toggleAdminPermission(aid, perm);
-            await answer("تم تحديث الصلاحية");
+            await answer("تم التحديث");
             return sendAdminPermissionsMenu(chatId, aid, messageId);
           }
           if (data.startsWith("amd_")) {
@@ -554,39 +510,39 @@ async function startServer() {
             return answer("تم الحفظ ✅");
           }
 
+          if (data === "omv_") return sendOffersMenu(chatId, messageId);
+          if (data === "oah_") {
+             await bot?.sendMessage(chatId, "➕ أرسل: <code>ADD_OFFER [buy/sell] [العنوان_عربي] [العنوان_انجليزي] [المبلغ] [الوحدة_عربي] [الوحدة_انجليزي]</code>", { parse_mode: "HTML" });
+             return answer();
+          }
+          if (data.startsWith("od_")) {
+             const oid = data.replace("od_", "");
+             await store.deleteOffer(oid);
+             await answer("تم حذف العرض");
+             return sendOffersMenu(chatId, messageId);
+          }
+
           if (data === "menu_orders") {
             const counts = await store.getTransactionStatusCounts();
-            const text = `<b>إحصائيات الطلبات</b>\n\nمعلقة: ${counts.pending}\nمكتملة: ${counts.completed}\nفاشلة: ${counts.failed}`;
+            const text = `📊 <b>الطلبات:</b> معلقة ${counts.pending}, مكتملة ${counts.completed}, فاشلة ${counts.failed}`;
             await bot?.editMessageText(text, {
-              chat_id: chatId,
-              message_id: messageId,
-              parse_mode: "HTML",
+              chat_id: chatId, message_id: messageId, parse_mode: "HTML",
               reply_markup: {
                 inline_keyboard: [
-                  [{ text: `معلقة (${counts.pending})`, callback_data: "orders_list_pending" }, { text: `مكتملة (${counts.completed})`, callback_data: "orders_list_completed" }],
+                  [{ text: `معلقة (${counts.pending})`, callback_data: "orders_list_pending" }],
                   [{ text: "🔙 رجوع", callback_data: "admin_home" }]
                 ]
               }
             });
             return answer();
           }
-          
+
+          if (data.startsWith("orders_list_")) {
+            const st = data.replace("orders_list_", "");
+            const txs = await store.listTransactionsByStatusMerged(st as any, 10);
+            const text = formatOrderLines(txs, `قائمة الطلبات: ${st}`);
             await bot?.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🔙 رجوع", callback_data: "menu_orders" }]] } });
             return answer();
-          }
-
-          // ---- OFFERS MANAGEMENT CALLBACKS ----
-          if (data === "omv_") return sendOffersMenu(chatId, messageId);
-          if (data === "oah_") {
-             const helpMsg = "➕ <b>إضافة عرض جديد</b>\nلإضافة عرض، أرسل:\n<code>ADD_OFFER [buy/sell] [العنوان_عربي] [العنوان_انجليزي] [المبلغ] [الوحدة_عربي] [الوحدة_انجليزي]</code>\n\nمثال:\n<code>ADD_OFFER sell \"بيع 100\" \"Sell 100\" \"95,000\" \"دينار\" \"IQD\"</code>";
-             await bot?.sendMessage(chatId, helpMsg, { parse_mode: "HTML" });
-             return answer();
-          }
-          if (data.startsWith("od_")) {
-             const oid = data.replace("od_", "");
-             await store.deleteOffer(oid);
-             await answer("تم حذف العرض 🗑");
-             return sendOffersMenu(chatId, messageId);
           }
         }
 
@@ -595,41 +551,23 @@ async function startServer() {
           if (data === "agent_home") return sendAgentHome(chatId, agent.name, messageId);
           if (data === "agent_numbers") {
             const nums = await store.listAgentNumbers(agent.id);
-            let msg = `📱 <b>أرقامك المسجلة</b>\n\n`;
-            nums.forEach((n, i) => {
-              const bar = "▓".repeat(Math.floor((n.balance/300000)*10)) + "░".repeat(10 - Math.floor((n.balance/300000)*10));
-              msg += `${i+1}. <code>${n.phone_number}</code>\n   [${bar}] ${n.balance.toLocaleString()} IQD\n\n`;
-            });
+            let msg = `📱 <b>أرقامك</b>\n`;
+            nums.forEach((n, i) => msg += `${i+1}. <code>${n.phone_number}</code> (${n.balance.toLocaleString()} IQD)\n`);
             const buttons = nums.map(n => ([{ text: `♻️ ريست (${n.phone_number.slice(-4)})`, callback_data: `agent_reset_${n.id}` }]));
-            
-            if (agent.permissions.includes('add_number')) {
-               buttons.push([{ text: "➕ إضافة رقم", callback_data: "agent_add_prompt" }]);
-            }
+            if (agent.permissions.includes('add_number')) buttons.push([{ text: "➕ إضافة رقم", callback_data: "agent_add_prompt" }]);
             buttons.push([{ text: "🔙 رجوع", callback_data: "agent_home" }]);
             await bot?.editMessageText(msg, { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } });
             return answer();
           }
           if (data === "agent_add_prompt") {
-            if (!agent.permissions.includes('add_number')) return answer("❌ لا تملك هذه الصلاحية");
-            await bot?.sendMessage(chatId, "➕ <b>إضافة رقم جديد</b>\nيرجى كتابة الكود التالي متبوعاً بالرقم:\n\n<code>ADD_NUM 07700000000</code>", { parse_mode: "HTML" });
+            await bot?.sendMessage(chatId, "➕ أرسل: <code>ADD_NUM 07700000000</code>", { parse_mode: "HTML" });
             return answer();
           }
           if (data.startsWith("agent_reset_")) {
-            if (!agent.permissions.includes('reset_balance')) return answer("❌ لا تملك هذه الصلاحية");
             const nid = data.replace("agent_reset_", "");
             await store.updateAgentNumber(nid, { balance: 0, is_exhausted: false });
-            await answer("تم تصفير الرصيد ♻️");
-            // Auto-refresh numbers view logic
-            const nums = await store.listAgentNumbers(agent.id);
-            let msg = `📱 <b>أرقامك المسجلة</b>\n\n`;
-            nums.forEach((n, i) => {
-              const bar = "▓".repeat(Math.floor((n.balance/300000)*10)) + "░".repeat(10 - Math.floor((n.balance/300000)*10));
-              msg += `${i+1}. <code>${n.phone_number}</code>\n   [${bar}] ${n.balance.toLocaleString()} IQD\n\n`;
-            });
-            const buttons = nums.map(n => ([{ text: `♻️ ريست (${n.phone_number.slice(-4)})`, callback_data: `agent_reset_${n.id}` }]));
-            if (agent.permissions.includes('add_number')) buttons.push([{ text: "➕ إضافة رقم", callback_data: "agent_add_prompt" }]);
-            buttons.push([{ text: "🔙 رجوع", callback_data: "agent_home" }]);
-            return bot?.editMessageText(msg, { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } });
+            await answer("تم التصفير");
+            return sendAgentHome(chatId, agent.name, messageId);
           }
         }
 
