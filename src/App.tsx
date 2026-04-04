@@ -187,15 +187,28 @@ function MainContent() {
   }, []);
 
   const fetchSiteProfile = useCallback(async () => {
+    // 1. Check Cookies first for immediate UI
+    const savedName = Cookies.get('saraf_full_name');
+    const savedPhone = Cookies.get('saraf_phone');
+    if (savedName || savedPhone) {
+      const p: SiteProfileData = {
+        full_name: savedName || '',
+        email: '',
+        phone: savedPhone || '',
+      };
+      setSiteProfile(p);
+      setProfileDraft(p);
+    }
+
     try {
       const res = await fetch('/api/site-profile');
       if (!res.ok) throw new Error(String(res.status));
       const data = await res.json();
       if (data && typeof data === 'object') {
         const p: SiteProfileData = {
-          full_name: String(data.full_name ?? ''),
+          full_name: String(data.full_name ?? savedName ?? ''),
           email: String(data.email ?? ''),
-          phone: String(data.phone ?? ''),
+          phone: String(data.phone ?? savedPhone ?? ''),
         };
         setSiteProfile(p);
         setProfileDraft(p);
@@ -277,6 +290,10 @@ function MainContent() {
 
   const saveSiteProfile = async () => {
     setProfileSaving(true);
+    // Save to cookies for immediate persistence
+    Cookies.set('saraf_full_name', profileDraft.full_name, { expires: 365 });
+    Cookies.set('saraf_phone', profileDraft.phone, { expires: 365 });
+
     try {
       const res = await fetch('/api/site-profile', {
         method: 'PATCH',
@@ -289,9 +306,9 @@ function MainContent() {
       if (!res.ok) throw new Error(String(res.status));
       const data = await res.json();
       const p: SiteProfileData = {
-        full_name: String(data.full_name ?? ''),
+        full_name: String(data.full_name ?? profileDraft.full_name),
         email: String(data.email ?? ''),
-        phone: String(data.phone ?? ''),
+        phone: String(data.phone ?? profileDraft.phone),
       };
       setSiteProfile(p);
       setProfileDraft(p);
@@ -981,16 +998,6 @@ function MainContent() {
               </button>
             </div>
             
-            <div className="flex items-center justify-between pb-6 border-b border-gray-100">
-              <div>
-                <h3 className="font-bold text-gray-900">{t('darkMode')}</h3>
-                <p className="text-sm text-gray-500">{t('darkModeDesc')}</p>
-              </div>
-              <button className="w-12 h-6 bg-gray-200 rounded-full relative transition-colors">
-                <div className="w-5 h-5 bg-white rounded-full absolute left-0.5 top-0.5 shadow-sm transition-transform"></div>
-              </button>
-            </div>
-
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="font-bold text-gray-900">{t('languageSetting')}</h3>
@@ -1731,19 +1738,32 @@ function MainContent() {
   const renderMainContent = () => {
     if (appSettings.maintenance_mode && !isAdmin && currentView !== 'login') {
       return (
-        <div className="flex-1 flex items-center justify-center p-6">
-          <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-12 text-center max-w-md w-full">
-            <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-6">
+        <div className="flex-1 flex items-center justify-center p-6 bg-gray-50">
+          <div className="bg-white rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.05)] border border-gray-100 p-12 text-center max-w-md w-full relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1.5 bg-red-600"></div>
+            <div className="w-20 h-20 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-8 shadow-sm">
               <ShieldAlert className="w-10 h-10 text-red-500" />
             </div>
-            <h2 className="text-2xl font-black text-gray-900 mb-3">Maintenance Mode</h2>
-            <p className="text-gray-500 font-medium mb-8">We are currently performing scheduled maintenance. Please check back later.</p>
-            <button 
-              onClick={() => setCurrentView('login')}
-              className="text-red-600 font-bold hover:underline"
-            >
-              Admin Login
-            </button>
+            <h2 className="text-2xl font-black text-gray-900 mb-4 tracking-tight">وضع الصيانة</h2>
+            <p className="text-gray-500 font-medium mb-10 leading-relaxed text-lg">
+              عذراً، الموقع حالياً في وضع الصيانة المبرمجة لتقديم خدمة أفضل. يرجى العودة لاحقاً.
+            </p>
+            <div className="space-y-4">
+              <a 
+                href="https://t.me/sarafiq_support" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="w-full bg-red-600 text-white py-4 rounded-xl font-bold hover:bg-red-700 transition-all shadow-lg shadow-red-600/20 flex items-center justify-center gap-2"
+              >
+                اتصل بنا للدعم الفني
+              </a>
+              <button 
+                onClick={() => setCurrentView('login')}
+                 className="text-gray-400 text-xs hover:text-gray-600 transition-colors block mx-auto"
+              >
+                Portal Access
+              </button>
+            </div>
           </div>
         </div>
       );

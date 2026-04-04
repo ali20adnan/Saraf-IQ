@@ -1,8 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
-@custom-variant dark (&:where(.dark, .dark *));
-
 @theme {
   --font-sans: "Inter", "Cairo", ui-sans-serif, system-ui, sans-serif;
 }
@@ -11,52 +9,6 @@ body {
   font-family: var(--font-sans);
   background-color: #F8FAFC;
   -webkit-tap-highlight-color: transparent;
-}
-
-.dark body {
-  background-color: #111827;
-  color: #f9fafb;
-}
-
-/* Global Dark Mode Overrides */
-.dark .bg-white {
-  background-color: #1f2937 !important;
-}
-.dark .bg-gray-50 {
-  background-color: #111827 !important;
-}
-.dark .bg-gray-100 {
-  background-color: #374151 !important;
-}
-.dark .bg-gray-200 {
-  background-color: #4b5563 !important;
-}
-.dark .text-gray-900 {
-  color: #f9fafb !important;
-}
-.dark .text-gray-800 {
-  color: #f3f4f6 !important;
-}
-.dark .text-gray-700 {
-  color: #e5e7eb !important;
-}
-.dark .text-gray-600 {
-  color: #d1d5db !important;
-}
-.dark .text-gray-500 {
-  color: #9ca3af !important;
-}
-.dark .border-gray-100 {
-  border-color: #374151 !important;
-}
-.dark .border-gray-200 {
-  border-color: #4b5563 !important;
-}
-.dark .hover\:bg-gray-50:hover {
-  background-color: #374151 !important;
-}
-.dark .hover\:bg-gray-100:hover {
-  background-color: #4b5563 !important;
 }
 
 .pb-safe {
@@ -72,5 +24,7 @@ input::-webkit-inner-spin-button {
 }
 
 input[type=number] {
+  -webkit-appearance: textfield;
   -moz-appearance: textfield;
+  appearance: textfield;
 }
