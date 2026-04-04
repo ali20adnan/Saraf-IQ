@@ -539,11 +539,11 @@ function MainContent() {
         <div className="bg-white p-8 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100">
           {/* Logo and Identity */}
           <div className="flex flex-col items-center gap-3 mb-8">
-            <div className="w-20 h-20 bg-white rounded-3xl flex items-center justify-center shadow-md border border-red-100/50 overflow-hidden">
+            <div className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center shadow-md border border-red-100/50 p-2">
               <img
                 src="/icons/logo.png"
                 alt={t('appTitle')}
-                className="w-16 h-16 object-contain"
+                className="w-full h-full object-contain"
                 loading="eager"
               />
             </div>
@@ -580,11 +580,18 @@ function MainContent() {
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">{t('password', 'كلمة المرور')}</label>
               <div className="relative">
-                <input name="password" type={showPassword ? 'text' : 'password'} required className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all" placeholder="••••••••" dir="ltr" />
+                <input 
+                  name="password" 
+                  type={showPassword ? 'text' : 'password'} 
+                  required 
+                  className="w-full px-4 py-3 pe-12 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all" 
+                  placeholder="••••••••" 
+                  dir="ltr" 
+                />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors p-1"
                 >
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
