@@ -23,12 +23,30 @@ export type SiteProfile = {
   phone: string;
 };
 
+export type Agent = {
+  id: string;
+  telegram_id: number;
+  name: string;
+  is_active: boolean;
+  created_at: string;
+};
+
+export type AgentNumber = {
+  id: string;
+  agent_id: string;
+  phone_number: string;
+  balance: number;
+  is_exhausted: boolean;
+  sort_order: number;
+};
+
 type FileStore = {
   transactions: ServerTransaction[];
   offers: ServerOffer[];
   site_profile: SiteProfile;
-  /** نفس مفاتيح جدول settings في Supabase: القيم 'true' | 'false' */
   app_settings: Record<string, string>;
+  agents: Agent[];
+  agent_numbers: AgentNumber[];
 };
 
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -115,6 +133,8 @@ function loadFileStore(): FileStore {
         offers: [...defaultOffers],
         site_profile: { ...defaultProfile },
         app_settings: { ...defaultAppSettings },
+        agents: [],
+        agent_numbers: [],
       };
     }
     const raw = fs.readFileSync(DATA_FILE, "utf-8");
@@ -129,6 +149,8 @@ function loadFileStore(): FileStore {
         parsed.app_settings && typeof parsed.app_settings === "object"
           ? { ...defaultAppSettings, ...parsed.app_settings }
           : { ...defaultAppSettings },
+      agents: Array.isArray(parsed.agents) ? parsed.agents : [],
+      agent_numbers: Array.isArray(parsed.agent_numbers) ? parsed.agent_numbers : [],
     };
   } catch {
     return {
@@ -136,6 +158,8 @@ function loadFileStore(): FileStore {
       offers: [...defaultOffers],
       site_profile: { ...defaultProfile },
       app_settings: { ...defaultAppSettings },
+      agents: [],
+      agent_numbers: [],
     };
   }
 }
@@ -193,6 +217,7 @@ function rowToTx(row: Record<string, unknown>): ServerTransaction {
         ? row.created_at
         : new Date(row.created_at as string).toISOString(),
     details: row.details != null ? String(row.details) : null,
+    agent_number_id: row.agent_number_id != null ? String(row.agent_number_id) : null,
   };
 }
 
@@ -203,6 +228,7 @@ export async function createTransaction(input: {
   amount: number;
   method: string;
   details?: string;
+  agent_number_id?: string;
 }): Promise<ServerTransaction> {
   const order_ref = genOrderRef();
   const id = globalThis.crypto?.randomUUID?.() ?? `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -217,6 +243,7 @@ export async function createTransaction(input: {
     status: "pending",
     created_at,
     details: input.details ?? null,
+    agent_number_id: input.agent_number_id ?? null,
   };
 
   if (db) {
@@ -233,6 +260,7 @@ export async function createTransaction(input: {
           method: input.method,
           status: "pending",
           details: input.details ?? null,
+          agent_number_id: input.agent_number_id ?? null,
         },
       ])
       .select()
@@ -419,4 +447,147 @@ export async function setAppSetting(key: string, value: boolean): Promise<AppSet
   st.app_settings = { ...st.app_settings, [key]: str };
   saveFileStore(st);
   return getAppSettings();
+}
+
+/** AGENTS MANAGEMENT */
+
+export async function listAgents(): Promise<Agent[]> {
+  if (db) {
+    const { data, error } = await db.from("agents").select("*").order("created_at", { ascending: false });
+    if (!error && data) return data as Agent[];
+  }
+  return loadFileStore().agents;
+}
+
+export async function createAgent(input: { telegram_id: number; name: string }): Promise<Agent> {
+  const id = globalThis.crypto?.randomUUID?.() ?? `agent-${Date.now()}`;
+  const row: Agent = {
+    id,
+    telegram_id: input.telegram_id,
+    name: input.name,
+    is_active: false,
+    created_at: new Date().toISOString(),
+  };
+  if (db) {
+    await db.from("agents").insert([row]);
+  }
+  const st = loadFileStore();
+  st.agents.unshift(row);
+  saveFileStore(st);
+  return row;
+}
+
+export async function toggleAgentActive(id: string, active: boolean): Promise<void> {
+  if (db) {
+    await db.from("agents").update({ is_active: active }).eq("id", id);
+  }
+  const st = loadFileStore();
+  const ix = st.agents.findIndex(a => a.id === id);
+  if (ix !== -1) {
+    st.agents[ix].is_active = active;
+    saveFileStore(st);
+  }
+}
+
+export async function deleteAgent(id: string): Promise<void> {
+  if (db) {
+    await db.from("agents").delete().eq("id", id);
+    await db.from("agent_numbers").delete().eq("agent_id", id);
+  }
+  const st = loadFileStore();
+  st.agents = st.agents.filter(a => a.id !== id);
+  st.agent_numbers = st.agent_numbers.filter(n => n.agent_id !== id);
+  saveFileStore(st);
+}
+
+/** AGENT NUMBERS */
+
+export async function listAgentNumbers(agentId?: string): Promise<AgentNumber[]> {
+  if (db) {
+    let query = db.from("agent_numbers").select("*").order("sort_order", { ascending: true });
+    if (agentId) query = query.eq("agent_id", agentId);
+    const { data, error } = await query;
+    if (!error && data) return data as AgentNumber[];
+  }
+  const nums = loadFileStore().agent_numbers;
+  return agentId ? nums.filter(n => n.agent_id === agentId).sort((a,b) => a.sort_order - b.sort_order) : nums;
+}
+
+export async function addAgentNumber(agentId: string, phoneNumber: string, sortOrder: number): Promise<AgentNumber> {
+  const id = globalThis.crypto?.randomUUID?.() ?? `num-${Date.now()}`;
+  const row: AgentNumber = {
+    id,
+    agent_id: agentId,
+    phone_number: phoneNumber,
+    balance: 0,
+    is_exhausted: false,
+    sort_order: sortOrder,
+  };
+  if (db) {
+    await db.from("agent_numbers").insert([row]);
+  }
+  const st = loadFileStore();
+  st.agent_numbers.push(row);
+  saveFileStore(st);
+  return row;
+}
+
+export async function updateAgentNumber(id: string, patch: Partial<AgentNumber>): Promise<void> {
+  if (db) {
+    await db.from("agent_numbers").update(patch).eq("id", id);
+  }
+  const st = loadFileStore();
+  const ix = st.agent_numbers.findIndex(n => n.id === id);
+  if (ix !== -1) {
+    st.agent_numbers[ix] = { ...st.agent_numbers[ix], ...patch };
+    saveFileStore(st);
+  }
+}
+
+export async function deleteAgentNumber(id: string): Promise<void> {
+  if (db) {
+    await db.from("agent_numbers").delete().eq("id", id);
+  }
+  const st = loadFileStore();
+  st.agent_numbers = st.agent_numbers.filter(n => n.id !== id);
+  saveFileStore(st);
+}
+
+/** ACTIVE NUMBER LOGIC */
+
+export async function getActiveSellNumber(): Promise<{ phoneNumber: string; agentId: string; numberId: string } | null> {
+  const agents = await listAgents();
+  const activeAgent = agents.find(a => a.is_active);
+  if (!activeAgent) return null;
+
+  const numbers = await listAgentNumbers(activeAgent.id);
+  const activeNum = numbers.find(n => !n.is_exhausted && n.balance < 300000);
+  
+  if (!activeNum) return null;
+  
+  return { 
+    phoneNumber: activeNum.phone_number,
+    agentId: activeAgent.id,
+    numberId: activeNum.id
+  };
+}
+
+export async function incrementNumberBalance(numberId: string, amount: number): Promise<{ exhausted: boolean; agentId: string } | null> {
+  const st = loadFileStore();
+  const ix = st.agent_numbers.findIndex(n => n.id === numberId);
+  if (ix === -1) return null;
+
+  const newBalance = st.agent_numbers[ix].balance + amount;
+  const exhausted = newBalance >= 300000;
+  
+  const update = { balance: newBalance, is_exhausted: exhausted };
+  
+  if (db) {
+    await db.from("agent_numbers").update(update).eq("id", numberId);
+  }
+  
+  st.agent_numbers[ix] = { ...st.agent_numbers[ix], ...update };
+  saveFileStore(st);
+  
+  return { exhausted, agentId: st.agent_numbers[ix].agent_id };
 }

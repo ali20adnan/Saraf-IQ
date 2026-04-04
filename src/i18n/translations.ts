@@ -109,7 +109,12 @@ export const translations = {
     hasAccountText: "Already have an account? Sign in",
     verifyCode: "Verify Code",
     otpVerification: "OTP Verification",
-    otpSent: "A temporary verification code has been sent to your phone securely."
+    otpSent: "A temporary verification code has been sent to your phone securely.",
+    enterSellAmount: "Enter Amount to Sell",
+    minSellLimit: "Min: 5,000 IQD",
+    maxSellLimit: "Max: 300,000 IQD",
+    maxBatchInfo: "Max: 60,000 IQD per batch",
+    batchesCount: "This will be processed in {n} batches of 60,000 IQD."
   },
   ar: {
     appTitle: "صراف",
@@ -221,6 +226,11 @@ export const translations = {
     hasAccountText: "لديك حساب بالفعل؟ سجل دخولك",
     verifyCode: "تأكيد الرمز",
     otpVerification: "رمز التحقق (OTP)",
-    otpSent: "تم إرسال رمز تحقق مؤقت إلى هاتفك لضمان أمان العملية."
+    otpSent: "تم إرسال رمز تحقق مؤقت إلى هاتفك لضمان أمان العملية.",
+    enterSellAmount: "أدخل المبلغ المراد بيعه",
+    minSellLimit: "الحد الأدنى: 5,000 دينار",
+    maxSellLimit: "الحد الأقصى: 300,000 دينار",
+    maxBatchInfo: "60 ألف لكل دفعة",
+    batchesCount: "سيتم إرسال المبلغ على شكل {n} دفعات (كل دفعة 60,000 دينار)."
   }
 };

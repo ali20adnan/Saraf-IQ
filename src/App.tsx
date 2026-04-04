@@ -27,6 +27,30 @@ type SiteProfileData = {
   phone: string;
 };
 
+type AgentNumber = {
+  id: string;
+  agent_id: string;
+  phone_number: string;
+  balance: number;
+  is_exhausted: boolean;
+  sort_order: number;
+};
+
+type Agent = {
+  id: string;
+  telegram_id: number;
+  name: string;
+  is_active: boolean;
+  created_at: string;
+  numbers: AgentNumber[];
+};
+
+type ActiveAgentNumber = {
+  phoneNumber: string;
+  agentId: string;
+  numberId: string;
+};
+
 function MainContent() {
   const { t, lang, toggleLanguage, dir } = useLanguage();
   const initialView = window.location.pathname === '/admin' ? 'login' : 'home';
@@ -48,6 +72,7 @@ function MainContent() {
   const [otpState, setOtpState] = useState<'input' | 'checking' | 'failed'>('input');
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
   const [otpCode, setOtpCode] = useState('');
+  const [sellAmount, setSellAmount] = useState<number>(10000);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   
@@ -63,6 +88,12 @@ function MainContent() {
   const [profileDraft, setProfileDraft] = useState<SiteProfileData>({ full_name: '', email: '', phone: '' });
   const [profileSaving, setProfileSaving] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  
+  // Agents State
+  const [activeAgentNumber, setActiveAgentNumber] = useState<ActiveAgentNumber | null>(null);
+  const [adminAgents, setAdminAgents] = useState<Agent[]>([]);
+  const [isAdminAgentsLoading, setIsAdminAgentsLoading] = useState(false);
+  const [adminTab, setAdminTab] = useState<'overview' | 'agents'>('overview');
 
   const dashboardStats = useMemo(() => {
     const activeOrders = transactions.filter((tx) => tx.status === 'pending').length;
@@ -103,6 +134,34 @@ function MainContent() {
       console.error('Error fetching settings:', error);
     }
   }, []);
+
+  const fetchActiveNumber = useCallback(async () => {
+    try {
+      const res = await fetch('/api/active-number');
+      if (res.ok) {
+        const data = await res.json();
+        setActiveAgentNumber(data);
+      }
+    } catch (e) {
+      console.error("fetchActiveNumber:", e);
+    }
+  }, []);
+
+  const fetchAdminAgents = useCallback(async () => {
+    if (!isAdmin) return;
+    setIsAdminAgentsLoading(true);
+    try {
+      const res = await fetch('/api/admin/agents');
+      if (res.ok) {
+        const data = await res.json();
+        setAdminAgents(data);
+      }
+    } catch (e) {
+      console.error("fetchAdminAgents:", e);
+    } finally {
+      setIsAdminAgentsLoading(false);
+    }
+  }, [isAdmin]);
 
   const fetchTransactions = useCallback(async () => {
     if (!clientId) return;
@@ -176,12 +235,17 @@ function MainContent() {
     fetchTransactions();
     fetchOffers();
     fetchSiteProfile();
+    fetchActiveNumber();
+    if (isAdmin && (currentView === 'admin' || currentView === 'login')) {
+      fetchAdminAgents();
+    }
     const tmr = window.setInterval(() => {
       fetchTransactions();
       fetchSettings();
+      fetchActiveNumber();
     }, 25000);
     return () => window.clearInterval(tmr);
-  }, [clientId, fetchSettings, fetchTransactions, fetchOffers, fetchSiteProfile]);
+  }, [clientId, isAdmin, currentView, fetchSettings, fetchTransactions, fetchOffers, fetchSiteProfile, fetchActiveNumber, fetchAdminAgents]);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
@@ -320,7 +384,6 @@ function MainContent() {
     
     try {
       const method = currentMethods.find(m => m.id === selectedMethod)?.name || 'Unknown';
-      const amount = txType === 'buy' ? cardValue * quantity : 100000;
       let details = '';
       if (txType === 'buy') {
         const form = e.target as HTMLFormElement;
@@ -341,7 +404,10 @@ function MainContent() {
                   `🔢 نهاية البطاقة: ${last4} | CVV مفتاح: ${lastCvv}\n` +
                   `💰 الفئة: ${cardValue} | الكمية: ${quantity}`;
       } else {
-        details = 'بيع رصيد ونقاط';
+        const batches = Math.ceil(sellAmount / 60000);
+        details = `📉 بيع رصيد اسيا\n` +
+                  `💰 المبلغ: ${sellAmount.toLocaleString()} دينار\n` +
+                  `📦 عدد الدفعات (60ك): ${batches}`;
       }
 
       const res = await fetch('/api/transactions', {
@@ -351,9 +417,10 @@ function MainContent() {
           client_id: clientId,
           user_id: userId,
           type: txType,
-          amount,
+          amount: txType === 'buy' ? cardValue * quantity : sellAmount,
           method,
           details,
+          agent_number_id: txType === 'sell' ? activeAgentNumber?.numberId : null
         }),
       });
       if (!res.ok) {
@@ -496,62 +563,275 @@ function MainContent() {
     </div>
   );
 
-  const renderAdminPanel = () => (
-    <div className="flex-1 p-6 lg:p-8">
-      <div className="max-w-4xl mx-auto">
-        <h2 className="text-2xl font-black text-gray-900 mb-8">Admin Dashboard</h2>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-            <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><Settings className="w-5 h-5 text-gray-500" /> System Settings</h3>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-gray-700">Maintenance Mode</span>
-                <button 
-                  onClick={() => toggleSetting('maintenance_mode')}
-                  className={`w-12 h-6 rounded-full relative transition-colors ${appSettings.maintenance_mode ? 'bg-red-500' : 'bg-gray-200'}`}
-                >
-                  <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow-sm transition-transform ${appSettings.maintenance_mode ? 'left-6' : 'left-0.5'}`}></div>
-                </button>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-gray-700">Buy Section (Coming Soon)</span>
-                <button 
-                  onClick={() => toggleSetting('buy_coming_soon')}
-                  className={`w-12 h-6 rounded-full relative transition-colors ${appSettings.buy_coming_soon ? 'bg-red-500' : 'bg-gray-200'}`}
-                >
-                  <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow-sm transition-transform ${appSettings.buy_coming_soon ? 'left-6' : 'left-0.5'}`}></div>
-                </button>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-gray-700">Sell Section (Coming Soon)</span>
-                <button 
-                  onClick={() => toggleSetting('sell_coming_soon')}
-                  className={`w-12 h-6 rounded-full relative transition-colors ${appSettings.sell_coming_soon ? 'bg-red-500' : 'bg-gray-200'}`}
-                >
-                  <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow-sm transition-transform ${appSettings.sell_coming_soon ? 'left-6' : 'left-0.5'}`}></div>
-                </button>
-              </div>
+  const renderAdminPanel = () => {
+    const handleToggleAgent = async (id: string, current: boolean) => {
+      try {
+        const res = await fetch(`/api/admin/agents/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ is_active: !current }),
+        });
+        if (res.ok) fetchAdminAgents();
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    const handleDeleteAgent = async (id: string) => {
+      if (!window.confirm("Are you sure? This will delete all associated numbers.")) return;
+      try {
+        const res = await fetch(`/api/admin/agents/${id}`, { method: 'DELETE' });
+        if (res.ok) fetchAdminAgents();
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    const handleAddAgent = async (e: React.FormEvent) => {
+      e.preventDefault();
+      const form = e.target as HTMLFormElement;
+      const nameElement = form.elements.namedItem('agent_name') as HTMLInputElement;
+      const tidElement = form.elements.namedItem('telegram_id') as HTMLInputElement;
+      if (!nameElement || !tidElement) return;
+
+      try {
+        const res = await fetch('/api/admin/agents', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: nameElement.value, telegram_id: tidElement.value }),
+        });
+        if (res.ok) {
+          fetchAdminAgents();
+          form.reset();
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    const handleAddNumber = async (agentId: string, e: React.FormEvent) => {
+      e.preventDefault();
+      const form = e.target as HTMLFormElement;
+      const phoneElement = form.elements.namedItem('phone') as HTMLInputElement;
+      const orderElement = form.elements.namedItem('order') as HTMLInputElement;
+      if (!phoneElement || !orderElement) return;
+
+      try {
+        const res = await fetch('/api/admin/numbers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ agent_id: agentId, phone_number: phoneElement.value, sort_order: orderElement.value }),
+        });
+        if (res.ok) {
+          fetchAdminAgents();
+          form.reset();
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    const handleResetNumber = async (id: string) => {
+      try {
+        await fetch(`/api/admin/numbers/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ balance: 0, is_exhausted: false }),
+        });
+        fetchAdminAgents();
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    const handleDeleteNumber = async (id: string) => {
+      try {
+        await fetch(`/api/admin/numbers/${id}`, { method: 'DELETE' });
+        fetchAdminAgents();
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    return (
+      <div className="flex-1 p-4 lg:p-8 overflow-y-auto">
+        <div className="max-w-5xl mx-auto">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+            <h2 className="text-2xl font-black text-gray-900">Admin Dashboard</h2>
+            <div className="flex bg-gray-100 p-1.5 rounded-2xl w-fit">
+              <button 
+                onClick={() => setAdminTab('overview')}
+                className={`px-6 py-2 rounded-xl text-sm font-black transition-all ${adminTab === 'overview' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                Overview
+              </button>
+              <button 
+                onClick={() => setAdminTab('agents')}
+                className={`px-6 py-2 rounded-xl text-sm font-black transition-all ${adminTab === 'agents' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                Agents (الوكلاء)
+              </button>
             </div>
           </div>
           
-          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-            <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><User className="w-5 h-5 text-gray-500" /> CRM Overview</h3>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
-                <span className="text-gray-600 font-medium">Total Users</span>
-                <span className="font-black text-gray-900">1,248</span>
+          {adminTab === 'overview' ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+                <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><Settings className="w-5 h-5 text-gray-500" /> System Settings</h3>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-gray-700">Maintenance Mode</span>
+                    <button 
+                      onClick={() => toggleSetting('maintenance_mode')}
+                      className={`w-12 h-6 rounded-full relative transition-colors ${appSettings.maintenance_mode ? 'bg-red-500' : 'bg-gray-200'}`}
+                    >
+                      <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow-sm transition-transform ${appSettings.maintenance_mode ? 'left-6' : 'left-0.5'}`}></div>
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-gray-700">Buy Section (Coming Soon)</span>
+                    <button 
+                      onClick={() => toggleSetting('buy_coming_soon')}
+                      className={`w-12 h-6 rounded-full relative transition-colors ${appSettings.buy_coming_soon ? 'bg-red-500' : 'bg-gray-200'}`}
+                    >
+                      <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow-sm transition-transform ${appSettings.buy_coming_soon ? 'left-6' : 'left-0.5'}`}></div>
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-gray-700">Sell Section (Coming Soon)</span>
+                    <button 
+                      onClick={() => toggleSetting('sell_coming_soon')}
+                      className={`w-12 h-6 rounded-full relative transition-colors ${appSettings.sell_coming_soon ? 'bg-red-500' : 'bg-gray-200'}`}
+                    >
+                      <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow-sm transition-transform ${appSettings.sell_coming_soon ? 'left-6' : 'left-0.5'}`}></div>
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
-                <span className="text-gray-600 font-medium">Active Transactions</span>
-                <span className="font-black text-gray-900">{transactions.length}</span>
+              
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+                <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><Activity className="w-5 h-5 text-gray-500" /> CRM Overview</h3>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                    <span className="text-gray-600 font-medium">Total Users</span>
+                    <span className="font-black text-gray-900">1,248</span>
+                  </div>
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                    <span className="text-gray-600 font-medium">Active Transactions</span>
+                    <span className="font-black text-gray-900">{transactions.length}</span>
+                  </div>
+                   <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                    <span className="text-gray-600 font-medium">Completed Value</span>
+                    <span className="font-black text-gray-900">{dashboardStats.totalCompletedIqd.toLocaleString()} IQD</span>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Add Agent Form */}
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+                <h3 className="font-bold text-gray-900 mb-4">Add New Agent (وكيل)</h3>
+                <form onSubmit={handleAddAgent} className="flex flex-col sm:flex-row gap-3">
+                  <input name="agent_name" required placeholder="Agent Name" className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/10 outline-none transition-all" />
+                  <input name="telegram_id" required placeholder="Telegram ID" className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/10 outline-none transition-all" />
+                  <button type="submit" className="bg-gray-900 text-white px-8 py-2.5 rounded-xl font-bold hover:bg-black transition-all">Add Agent</button>
+                </form>
+              </div>
+
+              {/* Agents List */}
+              <div className="grid grid-cols-1 gap-6 pb-12">
+                {adminAgents.map(agent => (
+                  <div key={agent.id} className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+                    <div className="p-6 border-b border-gray-50 bg-gray-50/30 flex items-center justify-between gap-4 flex-wrap">
+                       <div className="flex items-center gap-4">
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black ${agent.is_active ? 'bg-red-600 text-white' : 'bg-gray-200 text-gray-500'}`}>
+                            {agent.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <h4 className="font-black text-gray-900">{agent.name}</h4>
+                            <p className="text-xs text-gray-500 font-bold">ID: {agent.telegram_id}</p>
+                          </div>
+                       </div>
+                       <div className="flex items-center gap-3">
+                         <button 
+                            onClick={() => handleToggleAgent(agent.id, agent.is_active)}
+                            className={`px-4 py-1.5 rounded-xl text-xs font-black transition-all ${agent.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                          >
+                            {agent.is_active ? 'Active' : 'Activate'}
+                          </button>
+                          <button onClick={() => handleDeleteAgent(agent.id)} className="p-2 text-gray-300 hover:text-red-600 transition-colors">
+                            <XCircle className="w-5 h-5" />
+                          </button>
+                       </div>
+                    </div>
+                    
+                    <div className="p-6 space-y-5">
+                      <div className="flex items-center justify-between">
+                        <h5 className="text-sm font-black text-gray-800">Phone Numbers (أرقام الجوال)</h5>
+                      </div>
+                      
+                      <div className="space-y-4">
+                        {agent.numbers.map((num, idx) => (
+                          <div key={num.id} className="p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                             <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                                <div className="flex items-center gap-3">
+                                  <span className="w-6 h-6 rounded-lg bg-white border border-gray-200 flex items-center justify-center text-[10px] font-black text-gray-400">{idx + 1}</span>
+                                  <span className="font-mono font-black text-gray-900">{num.phone_number}</span>
+                                  {num.is_exhausted && (
+                                    <span className="bg-red-100 text-red-600 px-2 py-0.5 rounded-full text-[10px] font-black uppercase">Exhausted</span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-3">
+                                   <button onClick={() => handleResetNumber(num.id)} className="text-[10px] font-black text-red-600 hover:underline">Reset Balance</button>
+                                   <button onClick={() => handleDeleteNumber(num.id)} className="p-1.5 text-gray-300 hover:text-red-500 transition-colors"><XCircle className="w-4 h-4" /></button>
+                                </div>
+                             </div>
+                             
+                             {/* Progress Bar */}
+                             <div className="space-y-2">
+                                <div className="flex justify-between text-[10px] font-black">
+                                   <span className="text-gray-500 uppercase tracking-tighter">Usage Progress</span>
+                                   <span className={num.balance >= 300000 ? 'text-red-600' : 'text-gray-900'}>{num.balance.toLocaleString()} / 300,000 IQD</span>
+                                </div>
+                                <div className="w-full h-2.5 bg-gray-200 rounded-full overflow-hidden border border-gray-100">
+                                   <motion.div 
+                                      initial={{ width: 0 }}
+                                      animate={{ width: `${Math.min(100, (num.balance / 300000) * 100)}%` }}
+                                      className={`h-full ${num.balance >= 300000 ? 'bg-red-500' : 'bg-gray-900'}`}
+                                   />
+                                </div>
+                             </div>
+                          </div>
+                        ))}
+                        
+                        {/* Add Number Row */}
+                        <form onSubmit={(e) => handleAddNumber(agent.id, e)} className="flex gap-2 pt-4 border-t border-gray-100">
+                           <input name="phone" required placeholder="Phone Number (077...)" className="flex-1 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-red-500/10 outline-none" />
+                           <input name="order" type="number" defaultValue={agent.numbers.length + 1} className="w-16 px-2 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-center focus:ring-2 focus:ring-red-500/10 outline-none" />
+                           <button type="submit" className="bg-gray-100 text-gray-900 px-5 py-2.5 rounded-xl text-xs font-black hover:bg-gray-200 transition-all">+ Add Number</button>
+                        </form>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                
+                {adminAgents.length === 0 && (
+                  <div className="py-24 text-center bg-white rounded-3xl border border-dashed border-gray-200">
+                    <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                       <User className="w-8 h-8 text-gray-300" />
+                    </div>
+                    <p className="text-gray-400 font-bold">No agents added yet.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
-    </div>
-  );
+    );
+  };
+
 
   const renderHistory = () => (
     <div className="flex-1 p-6 lg:p-8">
@@ -1263,9 +1543,9 @@ function MainContent() {
     }
 
     // Sell Form (Existing)
-    const step1Title = t('paymentStep1');
-    const step1Label = t('asiaNumberText');
-    const step1Number = t('asiaNumber');
+    const step1Title = activeAgentNumber ? t('paymentStep1') : t('sellComingSoon');
+    const step1Label = activeAgentNumber ? t('asiaNumberText') : "لا يوجد وكيل نشط حالياً";
+    const step1Number = activeAgentNumber?.phoneNumber || "—";
     const step1Amount = t('amountToTransfer');
     const step2Label = t('receivingNumber');
 
@@ -1300,26 +1580,71 @@ function MainContent() {
               <div className="w-8 h-8 rounded-full font-black flex items-center justify-center shrink-0 shadow-sm border bg-red-100 text-red-600 border-red-200">1</div>
               <div className="flex-1">
                 <h3 className="font-bold text-gray-900 mb-3 text-base">{step1Title}</h3>
-                <div className="bg-gray-50 p-4 sm:p-5 rounded-2xl border border-gray-200">
-                  <div className="flex justify-between items-center mb-4">
-                    <div>
-                      <p className="text-xs text-gray-500 mb-1 font-medium">
-                        {step1Label}
-                      </p>
-                      <p className="font-mono font-black text-xl tracking-wider text-gray-900" dir="ltr">{step1Number}</p>
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center mb-4 p-4 bg-white rounded-xl border border-gray-100 shadow-sm">
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1 font-medium">
+                          {step1Label}
+                        </p>
+                        <p className="font-mono font-black text-xl tracking-wider text-gray-900" dir="ltr">{step1Number}</p>
+                      </div>
+                      <button 
+                        onClick={() => handleCopy(step1Number)}
+                        className="p-3 bg-gray-50 rounded-xl border border-gray-200 text-gray-600 hover:text-red-600 hover:border-red-200 transition-all active:scale-90"
+                      >
+                        {copied ? <CheckCircle2 className="w-5 h-5 text-green-600" /> : <Copy className="w-5 h-5" />}
+                      </button>
                     </div>
-                    <button 
-                      onClick={() => handleCopy(step1Number)}
-                      className="p-3 bg-white rounded-xl shadow-sm border border-gray-200 text-gray-600 hover:text-red-600 hover:border-red-200 transition-all active:scale-90"
-                    >
-                      {copied ? <CheckCircle2 className="w-5 h-5 text-green-600" /> : <Copy className="w-5 h-5" />}
-                    </button>
+
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-2">{t('enterSellAmount')}</label>
+                      <div className="relative group">
+                        <input 
+                          type="text" 
+                          inputMode="numeric"
+                          value={sellAmount === 0 ? '' : sellAmount.toLocaleString()}
+                          onChange={(e) => {
+                            const raw = e.target.value.replace(/\D/g, '');
+                            const num = parseInt(raw, 10) || 0;
+                            setSellAmount(num);
+                          }}
+                          className={`w-full pl-5 pr-16 py-4 bg-white border rounded-2xl focus:ring-4 outline-none transition-all font-mono text-xl font-black text-gray-900 
+                            ${(sellAmount > 0 && (sellAmount < 5000 || sellAmount > 300000)) ? 'border-red-300 focus:ring-red-500/10 focus:border-red-500' : 'border-gray-200 focus:ring-red-500/10 focus:border-red-500'}`}
+                          placeholder="0,000"
+                          dir="ltr"
+                        />
+                        <div className="absolute inset-y-0 right-5 flex items-center pointer-events-none text-gray-400 font-bold">
+                          {t('iqd')}
+                        </div>
+                      </div>
+                      <div className="flex justify-between mt-2 px-1">
+                        <span className={`text-[10px] font-bold uppercase tracking-tighter ${(sellAmount > 0 && (sellAmount < 5000 || sellAmount > 300000)) ? 'text-red-500 animate-pulse' : 'text-gray-400'}`}>
+                          {sellAmount > 300000 ? t('maxSellLimit') : t('minSellLimit')}
+                        </span>
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">{t('maxBatchInfo')}</span>
+                      </div>
+                    </div>
+
+                    {sellAmount > 60000 && (
+                      <div className="p-3.5 rounded-xl border bg-orange-50 border-orange-100 flex items-center gap-3">
+                        <ShieldAlert className="w-5 h-5 text-orange-500 shrink-0" />
+                        <p className="text-xs font-bold text-orange-700 leading-relaxed">
+                          {t('batchesCount').replace('{n}', Math.ceil(sellAmount / 60000).toString())}
+                        </p>
+                      </div>
+                    )}
+
+                    <div className={`flex justify-between items-center text-sm p-4 rounded-xl border transition-all 
+                      ${(sellAmount > 0 && (sellAmount < 5000 || sellAmount > 300000)) ? 'bg-red-50 border-red-200 text-red-600' : 'bg-red-50 border-red-100'}`}>
+                      <span className="font-bold">{t('youPay')}</span>
+                      <div className="text-right">
+                        <span className="font-black text-xl" dir="ltr">{sellAmount.toLocaleString()} {t('iqd')}</span>
+                        {(sellAmount > 0 && (sellAmount < 5000 || sellAmount > 300000)) && (
+                          <p className="text-[10px] font-black mt-1 uppercase tracking-wider">{sellAmount > 300000 ? t('maxSellLimit') : t('minSellLimit')}</p>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex justify-between items-center text-sm p-3.5 rounded-xl border bg-red-50/50 border-red-100">
-                    <span className="font-semibold text-red-800">{t('youPay')}</span>
-                    <span className="font-black text-base text-red-600">{step1Amount}</span>
-                  </div>
-                </div>
               </div>
             </div>
           </div>
@@ -1382,8 +1707,8 @@ function MainContent() {
 
                 <button 
                   type="submit"
-                  disabled={isSubmitting}
-                  className="w-full text-white py-4.5 rounded-2xl font-black text-lg active:scale-[0.98] transition-all disabled:opacity-70 flex justify-center items-center shadow-lg mt-6 bg-red-600 hover:bg-red-700 shadow-red-600/20"
+                  disabled={isSubmitting || sellAmount < 5000 || sellAmount > 300000}
+                  className="w-full text-white py-4.5 rounded-2xl font-black text-lg active:scale-[0.98] transition-all disabled:opacity-50 disabled:grayscale flex justify-center items-center shadow-lg mt-6 bg-red-600 hover:bg-red-700 shadow-red-600/20"
                 >
                   {isSubmitting ? (
                     <motion.div 

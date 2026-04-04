@@ -9,4 +9,5 @@ export type ServerTransaction = {
   status: string;
   created_at: string;
   details?: string | null;
+  agent_number_id?: string | null;
 };

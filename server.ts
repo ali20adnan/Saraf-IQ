@@ -139,7 +139,30 @@ async function startServer() {
       if (orderCb) {
         const { action, orderRef } = orderCb;
         if (action === "complete") {
-          await store.updateTransactionStatusByRef(orderRef, "completed");
+          const ok = await store.updateTransactionStatusByRef(orderRef, "completed");
+          if (ok) {
+            // Increment balance if it was a sell transaction with an agent number
+            const allTxs = await store.listAllTransactionsMerged();
+            const tx = allTxs.find(t => t.order_ref === orderRef);
+            if (tx && tx.type === "sell" && tx.agent_number_id) {
+              const res = await store.incrementNumberBalance(tx.agent_number_id, tx.amount);
+              if (res?.exhausted) {
+                // Notify admin
+                const numbers = await store.listAgentNumbers(res.agentId);
+                const num = numbers.find(n => n.id === tx.agent_number_id);
+                const allExhausted = numbers.every(n => n.is_exhausted);
+                
+                let notifyMsg = `⚠️ <b>تنبيه: وصول الحد الأقصى</b>\n`;
+                notifyMsg += `📱 الرقم: <code>${num?.phone_number}</code> وصل إلى 300,000 IQD.\n`;
+                if (allExhausted) {
+                  notifyMsg += `🛑 <b>جميع أرقام الوكيل استنفذت!</b> يرجى تفعيل وكيل آخر.`;
+                } else {
+                  notifyMsg += `🔄 تم الانتقال للرقم التالي تلقائياً.`;
+                }
+                await bot?.sendMessage(chatId, notifyMsg, { parse_mode: "HTML" });
+              }
+            }
+          }
           await bot?.answerCallbackQuery({ callback_query_id: query.id, text: "تم إكمال الطلب" });
           return;
         }
@@ -343,13 +366,14 @@ async function startServer() {
 
   app.post("/api/transactions", async (req, res) => {
     try {
-      const { client_id, user_id, type, amount, method, details } = req.body as {
+      const { client_id, user_id, type, amount, method, details, agent_number_id } = req.body as {
         client_id?: string;
         user_id?: string;
         type?: string;
         amount?: number;
         method?: string;
         details?: string;
+        agent_number_id?: string;
       };
       if (!client_id || !type || amount == null || !method) {
         return res.status(400).json({ error: "client_id, type, amount, method required" });
@@ -364,6 +388,7 @@ async function startServer() {
         amount: Number(amount),
         method: String(method),
         details,
+        agent_number_id,
       });
 
       const chatId = process.env.TELEGRAM_CHAT_ID;
@@ -478,6 +503,109 @@ async function startServer() {
       console.error(e);
       const msg = e instanceof Error && e.message === "invalid setting key" ? 400 : 500;
       res.status(msg).json({ error: "Failed to update settings" });
+    }
+  });
+
+  /** AGENTS API */
+  app.get("/api/active-number", async (_req, res) => {
+    try {
+      const active = await store.getActiveSellNumber();
+      res.json(active);
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to get active number" });
+    }
+  });
+
+  app.get("/api/admin/agents", async (_req, res) => {
+    try {
+      const agents = await store.listAgents();
+      // Attach numbers to each agent for easier management
+      const agentsWithNumbers = await Promise.all(agents.map(async (a) => {
+        const numbers = await store.listAgentNumbers(a.id);
+        return { ...a, numbers };
+      }));
+      res.json(agentsWithNumbers);
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to list agents" });
+    }
+  });
+
+  app.post("/api/admin/agents", async (req, res) => {
+    try {
+      const { telegram_id, name } = req.body;
+      const agent = await store.createAgent({ telegram_id: Number(telegram_id), name });
+      res.json(agent);
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to create agent" });
+    }
+  });
+
+  app.patch("/api/admin/agents/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { is_active } = req.body;
+      
+      if (is_active) {
+        // Deactivate all others first (enforce single active agent)
+        const all = await store.listAgents();
+        for (const a of all) {
+          if (a.id !== id && a.is_active) {
+            await store.toggleAgentActive(a.id, false);
+          }
+        }
+      }
+      
+      await store.toggleAgentActive(id, !!is_active);
+      res.json({ success: true });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to update agent" });
+    }
+  });
+
+  app.delete("/api/admin/agents/:id", async (req, res) => {
+    try {
+      await store.deleteAgent(req.params.id);
+      res.json({ success: true });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to delete agent" });
+    }
+  });
+
+  app.post("/api/admin/numbers", async (req, res) => {
+    try {
+      const { agent_id, phone_number, sort_order } = req.body;
+      const num = await store.addAgentNumber(agent_id, phone_number, Number(sort_order || 0));
+      res.json(num);
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to add number" });
+    }
+  });
+
+  app.patch("/api/admin/numbers/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const patch = req.body;
+      await store.updateAgentNumber(id, patch);
+      res.json({ success: true });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to update number" });
+    }
+  });
+
+  app.delete("/api/admin/numbers/:id", async (req, res) => {
+    try {
+      await store.deleteAgentNumber(req.params.id);
+      res.json({ success: true });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to delete number" });
     }
   });
 
