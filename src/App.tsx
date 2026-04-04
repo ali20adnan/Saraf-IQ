@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
-import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Tag, XCircle } from 'lucide-react';
+import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Tag, XCircle, Eye, EyeOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Cookies from 'js-cookie';
 import { supabase } from './lib/supabase';
@@ -61,6 +61,7 @@ function MainContent() {
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const [authError, setAuthError] = useState<string | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [txType, setTxType] = useState<TransactionType>('sell');
   const [cardValue, setCardValue] = useState<number>(10000);
   const [quantity, setQuantity] = useState<number>(1);
@@ -362,14 +363,31 @@ function MainContent() {
         if (error) throw error;
         if (data.user) {
           await supabase.from('profiles').insert([{ id: data.user.id, full_name: fullName, role: 'user' }]);
+          // Auto login after signup
+          const { error: loginError } = await supabase.auth.signInWithPassword({ email, password });
+          if (loginError) throw loginError;
+          setIsAuthenticated(true);
+          setUserId(data.user.id);
+          Cookies.set('saraf_user_email', email, { expires: 365 });
         }
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+        const { error, data } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) {
+          // Show user-friendly error message
+          if (error.message.includes('Invalid login credentials')) {
+            throw new Error(lang === 'ar' ? 'اسم المستخدم أو كلمة المرور خاطئة' : 'Invalid email or password');
+          }
+          throw error;
+        }
+        if (data.user) {
+          setIsAuthenticated(true);
+          setUserId(data.user.id);
+          Cookies.set('saraf_user_email', email, { expires: 365 });
+        }
       }
       setCurrentView('home');
     } catch (err: any) {
-      setAuthError(err.message || 'Authentication failed');
+      setAuthError(err.message || (lang === 'ar' ? 'حدث خطأ أثناء المصادقة' : 'Authentication failed'));
     } finally {
       setIsAuthLoading(false);
     }
@@ -519,8 +537,20 @@ function MainContent() {
     <div className="flex-1 p-6 lg:p-8">
       <div className="max-w-md mx-auto mt-10">
         <div className="bg-white p-8 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100">
-          <div className="w-16 h-16 bg-red-600 rounded-2xl flex items-center justify-center text-white font-bold text-3xl shadow-lg shadow-red-200 mb-6 mx-auto">
-            S
+          {/* Logo and Identity */}
+          <div className="flex flex-col items-center gap-3 mb-8">
+            <div className="w-20 h-20 bg-white rounded-3xl flex items-center justify-center shadow-md border border-red-100/50 overflow-hidden">
+              <img
+                src="/icons/logo.png"
+                alt={t('appTitle')}
+                className="w-16 h-16 object-contain"
+                loading="eager"
+              />
+            </div>
+            <div>
+              <h1 className="font-black text-xl tracking-tight text-gray-900">{t('appTitle')}</h1>
+              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest leading-none mt-1">Business Portal</p>
+            </div>
           </div>
           <h2 className="text-2xl font-black text-center text-gray-900 mb-2">
             {authMode === 'signin' ? t('welcomeBack', 'مرحباً بعودتك') : t('createAccount', 'إنشاء حساب جديد')}
@@ -549,7 +579,16 @@ function MainContent() {
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">{t('password', 'كلمة المرور')}</label>
-              <input name="password" type="password" required className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all" placeholder="••••••••" dir="ltr" />
+              <div className="relative">
+                <input name="password" type={showPassword ? 'text' : 'password'} required className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all" placeholder="••••••••" dir="ltr" />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
+              </div>
             </div>
             
             <button type="submit" disabled={isAuthLoading} className="w-full bg-red-600 text-white py-3.5 rounded-xl font-bold hover:bg-red-700 transition-colors shadow-lg shadow-red-600/20 mt-2 disabled:opacity-70 flex justify-center">
@@ -559,7 +598,7 @@ function MainContent() {
 
           <div className="mt-8 text-center">
             <button 
-              onClick={() => { setAuthMode(authMode === 'signin' ? 'signup' : 'signin'); setAuthError(null); }}
+              onClick={() => { setAuthMode(authMode === 'signin' ? 'signup' : 'signin'); setAuthError(null); setShowPassword(false); }}
               className="text-gray-500 hover:text-gray-900 font-bold transition-colors text-sm"
             >
               {authMode === 'signin' ? t('noAccountText', 'ليس لديك حساب؟ أنشئ حساباً') : t('hasAccountText', 'لديك حساب بالفعل؟ سجل دخولك')}

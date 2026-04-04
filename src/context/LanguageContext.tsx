@@ -13,14 +13,22 @@ interface LanguageContextType {
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [lang, setLang] = useState<Language>('ar'); // Default to Arabic
+  const [lang, setLang] = useState<Language>(() => {
+    // Read saved language from localStorage, default to Arabic
+    const saved = localStorage.getItem('saraf_lang') as Language;
+    return saved === 'en' || saved === 'ar' ? saved : 'ar';
+  });
 
   const t = (key: keyof typeof translations['en']) => {
     return translations[lang][key] || key;
   };
 
   const toggleLanguage = () => {
-    setLang((prev) => (prev === 'en' ? 'ar' : 'en'));
+    setLang((prev) => {
+      const next = prev === 'en' ? 'ar' : 'en';
+      localStorage.setItem('saraf_lang', next); // Save to localStorage
+      return next;
+    });
   };
 
   const dir = lang === 'ar' ? 'rtl' : 'ltr';
