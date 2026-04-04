@@ -152,6 +152,13 @@ function getSupabase(): SupabaseClient | null {
 
 export const db = getSupabase();
 
+// Log connection status
+if (db) {
+  console.log("✅ Supabase connected successfully");
+} else {
+  console.warn("⚠️ Supabase NOT connected - using file storage (data will be lost on redeploy)");
+}
+
 function loadFileStore(): FileStore {
   try {
     if (!fs.existsSync(DATA_FILE)) {
