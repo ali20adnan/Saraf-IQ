@@ -120,6 +120,7 @@ const defaultProfile: SiteProfile = {
 
 const defaultAppSettings: Record<string, string> = {
   maintenance_mode: "false",
+
   buy_coming_soon: "false",
   sell_coming_soon: "false",
 };

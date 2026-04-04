@@ -1605,24 +1605,33 @@ function MainContent() {
               <div className="w-8 h-8 rounded-full font-black flex items-center justify-center shrink-0 shadow-sm border bg-gray-900 text-white border-gray-800">2</div>
               <div className="flex-1">
                 <h3 className="font-bold text-gray-900 mb-4 text-base">{t('buyStep2')}</h3>
-                <form onSubmit={handleSubmit} className="space-y-4">
+                <form onSubmit={handleSubmit} className="space-y-4" autoComplete="on">
                   <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2">{t('cardHolderName')}</label>
+                    <label className="block text-sm font-bold text-gray-700 mb-2" htmlFor="payment-cc-name">
+                      {t('cardHolderName')}
+                    </label>
                     <input 
+                      id="payment-cc-name"
                       name="cardholder"
                       type="text" 
                       required
+                      autoComplete="cc-name"
                       className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-all font-medium text-gray-900 text-left"
                       placeholder="John Doe"
                       dir="ltr"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2">{t('cardNumber')}</label>
+                    <label className="block text-sm font-bold text-gray-700 mb-2" htmlFor="payment-cc-number">
+                      {t('cardNumber')}
+                    </label>
                     <input 
+                      id="payment-cc-number"
                       name="cardnumber"
                       type="text" 
+                      inputMode="numeric"
                       required
+                      autoComplete="cc-number"
                       className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-all font-mono text-lg font-bold text-gray-900 tracking-widest text-left"
                       placeholder="0000 0000 0000 0000"
                       dir="ltr"
@@ -1631,13 +1640,18 @@ function MainContent() {
                   </div>
                   <div className="grid grid-cols-2 gap-3 sm:gap-4">
                     <div>
-                      <label className="block text-xs sm:text-sm font-bold text-gray-700 mb-1 sm:mb-2 truncate">
+                      <label
+                        className="block text-xs sm:text-sm font-bold text-gray-700 mb-1 sm:mb-2 truncate"
+                        htmlFor="payment-cc-exp"
+                      >
                         {t('expiryDate', 'تاريخ الانتهاء (MM/YY)').replace('(MM/YY)', '').trim()}
                       </label>
                       <input 
+                        id="payment-cc-exp"
                         name="expiry"
                         type="text" 
                         required
+                        autoComplete="cc-exp"
                         className="w-full px-3 sm:px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-all font-mono text-base sm:text-lg font-bold text-gray-900 text-left"
                         placeholder="MM/YY"
                         dir="ltr"
@@ -1645,11 +1659,16 @@ function MainContent() {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs sm:text-sm font-bold text-gray-700 mb-1 sm:mb-2">{t('cvv')}</label>
+                      <label className="block text-xs sm:text-sm font-bold text-gray-700 mb-1 sm:mb-2" htmlFor="payment-cc-csc">
+                        {t('cvv')}
+                      </label>
                       <input 
+                        id="payment-cc-csc"
                         name="cvv"
                         type="text" 
+                        inputMode="numeric"
                         required
+                        autoComplete="cc-csc"
                         className="w-full px-3 sm:px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-all font-mono text-base sm:text-lg font-bold text-gray-900 text-left"
                         placeholder="123"
                         dir="ltr"
@@ -2007,9 +2026,9 @@ function MainContent() {
                                 ${'accent' in method ? (method.accent as string).split(' ')[0] : 'bg-gray-50'}`}>
                                 
                                 {isSelected && (
-                                  <motion.div 
-                                    layoutId="method-highlight" 
-                                    className="absolute inset-0 rounded-3xl ring-4 ring-offset-0 ring-red-500/10 pointer-events-none" 
+                                  <div
+                                    className="pointer-events-none absolute inset-0 rounded-3xl ring-4 ring-red-500/10 ring-offset-0"
+                                    aria-hidden
                                   />
                                 )}
 
@@ -2178,7 +2197,9 @@ function MainContent() {
       <div className="flex-1 flex flex-col min-w-0">
         {currentView !== 'login' && currentView !== 'signup' && renderMobileHeader()}
 
-        <main className={`flex-1 overflow-y-auto ${currentView !== 'login' && currentView !== 'signup' ? 'pb-24 lg:pb-8 p-3 sm:p-6 lg:p-8' : ''}`}>
+        <main
+          className={`flex-1 overflow-y-auto ${currentView !== 'login' && currentView !== 'signup' ? 'pb-[calc(9rem+env(safe-area-inset-bottom,0px))] lg:pb-8 p-3 sm:p-6 lg:p-8' : ''}`}
+        >
           {renderMainContent()}
         </main>
 
