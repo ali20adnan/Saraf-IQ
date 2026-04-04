@@ -327,8 +327,9 @@ async function startServer() {
 
   app.post("/api/transactions", async (req, res) => {
     try {
-      const { client_id, type, amount, method, details } = req.body as {
+      const { client_id, user_id, type, amount, method, details } = req.body as {
         client_id?: string;
+        user_id?: string;
         type?: string;
         amount?: number;
         method?: string;
@@ -342,6 +343,7 @@ async function startServer() {
       }
       const tx = await store.createTransaction({
         client_id,
+        user_id,
         type,
         amount: Number(amount),
         method: String(method),

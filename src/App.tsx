@@ -3,6 +3,7 @@ import { LanguageProvider, useLanguage } from './context/LanguageContext';
 import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Tag } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Cookies from 'js-cookie';
+import { supabase } from './lib/supabase';
 import type { ServerTransaction } from '../types/transaction';
 
 type TransactionType = 'sell' | 'buy';
@@ -32,6 +33,10 @@ function MainContent() {
   const [currentView, setCurrentView] = useState<ViewType>(initialView);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [txType, setTxType] = useState<TransactionType>('sell');
   const [cardValue, setCardValue] = useState<number>(10000);
   const [quantity, setQuantity] = useState<number>(1);
@@ -78,14 +83,29 @@ function MainContent() {
   }, []);
 
   useEffect(() => {
-    const authCookie = Cookies.get('auth');
-    if (authCookie === 'true') {
-      setIsAuthenticated(true);
-      const roleCookie = Cookies.get('role');
-      if (roleCookie === 'admin') {
-        setIsAdmin(true);
+    // Check active session on initial load
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setIsAuthenticated(!!session);
+      setUserId(session?.user?.id || null);
+      if (session?.user) {
+        // Fetch role from profiles
+        supabase.from('profiles').select('role').eq('id', session.user.id).single()
+          .then(({ data }) => setIsAdmin(data?.role === 'admin'));
       }
-    }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(!!session);
+      setUserId(session?.user?.id || null);
+      if (session?.user) {
+        supabase.from('profiles').select('role').eq('id', session.user.id).single()
+          .then(({ data }) => setIsAdmin(data?.role === 'admin'));
+      } else {
+        setIsAdmin(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -213,18 +233,36 @@ function MainContent() {
     }
   };
 
-  const handleLogin = (e: React.FormEvent, role: 'user' | 'admin' = 'user') => {
+  const handleAuth = async (e: React.FormEvent, isSignup: boolean) => {
     e.preventDefault();
-    Cookies.set('auth', 'true', { expires: 7 });
-    Cookies.set('role', role, { expires: 7 });
-    setIsAuthenticated(true);
-    setIsAdmin(role === 'admin');
-    setCurrentView(role === 'admin' ? 'admin' : 'home');
+    setIsAuthLoading(true);
+    setAuthError(null);
+    const form = e.target as HTMLFormElement;
+    const email = (form.elements.namedItem('email') as HTMLInputElement).value;
+    const password = (form.elements.namedItem('password') as HTMLInputElement).value;
+    const fullName = (form.elements.namedItem('full_name') as HTMLInputElement)?.value;
+
+    try {
+      if (isSignup) {
+        const { error, data } = await supabase.auth.signUp({ email, password });
+        if (error) throw error;
+        if (data.user) {
+          await supabase.from('profiles').insert([{ id: data.user.id, full_name: fullName, role: 'user' }]);
+        }
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+      }
+      setCurrentView('home');
+    } catch (err: any) {
+      setAuthError(err.message || 'Authentication failed');
+    } finally {
+      setIsAuthLoading(false);
+    }
   };
 
-  const handleLogout = () => {
-    Cookies.remove('auth');
-    Cookies.remove('role');
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     setIsAuthenticated(false);
     setIsAdmin(false);
     setCurrentView('login');
@@ -261,6 +299,7 @@ function MainContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           client_id: clientId,
+          user_id: userId,
           type: txType,
           amount,
           method,
@@ -311,41 +350,69 @@ function MainContent() {
   // --- Components ---
 
   const renderLogin = () => (
-    <div className="flex-1 flex items-center justify-center p-6">
-      <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 w-full max-w-md">
-        <button
-          type="button"
-          onClick={() => setCurrentView('home')}
-          className="w-12 h-12 bg-red-600 rounded-xl flex items-center justify-center text-white font-bold text-2xl shadow-lg shadow-red-200 mb-6 mx-auto hover:bg-red-700 transition-colors"
-          aria-label={t('appTitle')}
-        >
-          S
-        </button>
-        <h2 className="text-2xl font-black text-center text-gray-900 mb-2">Welcome Back</h2>
-        <p className="text-center text-gray-500 mb-8 font-medium">Sign in to your account</p>
-        
-        <form onSubmit={(e) => handleLogin(e, 'user')} className="space-y-4">
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">Email</label>
-            <input type="email" required className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all" placeholder="user@example.com" />
+    <div className="flex-1 p-6 lg:p-8">
+      <div className="max-w-md mx-auto mt-10">
+        <div className="bg-white p-8 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100">
+          <div className="w-16 h-16 bg-red-600 rounded-2xl flex items-center justify-center text-white font-bold text-3xl shadow-lg shadow-red-200 mb-6 mx-auto">
+            S
           </div>
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">Password</label>
-            <input type="password" required className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all" placeholder="••••••••" />
-          </div>
-          <button type="submit" className="w-full bg-red-600 text-white py-3.5 rounded-xl font-bold hover:bg-red-700 transition-colors shadow-lg shadow-red-600/20 mt-2">
-            Sign In
-          </button>
-        </form>
-        
-        {window.location.pathname === '/admin' && (
-          <div className="mt-6 pt-6 border-t border-gray-100 text-center">
-            <p className="text-sm text-gray-500 mb-4">Admin Access</p>
-            <button onClick={(e) => handleLogin(e, 'admin')} className="w-full bg-gray-900 text-white py-3.5 rounded-xl font-bold hover:bg-gray-800 transition-colors shadow-lg shadow-gray-900/20">
-              Login as Admin
+          <h2 className="text-2xl font-black text-center text-gray-900 mb-2">
+            {authMode === 'signin' ? t('welcomeBack', 'مرحباً بعودتك') : t('createAccount', 'إنشاء حساب جديد')}
+          </h2>
+          <p className="text-center text-gray-500 mb-8 font-medium">
+            {authMode === 'signin' ? t('signInPrompt', 'الرجاء تسجيل الدخول للمتابعة') : t('signUpPrompt', 'أنشئ حساباً لحفظ معاملاتك')}
+          </p>
+          
+          {authError && (
+            <div className="mb-6 p-4 bg-red-50 text-red-600 rounded-xl text-sm font-bold border border-red-100 flex items-center gap-2">
+              <ShieldAlert className="w-5 h-5 shrink-0" />
+              {authError}
+            </div>
+          )}
+
+          <form onSubmit={(e) => handleAuth(e, authMode === 'signup')} className="space-y-4">
+            {authMode === 'signup' && (
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">{t('fullName')}</label>
+                <input name="full_name" type="text" required className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all" placeholder="John Doe" />
+              </div>
+            )}
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-2">{t('emailAddress', 'البريد الإلكتروني')}</label>
+              <input name="email" type="email" required className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all" placeholder="user@example.com" dir="ltr" />
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-2">{t('password', 'كلمة المرور')}</label>
+              <input name="password" type="password" required className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all" placeholder="••••••••" dir="ltr" />
+            </div>
+            
+            <button type="submit" disabled={isAuthLoading} className="w-full bg-red-600 text-white py-3.5 rounded-xl font-bold hover:bg-red-700 transition-colors shadow-lg shadow-red-600/20 mt-2 disabled:opacity-70 flex justify-center">
+              {isAuthLoading ? <Activity className="w-5 h-5 animate-pulse" /> : authMode === 'signin' ? t('login', 'تسجيل الدخول') : t('register', 'تسجيل')}
+            </button>
+          </form>
+
+          <div className="mt-8 text-center">
+            <button 
+              onClick={() => { setAuthMode(authMode === 'signin' ? 'signup' : 'signin'); setAuthError(null); }}
+              className="text-gray-500 hover:text-gray-900 font-bold transition-colors text-sm"
+            >
+              {authMode === 'signin' ? t('noAccountText', 'ليس لديك حساب؟ أنشئ حساباً') : t('hasAccountText', 'لديك حساب بالفعل؟ سجل دخولك')}
             </button>
           </div>
-        )}
+          
+          {window.location.pathname === '/admin' && (
+            <div className="mt-6 pt-6 border-t border-gray-100 text-center">
+              <p className="text-sm text-gray-500 mb-4">Admin Access</p>
+              <form onSubmit={(e) => handleAuth(e, false)} className="space-y-4">
+                <input name="email" type="email" required className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl hidden" value="admin@sarafiq.com" readOnly />
+                <input name="password" type="password" required className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/20 focus:border-gray-900 outline-none transition-all" placeholder="Admin Password" dir="ltr" />
+                <button type="submit" disabled={isAuthLoading} className="w-full bg-gray-900 text-white py-3.5 rounded-xl font-bold hover:bg-gray-800 transition-colors shadow-lg shadow-gray-900/20">
+                  {isAuthLoading ? '...' : 'Login as Admin'}
+                </button>
+              </form>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -452,10 +519,18 @@ function MainContent() {
     </div>
   );
 
-  const renderProfile = () => (
-    <div className="flex-1 p-6 lg:p-8">
-      <div className="max-w-3xl mx-auto">
-        <h2 className="text-2xl font-black text-gray-900 mb-8">{t('profile')}</h2>
+  const renderProfile = () => {
+    if (!isAuthenticated) return renderLogin();
+
+    return (
+      <div className="flex-1 p-6 lg:p-8">
+        <div className="max-w-3xl mx-auto">
+          <div className="flex justify-between items-center mb-8">
+            <h2 className="text-2xl font-black text-gray-900">{t('profile')}</h2>
+            <button onClick={handleLogout} className="flex items-center gap-2 text-red-600 font-bold bg-red-50 hover:bg-red-100 px-4 py-2 rounded-xl transition-colors">
+              <LogOut className="w-4 h-4" /> العودة / تسجيل الخروج
+            </button>
+          </div>
         
         <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8">
           <div className="flex items-center gap-6 mb-8">
@@ -512,6 +587,7 @@ function MainContent() {
       </div>
     </div>
   );
+  };
 
   const renderSettings = () => (
     <div className="flex-1 p-6 lg:p-8">

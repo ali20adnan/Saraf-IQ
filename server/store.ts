@@ -198,6 +198,7 @@ function rowToTx(row: Record<string, unknown>): ServerTransaction {
 
 export async function createTransaction(input: {
   client_id: string;
+  user_id?: string;
   type: "buy" | "sell";
   amount: number;
   method: string;
@@ -226,7 +227,7 @@ export async function createTransaction(input: {
           id,
           order_ref,
           client_id: input.client_id,
-          user_id: null,
+          user_id: input.user_id ?? null,
           type: input.type,
           amount: input.amount,
           method: input.method,
