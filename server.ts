@@ -233,6 +233,28 @@ async function startServer() {
           return bot?.sendMessage(msg.chat.id, `✅ تم إضافة المسؤول <b>${name}</b> بنجاح.`, { parse_mode: "HTML" });
         }
 
+        // Activate Agent Shortcut
+        if (text.startsWith("/activate ")) {
+          const hasPerm = isAdmin || (secondaryAdmin && secondaryAdmin.permissions.includes('manage_agents'));
+          if (!hasPerm) return;
+
+          const targetIdInput = text.replace("/activate ", "").trim();
+          const targetId = parseInt(targetIdInput);
+          if (isNaN(targetId)) return bot?.sendMessage(msg.chat.id, "⚠️ يرجى إدخال معرف (ID) صحيح.\nمثال: <code>/activate 1234567</code>", { parse_mode: "HTML" });
+
+          const allAgents = await store.listAgents();
+          const found = allAgents.find(a => a.telegram_id === targetId);
+
+          if (!found) return bot?.sendMessage(msg.chat.id, `❌ لم يتم العثور على وكيل بهذا المعرف: <code>${targetId}</code>`, { parse_mode: "HTML" });
+
+          // Logic: Activate target, deactivate others
+          for (const a of allAgents) {
+            if (a.id !== found.id && a.is_active) await store.toggleAgentActive(a.id, false);
+          }
+          await store.toggleAgentActive(found.id, true);
+          return bot?.sendMessage(msg.chat.id, `✅ تم تفعيل الوكيل: <b>${found.name}</b> بنجاح.`, { parse_mode: "HTML" });
+        }
+
       } catch (e) {
         console.error("Telegram onMessage error:", e);
       }
