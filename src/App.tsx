@@ -88,6 +88,7 @@ function MainContent() {
   const [profileDraft, setProfileDraft] = useState<SiteProfileData>({ full_name: '', email: '', phone: '' });
   const [profileSaving, setProfileSaving] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [isInitialSettingsLoading, setIsInitialSettingsLoading] = useState(true);
   
   // Agents State
   const [activeAgentNumber, setActiveAgentNumber] = useState<ActiveAgentNumber | null>(null);
@@ -132,6 +133,8 @@ function MainContent() {
       }
     } catch (error) {
       console.error('Error fetching settings:', error);
+    } finally {
+      setIsInitialSettingsLoading(false);
     }
   }, []);
 
@@ -1738,16 +1741,22 @@ function MainContent() {
   const renderMainContent = () => {
     if (appSettings.maintenance_mode && !isAdmin && currentView !== 'login') {
       return (
-        <div className="flex-1 flex items-center justify-center p-6 bg-gray-50">
-          <div className="bg-white rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.05)] border border-gray-100 p-12 text-center max-w-md w-full relative overflow-hidden">
+        <div className="flex-1 flex items-center justify-center p-6 bg-gray-50 min-h-screen">
+          <div className="bg-white rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.05)] border border-gray-100 p-8 sm:p-12 text-center max-w-md w-full relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-1.5 bg-red-600"></div>
             <div className="w-20 h-20 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-8 shadow-sm">
               <ShieldAlert className="w-10 h-10 text-red-500" />
             </div>
-            <h2 className="text-2xl font-black text-gray-900 mb-4 tracking-tight">وضع الصيانة</h2>
+            
+            <h2 className="text-2xl font-black text-gray-900 mb-4 tracking-tight">
+              {lang === 'ar' ? 'وضع الصيانة' : 'Maintenance Mode'}
+            </h2>
             <p className="text-gray-500 font-medium mb-10 leading-relaxed text-lg">
-              عذراً، الموقع حالياً في وضع الصيانة المبرمجة لتقديم خدمة أفضل. يرجى العودة لاحقاً.
+              {lang === 'ar' 
+                ? 'عذراً، الموقع حالياً في وضع الصيانة المبرمجة لتقديم خدمة أفضل. يرجى العودة لاحقاً.' 
+                : 'We are currently performing scheduled maintenance. Please check back later.'}
             </p>
+            
             <div className="space-y-4">
               <a 
                 href="https://t.me/sarafiq_support" 
@@ -1755,14 +1764,24 @@ function MainContent() {
                 rel="noopener noreferrer"
                 className="w-full bg-red-600 text-white py-4 rounded-xl font-bold hover:bg-red-700 transition-all shadow-lg shadow-red-600/20 flex items-center justify-center gap-2"
               >
-                اتصل بنا للدعم الفني
+                {lang === 'ar' ? 'اتصل بنا للدعم الفني' : 'Contact us for support'}
               </a>
               <button 
                 onClick={() => setCurrentView('login')}
-                 className="text-gray-400 text-xs hover:text-gray-600 transition-colors block mx-auto"
+                 className="text-gray-400 text-xs hover:text-gray-600 transition-colors block mx-auto pt-2"
               >
-                Portal Access
+                {lang === 'ar' ? 'دخول المسؤولين' : 'Portal Access'}
               </button>
+            </div>
+
+            <div className="mt-8 pt-8 border-t border-gray-50 flex justify-center">
+               <button 
+                  onClick={toggleLanguage}
+                  className="flex items-center gap-2 text-gray-400 hover:text-gray-900 font-bold text-sm transition-colors"
+                >
+                  <Globe className="w-4 h-4" />
+                  {lang === 'ar' ? 'English' : 'العربية'}
+                </button>
             </div>
           </div>
         </div>
@@ -1970,6 +1989,18 @@ function MainContent() {
         );
     }
   };
+
+  if (isInitialSettingsLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <motion.div 
+          animate={{ rotate: 360 }}
+          transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+          className="w-10 h-10 border-4 border-red-600 border-t-transparent rounded-full"
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900 flex" dir={dir}>
