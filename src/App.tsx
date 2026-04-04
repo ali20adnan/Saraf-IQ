@@ -414,10 +414,10 @@ function MainContent() {
   };
 
   const sellMethods = [
-    { id: 'zaincash', name: t('zainCash'), icon: Wallet, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
-    { id: 'superqi', name: t('superQi'), icon: CreditCard, color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-100' },
-    { id: 'firstbank', name: t('firstBank'), icon: Building2, color: 'text-indigo-600', bg: 'bg-indigo-50', border: 'border-indigo-100' },
-    { id: 'fastpay', name: t('fastPay'), icon: Zap, color: 'text-yellow-600', bg: 'bg-yellow-50', border: 'border-yellow-100' },
+    { id: 'zaincash', name: t('zainCash'), icon: '/icons/zaincash.png', isImage: true },
+    { id: 'superqi', name: t('superQi'), icon: '/icons/superqi.jpeg', isImage: true },
+    { id: 'firstbank', name: t('firstBank'), icon: '/icons/firstbank.png', isImage: true },
+    { id: 'fastpay', name: t('fastPay'), icon: '/icons/fastpay.jpeg', isImage: true },
   ];
 
   const buyMethods = [
@@ -1495,8 +1495,13 @@ function MainContent() {
                                 ? (txType === 'sell' ? 'border-red-500 shadow-[0_8px_30px_rgb(239,68,68,0.15)] ring-4 ring-red-500/10 scale-[1.02] z-10' : 'border-gray-900 shadow-[0_8px_30px_rgb(17,24,39,0.15)] ring-4 ring-gray-900/10 scale-[1.02] z-10') 
                                 : 'border-transparent shadow-[0_4px_20px_rgb(0,0,0,0.03)] hover:border-gray-200 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] hover:-translate-y-1'}`}
                           >
-                            <div className={`p-4 rounded-2xl ${method.bg} ${method.color} ${selectedMethod === method.id ? 'border-none' : method.border} border group-hover:scale-110 transition-transform shadow-inner`}>
-                              <method.icon className="w-8 h-8" />
+                            <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-2xl flex items-center justify-center overflow-hidden bg-white shadow-sm border border-gray-100 group-hover:scale-105 transition-transform p-3
+                              ${selectedMethod === method.id ? 'ring-2 ring-red-500 border-transparent shadow-md' : ''}`}>
+                              {('isImage' in method && method.isImage) ? (
+                                <img src={method.icon as string} alt={method.name} className="w-full h-full object-contain" />
+                              ) : (
+                                <method.icon className={`w-7 h-7 sm:w-8 sm:h-8 ${method.color || 'text-gray-900'}`} />
+                              )}
                             </div>
                             <span className="text-sm font-bold text-gray-900 z-10">{method.name}</span>
                           </button>

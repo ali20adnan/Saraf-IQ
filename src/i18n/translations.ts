@@ -174,7 +174,7 @@ export const translations = {
     buyCredit: "شراء رصيد",
     youGet: "أنت تستلم",
     youPay: "أنت تدفع",
-    creditCard: "بطاقة ائتمان",
+    creditCard: "بطاقة بنكية",
     cardNumber: "رقم البطاقة",
     expiryDate: "تاريخ الانتهاء (MM/YY)",
     cvv: "رمز الأمان (CVV)",
