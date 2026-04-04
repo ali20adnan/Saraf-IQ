@@ -33,17 +33,6 @@ async function startServer() {
   const app = express();
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
-  // Check Supabase connection
-  if (!store.db) {
-    console.error("\n" + "=".repeat(80));
-    console.error("⚠️  WARNING: Supabase is NOT connected!");
-    console.error("⚠️  All agent, admin, and settings data will NOT persist!");
-    console.error("⚠️  Please set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env");
-    console.error("=".repeat(80) + "\n");
-  } else {
-    console.log("✅ Supabase connected - Data will persist across deployments");
-  }
-
   app.use(express.json());
   app.set("trust proxy", true);
 

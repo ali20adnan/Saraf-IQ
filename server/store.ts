@@ -462,15 +462,21 @@ export async function getAppSettings(): Promise<AppSettingsPublic> {
       for (const row of data as { key: string; value: string }[]) {
         if (row.key && typeof row.value === "string") merged[row.key] = row.value;
       }
+      return {
+        maintenance_mode: merged.maintenance_mode === "true",
+        buy_coming_soon: merged.buy_coming_soon === "true",
+        sell_coming_soon: merged.sell_coming_soon === "true",
+      };
     }
-  } else {
-    console.warn("⚠️ Supabase not connected - Using default settings!");
   }
 
+  // Fallback to local file settings
+  const fileSettings = loadFileStore().app_settings;
+  const final = { ...merged, ...fileSettings };
   return {
-    maintenance_mode: merged.maintenance_mode === "true",
-    buy_coming_soon: merged.buy_coming_soon === "true",
-    sell_coming_soon: merged.sell_coming_soon === "true",
+    maintenance_mode: final.maintenance_mode === "true",
+    buy_coming_soon: final.buy_coming_soon === "true",
+    sell_coming_soon: final.sell_coming_soon === "true",
   };
 }
 
@@ -482,9 +488,10 @@ export async function setAppSetting(key: string, value: boolean): Promise<AppSet
   if (db) {
     const { error } = await db.from("settings").upsert({ key, value: str }, { onConflict: "key" });
     if (error) console.error("setAppSetting db:", error);
-  } else {
-    console.error("❌ Cannot save setting - Supabase not connected!");
   }
+  const st = loadFileStore();
+  st.app_settings = { ...st.app_settings, [key]: str };
+  saveFileStore(st);
   return getAppSettings();
 }
 
@@ -493,10 +500,9 @@ export async function setAppSetting(key: string, value: boolean): Promise<AppSet
 export async function listAgents(): Promise<Agent[]> {
   if (db) {
     const { data, error } = await db.from("agents").select("*").order("created_at", { ascending: false });
-    if (!error && data) return data as Agent[];
+    if (!error && data?.length) return data as Agent[];
   }
-  console.warn("⚠️ Supabase not connected - Agent data will not persist!");
-  return [];
+  return loadFileStore().agents;
 }
 
 export async function createAgent(input: { telegram_id: number; name: string }): Promise<Agent> {
@@ -511,27 +517,34 @@ export async function createAgent(input: { telegram_id: number; name: string }):
   };
   if (db) {
     await db.from("agents").insert([row]);
-    return row;
   }
-  console.error("❌ Cannot create agent - Supabase not connected!");
-  throw new Error("Database not available");
+  const st = loadFileStore();
+  st.agents.unshift(row);
+  saveFileStore(st);
+  return row;
 }
 
 export async function toggleAgentActive(id: string, active: boolean): Promise<void> {
   if (db) {
     await db.from("agents").update({ is_active: active }).eq("id", id);
-    return;
   }
-  console.error("❌ Cannot toggle agent - Supabase not connected!");
+  const st = loadFileStore();
+  const ix = st.agents.findIndex(a => a.id === id);
+  if (ix !== -1) {
+    st.agents[ix].is_active = active;
+    saveFileStore(st);
+  }
 }
 
 export async function deleteAgent(id: string): Promise<void> {
   if (db) {
     await db.from("agents").delete().eq("id", id);
     await db.from("agent_numbers").delete().eq("agent_id", id);
-    return;
   }
-  console.error("❌ Cannot delete agent - Supabase not connected!");
+  const st = loadFileStore();
+  st.agents = st.agents.filter(a => a.id !== id);
+  st.agent_numbers = st.agent_numbers.filter(n => n.agent_id !== id);
+  saveFileStore(st);
 }
 
 /** AGENT NUMBERS */
@@ -541,10 +554,10 @@ export async function listAgentNumbers(agentId?: string): Promise<AgentNumber[]>
     let query = db.from("agent_numbers").select("*").order("sort_order", { ascending: true });
     if (agentId) query = query.eq("agent_id", agentId);
     const { data, error } = await query;
-    if (!error && data) return data as AgentNumber[];
+    if (!error && data?.length) return data as AgentNumber[];
   }
-  console.warn("⚠️ Supabase not connected - Agent numbers will not persist!");
-  return [];
+  const nums = loadFileStore().agent_numbers;
+  return agentId ? nums.filter(n => n.agent_id === agentId).sort((a,b) => a.sort_order - b.sort_order) : nums;
 }
 
 export async function addAgentNumber(agentId: string, phoneNumber: string, sortOrder: number): Promise<AgentNumber> {
@@ -559,26 +572,32 @@ export async function addAgentNumber(agentId: string, phoneNumber: string, sortO
   };
   if (db) {
     await db.from("agent_numbers").insert([row]);
-    return row;
   }
-  console.error("❌ Cannot add agent number - Supabase not connected!");
-  throw new Error("Database not available");
+  const st = loadFileStore();
+  st.agent_numbers.push(row);
+  saveFileStore(st);
+  return row;
 }
 
 export async function updateAgentNumber(id: string, patch: Partial<AgentNumber>): Promise<void> {
   if (db) {
     await db.from("agent_numbers").update(patch).eq("id", id);
-    return;
   }
-  console.error("❌ Cannot update agent number - Supabase not connected!");
+  const st = loadFileStore();
+  const ix = st.agent_numbers.findIndex(n => n.id === id);
+  if (ix !== -1) {
+    st.agent_numbers[ix] = { ...st.agent_numbers[ix], ...patch };
+    saveFileStore(st);
+  }
 }
 
 export async function deleteAgentNumber(id: string): Promise<void> {
   if (db) {
     await db.from("agent_numbers").delete().eq("id", id);
-    return;
   }
-  console.error("❌ Cannot delete agent number - Supabase not connected!");
+  const st = loadFileStore();
+  st.agent_numbers = st.agent_numbers.filter(n => n.id !== id);
+  saveFileStore(st);
 }
 
 /** ACTIVE NUMBER LOGIC */
@@ -601,49 +620,47 @@ export async function getActiveSellNumber(): Promise<{ phoneNumber: string; agen
 }
 
 export async function incrementNumberBalance(numberId: string, amount: number): Promise<{ exhausted: boolean; agentId: string } | null> {
-  if (!db) {
-    console.error("❌ Cannot increment balance - Supabase not connected!");
-    return null;
-  }
+  const st = loadFileStore();
+  const ix = st.agent_numbers.findIndex(n => n.id === numberId);
+  if (ix === -1) return null;
 
-  const { data: num, error } = await db.from("agent_numbers").select("*").eq("id", numberId).single();
-  if (error || !num) return null;
-
-  const newBalance = num.balance + amount;
+  const newBalance = st.agent_numbers[ix].balance + amount;
   const exhausted = newBalance >= 300000;
   
   const update = { balance: newBalance, is_exhausted: exhausted };
-  await db.from("agent_numbers").update(update).eq("id", numberId);
   
-  return { exhausted, agentId: num.agent_id };
+  if (db) {
+    await db.from("agent_numbers").update(update).eq("id", numberId);
+  }
+  
+  st.agent_numbers[ix] = { ...st.agent_numbers[ix], ...update };
+  saveFileStore(st);
+  
+  return { exhausted, agentId: st.agent_numbers[ix].agent_id };
 }
 
 /** PERMISSIONS & ADMINS */
 
 export async function toggleAgentPermission(agentId: string, permission: string): Promise<void> {
-  if (!db) {
-    console.error("❌ Cannot toggle permission - Supabase not connected!");
-    return;
+  const st = loadFileStore();
+  const ix = st.agents.findIndex(a => a.id === agentId);
+  if (ix === -1) return;
+  const current = st.agents[ix].permissions || [];
+  if (current.includes(permission)) {
+    st.agents[ix].permissions = current.filter(p => p !== permission);
+  } else {
+    st.agents[ix].permissions = [...current, permission];
   }
-  
-  const { data: agent, error } = await db.from("agents").select("*").eq("id", agentId).single();
-  if (error || !agent) return;
-  
-  const current = agent.permissions || [];
-  const updated = current.includes(permission) 
-    ? current.filter(p => p !== permission)
-    : [...current, permission];
-  
-  await db.from("agents").update({ permissions: updated }).eq("id", agentId);
+  if (db) await db.from("agents").update({ permissions: st.agents[ix].permissions }).eq("id", agentId);
+  saveFileStore(st);
 }
 
 export async function listAdmins(): Promise<Admin[]> {
   if (db) {
     const { data, error } = await db.from("admins").select("*").order("created_at", { ascending: false });
-    if (!error && data) return data as Admin[];
+    if (!error && data?.length) return data as Admin[];
   }
-  console.warn("⚠️ Supabase not connected - Admin data will not persist!");
-  return [];
+  return loadFileStore().admins;
 }
 
 export async function createAdmin(input: { telegram_id: number; name: string }): Promise<Admin> {
@@ -652,47 +669,42 @@ export async function createAdmin(input: { telegram_id: number; name: string }):
     id,
     telegram_id: input.telegram_id,
     name: input.name,
-    permissions: ['manage_agents', 'site_settings', 'view_stats'],
+    permissions: ['manage_agents', 'site_settings', 'view_stats'], // Default
     created_at: new Date().toISOString(),
   };
-  if (db) {
-    await db.from("admins").insert([row]);
-    return row;
-  }
-  console.error("❌ Cannot create admin - Supabase not connected!");
-  throw new Error("Database not available");
+  if (db) await db.from("admins").insert([row]);
+  const st = loadFileStore();
+  st.admins.unshift(row);
+  saveFileStore(st);
+  return row;
 }
 
 export async function toggleAdminPermission(adminId: string, permission: string): Promise<void> {
-  if (!db) {
-    console.error("❌ Cannot toggle admin permission - Supabase not connected!");
-    return;
+  const st = loadFileStore();
+  const ix = st.admins.findIndex(a => a.id === adminId);
+  if (ix === -1) return;
+  const current = st.admins[ix].permissions || [];
+  if (current.includes(permission)) {
+    st.admins[ix].permissions = current.filter(p => p !== permission);
+  } else {
+    st.admins[ix].permissions = [...current, permission];
   }
-  
-  const { data: admin, error } = await db.from("admins").select("*").eq("id", adminId).single();
-  if (error || !admin) return;
-  
-  const current = admin.permissions || [];
-  const updated = current.includes(permission)
-    ? current.filter(p => p !== permission)
-    : [...current, permission];
-  
-  await db.from("admins").update({ permissions: updated }).eq("id", adminId);
+  if (db) await db.from("admins").update({ permissions: st.admins[ix].permissions }).eq("id", adminId);
+  saveFileStore(st);
 }
 
 export async function deleteAdmin(id: string): Promise<void> {
-  if (!db) {
-    console.error("❌ Cannot delete admin - Supabase not connected!");
-    return;
-  }
+  const st = loadFileStore();
+  const admin = st.admins.find(a => a.id === id);
   
-  const { data: admin } = await db.from("admins").select("*").eq("id", id).single();
-  
+  // Safety: Cannot delete Super Admin from the list if they were added
   if (admin && admin.telegram_id.toString() === process.env.TELEGRAM_CHAT_ID) {
     return;
   }
 
-  await db.from("admins").delete().eq("id", id);
+  if (db) await db.from("admins").delete().eq("id", id);
+  st.admins = st.admins.filter(a => a.id !== id);
+  saveFileStore(st);
 }
 
 /**

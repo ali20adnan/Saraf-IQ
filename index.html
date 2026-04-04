@@ -1,25 +1,9 @@
 <!doctype html>
-<html lang="ar" dir="rtl">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#dc2626" />
-    <meta name="description" content="منصة صراف للأعمال - إدارة المعاملات المالية" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="صراف" />
-    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>صراف · Saraf</title>
-    
-    <!-- PWA Manifest -->
-    <link rel="manifest" href="/manifest.json" />
-    
-    <!-- Icons -->
-    <link rel="icon" type="image/png" href="/icons/logo.png" />
-    <link rel="apple-touch-icon" href="/icons/logo.png" />
-    
-    <!-- Preload -->
     <link rel="preload" as="image" href="/icons/zaincash.png" />
     <link rel="preload" as="image" href="/icons/superqi.jpeg" />
     <link rel="preload" as="image" href="/icons/firstbank.png" />
@@ -28,17 +12,6 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    
-    <!-- Service Worker Registration -->
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
-            .then(reg => console.log('✅ Service Worker registered'))
-            .catch(err => console.log('❌ Service Worker registration failed:', err));
-        });
-      }
-    </script>
   </body>
 </html>
 
