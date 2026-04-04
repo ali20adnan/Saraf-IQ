@@ -22,9 +22,9 @@ function MobileBottomNavInner({
   const { t } = useLanguage();
 
   const handleNavigate = useCallback(
-    async (view: ViewType) => {
-      await haptics.light();
+    (view: ViewType) => {
       onNavigate(view);
+      void haptics.light();
     },
     [onNavigate],
   );

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback, startTransition } from 'react';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
 import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Tag, XCircle, Eye, EyeOff, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -581,6 +581,11 @@ function MainContent() {
     setTxType(type);
     resetForm();
   };
+
+  /** تنقّل التابات السفلية — يخفّف التقطيع عند استبدال شاشة كبيرة (React 18 concurrent) */
+  const navigateView = useCallback((view: ViewType) => {
+    startTransition(() => setCurrentView(view));
+  }, []);
 
   const sellMethods = [
     { id: 'zaincash', name: t('zainCash'), icon: '/icons/zaincash.png', isImage: true, accent: 'bg-emerald-50 text-emerald-600 border-emerald-100' },
@@ -2198,7 +2203,7 @@ function MainContent() {
         {currentView !== 'login' && currentView !== 'signup' && renderMobileHeader()}
 
         <main
-          className={`flex-1 overflow-y-auto ${currentView !== 'login' && currentView !== 'signup' ? 'pb-[calc(9rem+env(safe-area-inset-bottom,0px))] lg:pb-8 p-3 sm:p-6 lg:p-8' : ''}`}
+          className={`isolate flex-1 overflow-y-auto overscroll-y-contain ${currentView !== 'login' && currentView !== 'signup' ? 'pb-[calc(9rem+env(safe-area-inset-bottom,0px))] lg:pb-8 p-3 sm:p-6 lg:p-8' : ''}`}
         >
           {renderMainContent()}
         </main>
@@ -2207,7 +2212,7 @@ function MainContent() {
         {currentView !== 'login' && currentView !== 'signup' && (
           <MobileBottomNav
             currentView={currentView}
-            onNavigate={setCurrentView}
+            onNavigate={navigateView}
             isAdmin={isAdmin}
             isAuthenticated={isAuthenticated}
           />
