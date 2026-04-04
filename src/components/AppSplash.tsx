@@ -5,6 +5,9 @@ import {BrandLogo} from './BrandLogo';
 const INTRO_MAX_MS = 14_000;
 const MIN_VISIBLE_MS = 900;
 const REDUCED_MOTION_HOLD_MS = 1_000;
+const DESKTOP_INTRO_MS = 650;
+/** عرض ≤ هذا يُعتبر هاتفًا لعرض فيديو التحميل فقط */
+const PHONE_MAX_WIDTH_PX = 767;
 
 type Props = {
   appTitle: string;
@@ -12,40 +15,71 @@ type Props = {
   onComplete: () => void;
 };
 
+function usePhoneViewport() {
+  const [isPhone, setIsPhone] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia(`(max-width: ${PHONE_MAX_WIDTH_PX}px)`).matches : false,
+  );
+
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${PHONE_MAX_WIDTH_PX}px)`);
+    const onChange = () => setIsPhone(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  return isPhone;
+}
+
 /**
- * Optional intro video: place `public/splash/intro.webm` and/or `public/splash/intro.mp4`.
- * If files are missing, shows logo + subtle loader until settings load (works well on mobile).
+ * فيديو اختياري: `public/splash/intro.webm` و/أو `intro.mp4`
+ * — يُعرض على الهاتف فقط (عرض ≤767px). على الحاسوب: خلفية نظيفة + شعار بدون فيديو.
+ * — `object-contain` بدل `object-cover` حتى لا يُكبَّر الفيديو/الملصق ويصبح ضبابيًا.
  */
 export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
   const mountRef = useRef<number>(Date.now());
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  const isPhoneViewport = usePhoneViewport();
   const [introDone, setIntroDone] = useState(false);
-  const [useVideo, setUseVideo] = useState(true);
   const [visible, setVisible] = useState(true);
 
+  const [wantsVideo, setWantsVideo] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    if (!window.matchMedia(`(max-width: ${PHONE_MAX_WIDTH_PX}px)`).matches) return false;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
+    return true;
+  });
+
   useEffect(() => {
-    const reduce =
-      typeof window !== 'undefined' &&
-      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
     if (reduce) {
-      setUseVideo(false);
+      setWantsVideo(false);
       const t = window.setTimeout(() => setIntroDone(true), REDUCED_MOTION_HOLD_MS);
       return () => window.clearTimeout(t);
     }
+
+    if (!isPhoneViewport) {
+      setWantsVideo(false);
+      const t = window.setTimeout(() => setIntroDone(true), DESKTOP_INTRO_MS);
+      return () => window.clearTimeout(t);
+    }
+
+    setWantsVideo(true);
     const maxTimer = window.setTimeout(() => setIntroDone(true), INTRO_MAX_MS);
     return () => window.clearTimeout(maxTimer);
-  }, []);
+  }, [isPhoneViewport]);
 
   const tryPlay = useCallback(() => {
     const el = videoRef.current;
-    if (!el || !useVideo) return;
+    if (!el || !wantsVideo) return;
     el.play().catch(() => {
-      setUseVideo(false);
+      setWantsVideo(false);
       setIntroDone(true);
     });
-  }, [useVideo]);
+  }, [wantsVideo]);
 
   useEffect(() => {
     if (!settingsReady || !introDone) return;
@@ -60,9 +94,11 @@ export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
 
   const handleVideoEnded = () => setIntroDone(true);
   const handleVideoError = () => {
-    setUseVideo(false);
+    setWantsVideo(false);
     setIntroDone(true);
   };
+
+  const showVideoLayer = isPhoneViewport && wantsVideo;
 
   return (
     <motion.div
@@ -80,11 +116,10 @@ export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
       animate={{opacity: visible ? 1 : 0}}
       transition={{duration: 0.28}}
     >
-      {useVideo && (
+      {showVideoLayer && (
         <video
           ref={videoRef}
-          className="absolute inset-0 h-full w-full object-cover object-center"
-          poster="/icons/logo.png"
+          className="absolute inset-0 h-full w-full bg-[#F8FAFC] object-contain object-center"
           playsInline
           muted
           preload="auto"
@@ -99,7 +134,11 @@ export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
       )}
 
       <div
-        className={`absolute inset-0 bg-gradient-to-b from-black/25 via-black/10 to-[#F8FAFC]/95 ${useVideo ? '' : 'from-[#F8FAFC] via-[#F8FAFC] to-[#F8FAFC]'}`}
+        className={`absolute inset-0 bg-gradient-to-b ${
+          showVideoLayer
+            ? 'from-black/15 via-transparent to-[#F8FAFC]/90'
+            : 'from-[#F8FAFC] via-[#F8FAFC] to-[#F8FAFC]'
+        }`}
         aria-hidden
       />
 
