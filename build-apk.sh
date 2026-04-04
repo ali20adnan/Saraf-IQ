@@ -5,9 +5,14 @@
 
 echo "🚀 Starting APK Build on Railway..."
 
+# Clean npm cache and modules
+echo "🧹 Cleaning npm cache..."
+rm -rf node_modules package-lock.json
+npm cache clean --force
+
 # Install dependencies
 echo "📦 Installing dependencies..."
-npm ci
+npm install --no-optional
 
 # Build web app
 echo "🏗️ Building web app..."
