@@ -501,14 +501,14 @@ function MainContent() {
   };
 
   const sellMethods = [
-    { id: 'zaincash', name: t('zainCash'), icon: '/icons/zaincash.png', isImage: true },
-    { id: 'superqi', name: t('superQi'), icon: '/icons/superqi.jpeg', isImage: true },
-    { id: 'firstbank', name: t('firstBank'), icon: '/icons/firstbank.png', isImage: true },
-    { id: 'fastpay', name: t('fastPay'), icon: '/icons/fastpay.jpeg', isImage: true },
+    { id: 'zaincash', name: t('zainCash'), icon: '/icons/zaincash.png', isImage: true, accent: 'bg-emerald-50 text-emerald-600 border-emerald-100' },
+    { id: 'superqi', name: t('superQi'), icon: '/icons/superqi.jpeg', isImage: true, accent: 'bg-red-50 text-red-600 border-red-100' },
+    { id: 'firstbank', name: t('firstBank'), icon: '/icons/firstbank.png', isImage: true, accent: 'bg-blue-50 text-blue-600 border-blue-100' },
+    { id: 'fastpay', name: t('fastPay'), icon: '/icons/fastpay.jpeg', isImage: true, accent: 'bg-orange-50 text-orange-600 border-orange-100' },
   ];
 
   const buyMethods = [
-    { id: 'creditcard', name: t('creditCard'), icon: CreditCard, color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-100' }
+    { id: 'creditcard', name: t('creditCard'), icon: CreditCard, accent: 'bg-purple-50 text-purple-600 border-purple-100' }
   ];
 
   const currentMethods = txType === 'sell' ? sellMethods : buyMethods;
@@ -1744,6 +1744,18 @@ function MainContent() {
         <div className="flex-1 flex items-center justify-center p-6 bg-gray-50 min-h-screen">
           <div className="bg-white rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.05)] border border-gray-100 p-8 sm:p-12 text-center max-w-md w-full relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-1.5 bg-red-600"></div>
+            
+            {/* Logo and Identity */}
+            <div className="flex flex-col items-center gap-3 mb-10">
+              <div className="w-12 h-12 bg-red-600 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-red-200">
+                S
+              </div>
+              <div>
+                <h1 className="font-black text-xl tracking-tight text-gray-900">{t('appTitle')}</h1>
+                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest leading-none mt-1">Official Portal</p>
+              </div>
+            </div>
+
             <div className="w-20 h-20 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-8 shadow-sm">
               <ShieldAlert className="w-10 h-10 text-red-500" />
             </div>
@@ -1850,26 +1862,47 @@ function MainContent() {
                         {txType === 'sell' ? t('receivingMethod') : t('paymentMethod')}
                       </h2>
                       <div className="grid grid-cols-2 gap-4">
-                        {currentMethods.map((method) => (
-                          <button
-                            key={method.id}
-                            onClick={() => setSelectedMethod(method.id)}
-                            className={`bg-white border-2 p-5 rounded-[2rem] flex flex-col items-center justify-center gap-3 transition-all active:scale-95 group relative overflow-hidden
-                              ${selectedMethod === method.id 
-                                ? (txType === 'sell' ? 'border-red-500 shadow-[0_8px_30px_rgb(239,68,68,0.15)] ring-4 ring-red-500/10 scale-[1.02] z-10' : 'border-gray-900 shadow-[0_8px_30px_rgb(17,24,39,0.15)] ring-4 ring-gray-900/10 scale-[1.02] z-10') 
-                                : 'border-transparent shadow-[0_4px_20px_rgb(0,0,0,0.03)] hover:border-gray-200 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] hover:-translate-y-1'}`}
-                          >
-                            <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-2xl flex items-center justify-center overflow-hidden bg-white shadow-sm border border-gray-100 group-hover:scale-105 transition-transform p-3
-                              ${selectedMethod === method.id ? 'ring-2 ring-red-500 border-transparent shadow-md' : ''}`}>
-                              {('isImage' in method && method.isImage) ? (
-                                <img src={method.icon as string} alt={method.name} className="w-full h-full object-contain" loading="eager" fetchPriority="high" />
-                              ) : (
-                                <method.icon className={`w-7 h-7 sm:w-8 sm:h-8 ${method.color || 'text-gray-900'}`} />
-                              )}
-                            </div>
-                            <span className="text-sm font-bold text-gray-900 z-10">{method.name}</span>
-                          </button>
-                        ))}
+                        {currentMethods.map((method) => {
+                          const isSelected = selectedMethod === method.id;
+                          return (
+                            <button
+                              key={method.id}
+                              onClick={() => setSelectedMethod(method.id)}
+                              className={`bg-white p-5 rounded-[2.5rem] flex flex-col items-center justify-center gap-3 transition-all active:scale-[0.96] group relative border-2
+                                ${isSelected 
+                                  ? 'border-red-500 shadow-[0_20px_50px_rgba(239,68,68,0.12)] -translate-y-1' 
+                                  : 'border-transparent shadow-[0_4px_25px_rgba(0,0,0,0.03)] hover:shadow-[0_15px_40px_rgba(0,0,0,0.06)] hover:-translate-y-0.5'}`}
+                            >
+                              <div className={`w-16 h-16 rounded-3xl flex items-center justify-center transition-all duration-300 relative
+                                ${isSelected ? 'scale-110' : 'group-hover:scale-105'}
+                                ${'accent' in method ? (method.accent as string).split(' ')[0] : 'bg-gray-50'}`}>
+                                
+                                {isSelected && (
+                                  <motion.div 
+                                    layoutId="method-highlight" 
+                                    className="absolute inset-0 rounded-3xl ring-4 ring-offset-0 ring-red-500/10 pointer-events-none" 
+                                  />
+                                )}
+
+                                {('isImage' in method && method.isImage) ? (
+                                  <div className="w-10 h-10 flex items-center justify-center relative z-10">
+                                    <img 
+                                      src={method.icon as string} 
+                                      alt={method.name} 
+                                      className="w-full h-full object-contain filter drop-shadow-sm" 
+                                      loading="eager" 
+                                    />
+                                  </div>
+                                ) : (
+                                  <method.icon className={`w-7 h-7 relative z-10 ${isSelected ? 'text-red-500' : 'text-gray-400 group-hover:text-gray-900'}`} />
+                                )}
+                              </div>
+                              <span className={`text-[13px] font-black tracking-tight transition-colors ${isSelected ? 'text-gray-900' : 'text-gray-400 group-hover:text-gray-900'}`}>
+                                {method.name}
+                              </span>
+                            </button>
+                          );
+                        })}
                       </div>
                     </section>
                   </>

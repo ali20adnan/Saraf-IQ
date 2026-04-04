@@ -371,23 +371,22 @@ export async function listOffers(): Promise<ServerOffer[]> {
     const { data, error } = await db
       .from("offers")
       .select("*")
-      .eq("active", true)
       .order("sort_order", { ascending: true });
+    
     if (error) {
-      console.error("listOffers:", error);
-      return defaultOffers;
+      console.error("listOffers db error:", error);
+    } else if (data && data.length > 0) {
+      return data.map((r: Record<string, unknown>) => ({
+        id: String(r.id),
+        variant: r.variant === "buy" ? "buy" : "sell",
+        title_ar: String(r.title_ar ?? ""),
+        title_en: String(r.title_en ?? ""),
+        amount_display: String(r.amount_display ?? ""),
+        unit_ar: String(r.unit_ar ?? ""),
+        unit_en: String(r.unit_en ?? ""),
+        sort_order: Number(r.sort_order ?? 0),
+      }));
     }
-    if (!data?.length) return defaultOffers;
-    return data.map((r: Record<string, unknown>) => ({
-      id: String(r.id),
-      variant: r.variant === "buy" ? "buy" : "sell",
-      title_ar: String(r.title_ar ?? ""),
-      title_en: String(r.title_en ?? ""),
-      amount_display: String(r.amount_display ?? ""),
-      unit_ar: String(r.unit_ar ?? ""),
-      unit_en: String(r.unit_en ?? ""),
-      sort_order: Number(r.sort_order ?? 0),
-    }));
   }
   return loadFileStore().offers.sort((a, b) => a.sort_order - b.sort_order);
 }
@@ -710,6 +709,10 @@ export async function registerBotUser(telegramId: number) {
 }
 
 export async function listBotUsers() {
+  if (db) {
+    const { data, error } = await db.from("bot_users").select("*");
+    if (!error && data) return data as BotUser[];
+  }
   const store = loadFileStore();
   return store.bot_users;
 }
@@ -735,11 +738,10 @@ export async function createOffer(offerData: Omit<ServerOffer, "id">) {
 }
 
 export async function deleteOffer(id: string) {
-  const store = loadFileStore();
-  store.offers = store.offers.filter((o) => o.id !== id);
-  saveFileStore(store);
-
   if (db) {
     await db.from("offers").delete().eq("id", id);
   }
+  const store = loadFileStore();
+  store.offers = store.offers.filter((o) => o.id !== id);
+  saveFileStore(store);
 }
