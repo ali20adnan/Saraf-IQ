@@ -1036,11 +1036,16 @@ function MainContent() {
       <button
         type="button"
         onClick={() => setCurrentView('home')}
-        className="flex items-center gap-3 px-4 mb-10 w-full text-start rounded-2xl py-2 -mx-1 hover:bg-gray-50 transition-colors"
+        className="flex items-center gap-3 px-3 mb-10 w-full text-start rounded-2xl py-3 -mx-1 hover:bg-gray-50/80 transition-colors group"
         aria-label={`${t('appTitle')} — ${t('home')}`}
       >
-        <div className="w-10 h-10 bg-red-600 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-red-200 shrink-0">
-          S
+        <div className="w-12 h-12 shrink-0 overflow-hidden">
+          <img
+            src="/icons/logo.png"
+            alt={t('appTitle')}
+            className="w-full h-full object-cover object-top scale-[1.6]"
+            loading="eager"
+          />
         </div>
         <div className="min-w-0">
           <h1 className="font-black text-lg tracking-tight text-gray-900">{t('appTitle')}</h1>
@@ -1121,15 +1126,20 @@ function MainContent() {
   );
 
   const renderMobileHeader = () => (
-    <header className="lg:hidden bg-white sticky top-0 z-30 px-5 py-4 flex justify-between items-center border-b border-gray-100">
+    <header className="lg:hidden bg-white sticky top-0 z-30 px-5 py-3 flex justify-between items-center border-b border-gray-100 shadow-sm">
       <button
         type="button"
         onClick={() => setCurrentView('home')}
         className="flex items-center gap-2 min-w-0 rounded-xl py-1 ps-1 pe-2 hover:bg-gray-50 transition-colors -ms-1"
         aria-label={`${t('appTitle')} — ${t('home')}`}
       >
-        <div className="w-8 h-8 bg-red-600 rounded-lg flex items-center justify-center text-white font-bold text-sm shadow-md shadow-red-200 shrink-0">
-          S
+        <div className="w-10 h-10 shrink-0 overflow-hidden">
+          <img
+            src="/icons/logo.png"
+            alt={t('appTitle')}
+            className="w-full h-full object-cover object-top scale-[1.6]"
+            loading="eager"
+          />
         </div>
         <h1 className="text-base font-black tracking-tight text-gray-900 truncate">{t('appTitle')}</h1>
       </button>
@@ -1747,8 +1757,13 @@ function MainContent() {
             
             {/* Logo and Identity */}
             <div className="flex flex-col items-center gap-3 mb-10">
-              <div className="w-12 h-12 bg-red-600 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-red-200">
-                S
+              <div className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center shadow-md border border-red-100/50 overflow-hidden">
+                <img
+                  src="/icons/logo.png"
+                  alt={t('appTitle')}
+                  className="w-20 h-20 object-contain"
+                  loading="eager"
+                />
               </div>
               <div>
                 <h1 className="font-black text-xl tracking-tight text-gray-900">{t('appTitle')}</h1>
