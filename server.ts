@@ -91,6 +91,52 @@ async function startServer() {
   app.get(APK_DOWNLOAD_PATH, sendApkOrRedirect);
   app.get(`/${APK_FILE_ON_DISK}`, sendApkOrRedirect);
 
+  /**
+   * إعدادات عامة للواجهة (مفتاح anon عام أصلاً) — تُقرأ من متغيرات Railway دون إعادة بناء.
+   * للـ APK: عيّن VITE_APP_API_ORIGIN=https://your-app.up.railway.app عند البناء.
+   */
+  app.options("/api/public-config", (_req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    res.status(204).end();
+  });
+
+  app.get("/api/public-config", (_req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+    const supabaseUrl = (
+      process.env.VITE_SUPABASE_URL ||
+      process.env.SUPABASE_URL ||
+      ""
+    ).trim();
+    const supabaseAnonKey = (
+      process.env.VITE_SUPABASE_ANON_KEY ||
+      process.env.PUBLIC_SUPABASE_ANON_KEY ||
+      ""
+    ).trim();
+    const apkUrl = process.env.VITE_APK_URL?.trim() || undefined;
+    const railwayPublicDomain = process.env.RAILWAY_PUBLIC_DOMAIN?.trim() || undefined;
+
+    if (!supabaseUrl.startsWith("http") || !supabaseAnonKey) {
+      res.status(503).json({
+        error: "missing_env",
+        message:
+          "Set VITE_SUPABASE_URL or SUPABASE_URL, and VITE_SUPABASE_ANON_KEY (or PUBLIC_SUPABASE_ANON_KEY) in Railway.",
+      });
+      return;
+    }
+
+    res.json({
+      supabaseUrl,
+      supabaseAnonKey,
+      ...(apkUrl ? {apkUrl} : {}),
+      ...(railwayPublicDomain ? {railwayPublicDomain} : {}),
+    });
+  });
+
   app.get("/api/apk-link", (req, res) => {
     const canonicalBase = resolveCanonicalOrigin(req);
     const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN?.trim();

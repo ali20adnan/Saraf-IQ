@@ -1,11 +1,18 @@
-import {StrictMode} from 'react';
-import {createRoot} from 'react-dom/client';
-import './lib/pwaRegister';
-import App from './App.tsx';
 import './index.css';
+import './lib/pwaRegister';
+import {initSupabase} from './lib/supabase';
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+void (async () => {
+  await initSupabase();
+  const [{createRoot}, {StrictMode}, {default: App}] = await Promise.all([
+    import('react-dom/client'),
+    import('react'),
+    import('./App.tsx'),
+  ]);
+
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+})();

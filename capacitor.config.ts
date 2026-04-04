@@ -6,6 +6,7 @@ const config = {
   appId: 'com.sarafiq.app',
   appName: 'صراف - Saraf IQ',
   webDir: 'dist',
+  /** للـ APK: عيّن في .env عند البناء VITE_APP_API_ORIGIN=رابط_Railway لقراءة Supabase من /api/public-config */
   server: {
     androidScheme: 'https',
   },

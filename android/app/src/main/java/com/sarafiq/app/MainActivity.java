@@ -29,6 +29,9 @@ public class MainActivity extends BridgeActivity {
                 return;
             }
             wv.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                wv.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_YES);
+            }
             WebSettings s = wv.getSettings();
             s.setCacheMode(WebSettings.LOAD_DEFAULT);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

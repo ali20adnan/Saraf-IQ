@@ -2,11 +2,11 @@ import type {ImgHTMLAttributes} from 'react';
 
 const sizeStyles = {
   /** تابات الجوال وأماكن ضيقة */
-  xs: 'h-7 w-7 min-h-[1.75rem] min-w-[1.75rem]',
-  sm: 'h-11 w-11 min-h-[2.75rem] min-w-[2.75rem]',
-  md: 'h-14 w-14 min-h-[3.5rem] min-w-[3.5rem]',
-  lg: 'h-16 w-16 min-h-16 min-w-16',
-  xl: 'h-24 w-24 min-h-24 min-w-24',
+  xs: 'h-6 w-6 min-h-[1.5rem] min-w-[1.5rem]',
+  sm: 'h-10 w-10 min-h-[2.5rem] min-w-[2.5rem]',
+  md: 'h-12 w-12 min-h-[3rem] min-w-[3rem]',
+  lg: 'h-14 w-14 min-h-[3.5rem] min-w-[3.5rem]',
+  xl: 'h-20 w-20 min-h-[5rem] min-w-[5rem]',
 } as const;
 
 export type BrandLogoSize = keyof typeof sizeStyles;

@@ -8,3 +8,9 @@ coverage/
 .env*
 !.env.example
 /data/
+
+# توقيع إصدار أندرويد — لا تُرفع إلى المستودع
+android/keystore.properties
+android/app/*.keystore
+android/app/*.jks
+*.jks
