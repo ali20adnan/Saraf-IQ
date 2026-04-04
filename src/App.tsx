@@ -1039,11 +1039,11 @@ function MainContent() {
         className="flex items-center gap-3 px-3 mb-10 w-full text-start rounded-2xl py-3 -mx-1 hover:bg-gray-50/80 transition-colors group"
         aria-label={`${t('appTitle')} — ${t('home')}`}
       >
-        <div className="w-12 h-12 shrink-0 overflow-hidden">
+        <div className="w-16 h-16 shrink-0 flex items-center justify-center">
           <img
             src="/icons/logo.png"
             alt={t('appTitle')}
-            className="w-full h-full object-cover object-top scale-[1.6]"
+            className="w-full h-full object-contain"
             loading="eager"
           />
         </div>
@@ -1133,11 +1133,11 @@ function MainContent() {
         className="flex items-center gap-2 min-w-0 rounded-xl py-1 ps-1 pe-2 hover:bg-gray-50 transition-colors -ms-1"
         aria-label={`${t('appTitle')} — ${t('home')}`}
       >
-        <div className="w-10 h-10 shrink-0 overflow-hidden">
+        <div className="w-14 h-14 shrink-0 flex items-center justify-center">
           <img
             src="/icons/logo.png"
             alt={t('appTitle')}
-            className="w-full h-full object-cover object-top scale-[1.6]"
+            className="w-full h-full object-contain"
             loading="eager"
           />
         </div>
