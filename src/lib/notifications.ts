@@ -52,7 +52,8 @@ class NotificationService {
         this.audio.currentTime = 0;
         await this.audio.play();
       } catch (e) {
-        console.log('Audio play failed:', e);
+        // Audio play failed, possibly due to user interaction requirement
+        console.log('Audio play failed');
       }
     }
 

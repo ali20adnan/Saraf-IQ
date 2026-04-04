@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import Cookies from 'js-cookie';
 import { supabase } from './lib/supabase';
 import { notificationService } from './lib/notifications';
+import { MobileBottomNav } from './components/MobileBottomNav';
 import type { ServerTransaction } from '../types/transaction';
 
 type TransactionType = 'sell' | 'buy';
@@ -2172,30 +2173,12 @@ function MainContent() {
 
         {/* Mobile Bottom Navigation */}
         {currentView !== 'login' && currentView !== 'signup' && (
-          <nav className="lg:hidden fixed bottom-0 w-full bg-white border-t border-gray-200 pb-safe z-40 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
-            <div className="flex justify-around items-center h-16 px-1">
-              <button onClick={() => setCurrentView('home')} className={`flex flex-col items-center gap-1 min-w-[3.25rem] transition-colors ${currentView === 'home' ? 'text-red-600' : 'text-gray-400 hover:text-gray-900'}`}>
-                <Home className="w-5 h-5" />
-                <span className="text-[10px] font-bold">{t('home')}</span>
-              </button>
-              <button onClick={() => setCurrentView('offers')} className={`flex flex-col items-center gap-1 min-w-[3.25rem] transition-colors ${currentView === 'offers' ? 'text-red-600' : 'text-gray-400 hover:text-gray-900'}`}>
-                <Tag className="w-5 h-5" />
-                <span className="text-[10px] font-bold">{t('bundles')}</span>
-              </button>
-              <button onClick={() => setCurrentView('history')} className={`flex flex-col items-center gap-1 min-w-[3.25rem] transition-colors ${currentView === 'history' ? 'text-red-600' : 'text-gray-400 hover:text-gray-900'}`}>
-                <Clock className="w-5 h-5" />
-                <span className="text-[10px] font-bold">{t('history')}</span>
-              </button>
-              <button onClick={() => setCurrentView('settings')} className={`flex flex-col items-center gap-1 min-w-[3.25rem] transition-colors ${currentView === 'settings' ? 'text-red-600' : 'text-gray-400 hover:text-gray-900'}`}>
-                <Settings className="w-5 h-5" />
-                <span className="text-[10px] font-bold">{t('settings')}</span>
-              </button>
-              <button onClick={() => setCurrentView('profile')} className={`flex flex-col items-center gap-1 min-w-[3.25rem] transition-colors ${currentView === 'profile' ? 'text-red-600' : 'text-gray-400 hover:text-gray-900'}`}>
-                <User className="w-5 h-5" />
-                <span className="text-[10px] font-bold">{t('profile')}</span>
-              </button>
-            </div>
-          </nav>
+          <MobileBottomNav
+            currentView={currentView}
+            onNavigate={setCurrentView}
+            isAdmin={isAdmin}
+            isAuthenticated={isAuthenticated}
+          />
         )}
       </div>
     </div>
