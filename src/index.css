@@ -13,6 +13,12 @@ html {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* عربي: Cairo أولاً — يقلّل «ازدواجية» السماكة مع Inter + font-black في WebKit/WebView */
+html[lang="ar"] body,
+html[lang="ar"] #root {
+  font-family: "Cairo", "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
 body {
   height: 100%;
   max-height: 100%;

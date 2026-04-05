@@ -730,22 +730,7 @@ async function startServer() {
       }
     });
 
-    try {
-      await (
-        bot as unknown as {
-          deleteWebHook(form?: { drop_pending_updates?: boolean }): Promise<boolean>;
-        }
-      ).deleteWebHook({ drop_pending_updates: true });
-    } catch (e) {
-      console.error("Telegram deleteWebHook:", e);
-    }
-    await bot.startPolling();
-    try {
-      const me = await bot.getMe();
-      console.log(`Telegram bot جاهز: @${me.username ?? "?"} (id ${me.id}) — جرّب /start`);
-    } catch (e) {
-      console.error("Telegram getMe فشل — تحقق من TELEGRAM_BOT_TOKEN:", e);
-    }
+    /** Polling يبدأ بعد app.listen حتى لا يتعطل الموقع إذا تعطل الاتصال بـ api.telegram.org */
   } else {
     console.warn("TELEGRAM_BOT_TOKEN not provided. Telegram bot features are disabled.");
   }
@@ -1096,11 +1081,32 @@ async function startServer() {
     console.log("  Saraf — موقع + API + بوت (عملية واحدة)");
     console.log(`  الموقع والواجهة: ${url}`);
     console.log(
-    bot
-      ? "  بوت تيليجرام: يعمل (polling) — أرسل /start للبوت"
-      : "  بوت تيليجرام: غير مفعّل — أضف TELEGRAM_BOT_TOKEN في .env"
+      bot
+        ? "  بوت تيليجرام: جاري بدء polling بعد فتح المنفذ…"
+        : "  بوت تيليجرام: غير مفعّل — أضف TELEGRAM_BOT_TOKEN في .env"
     );
     console.log("");
+
+    if (bot) {
+      void (async () => {
+        try {
+          await (
+            bot as unknown as {
+              deleteWebHook(form?: { drop_pending_updates?: boolean }): Promise<boolean>;
+            }
+          ).deleteWebHook({ drop_pending_updates: true });
+        } catch (e) {
+          console.error("Telegram deleteWebHook:", e);
+        }
+        try {
+          await bot.startPolling();
+          const me = await bot.getMe();
+          console.log(`Telegram bot جاهز: @${me.username ?? "?"} (id ${me.id}) — جرّب /start`);
+        } catch (e) {
+          console.error("Telegram polling/getMe فشل — تحقق من الشبكة و TELEGRAM_BOT_TOKEN:", e);
+        }
+      })();
+    }
   });
 }
 

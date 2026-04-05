@@ -1336,10 +1336,20 @@ function MainContent() {
         <button
           type="button"
           onClick={isAuthenticated ? handleLogout : () => setCurrentView('login')}
+          aria-label={isAuthenticated ? t('logout') : t('login')}
           className="flex w-full items-center gap-3 rounded-xl px-4 py-3 font-semibold text-red-600 transition-colors hover:bg-red-50"
         >
-          {isAuthenticated ? <LogOut className="h-5 w-5 shrink-0" /> : <LogIn className="h-5 w-5 shrink-0" />}
-          {isAuthenticated ? t('logout') : t('login')}
+          {isAuthenticated ? (
+            <>
+              <LogOut className="h-5 w-5 shrink-0" aria-hidden />
+              <span className="min-w-0 flex-1 text-start">{t('logout')}</span>
+            </>
+          ) : (
+            <>
+              <LogIn className="h-5 w-5 shrink-0" aria-hidden />
+              <span className="min-w-0 flex-1 text-start">{t('login')}</span>
+            </>
+          )}
         </button>
       </div>
     </aside>
@@ -1376,46 +1386,47 @@ function MainContent() {
     const totalDisplay = formatLatinDigits(totalRaw);
 
     const statValueClass =
-      'text-xl font-black tabular-nums tracking-tight text-gray-900 leading-none sm:text-2xl [font-variant-numeric:lining-nums]';
+      'block text-xl font-black tabular-nums tracking-tight text-gray-900 leading-none sm:text-2xl [font-variant-numeric:lining-nums]';
+    const statLabelClass =
+      'text-[10px] font-bold leading-snug tracking-wide text-gray-400 sm:text-xs' +
+      (lang === 'en' ? ' uppercase' : '');
 
     return (
-      <div className="saraf-dash-in mb-5 flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:mb-6 sm:p-6 lg:flex-row lg:items-center lg:justify-between lg:gap-8 lg:rounded-[2rem] lg:p-8">
+      <div className="mb-5 flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:mb-6 sm:p-6 lg:mb-6 lg:flex-row lg:items-center lg:justify-between lg:gap-8 lg:rounded-[2rem] lg:p-8">
         <div className="flex w-full min-w-0 items-start gap-3 sm:items-center sm:gap-4 lg:min-w-[min(100%,22rem)] lg:flex-1">
           <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-gray-800 to-gray-900 text-white shadow-md ring-1 ring-black/5 sm:mt-0 sm:h-11 sm:w-11 sm:rounded-2xl">
             <User className="h-[18px] w-[18px] text-white/95 sm:h-5 sm:w-5" />
           </div>
-          <div className="min-w-0 flex-1 text-start">
+          <div className="min-w-0 flex-1 text-start [text-rendering:geometricPrecision]">
             {welcomeWithName ? (
-              <h2 className="whitespace-normal text-base font-black leading-snug tracking-tight text-gray-900 sm:text-lg md:text-xl">
+              <h2 className="whitespace-normal text-base font-bold leading-normal tracking-normal text-gray-900 sm:text-lg md:text-xl">
                 {welcomeWithName}
               </h2>
             ) : (
-              <>
-                <p className="mb-0.5 text-xs font-medium text-gray-500 sm:text-sm">{t('greeting')}</p>
-                <h2 className="whitespace-normal text-base font-black leading-snug tracking-tight text-gray-900 sm:text-lg md:text-xl">
-                  {t('userName')}
-                </h2>
-              </>
+              <h2 className="whitespace-normal text-base font-bold leading-normal tracking-normal text-gray-900 sm:text-lg md:text-xl">
+                <span className="text-gray-600">{t('greeting')}</span>{' '}
+                <span className="text-gray-900">{t('userName')}</span>
+              </h2>
             )}
           </div>
         </div>
+        {/* أرقام لاتينية: محاذاة يمين في RTL حتى لا يظهر الصفر بعيداً عن عنوان عربي */}
         <div
-          className={`grid w-full shrink-0 grid-cols-2 border-t border-gray-100 pt-3 sm:pt-4 lg:w-auto lg:min-w-[16rem] lg:border-t-0 lg:pt-0 ${dir === 'rtl' ? 'lg:text-left' : 'lg:text-right'}`}
+          className={`grid w-full shrink-0 grid-cols-2 gap-x-3 border-t border-gray-100 pt-3 sm:pt-4 sm:gap-x-6 lg:w-auto lg:min-w-[14rem] lg:max-w-md lg:border-t-0 lg:pt-0 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}
         >
-          <div className="flex flex-col gap-1 border-e border-gray-200 pe-3 sm:pe-6">
-            <p className="text-[10px] font-bold uppercase leading-snug tracking-wider text-gray-400 sm:text-xs">
-              {t('activeOrders')}
-            </p>
-            <div className="flex min-h-[1.75rem] items-baseline justify-end" dir="ltr">
-              <span className={statValueClass}>{activeDisplay}</span>
+          <div className={`min-w-0 border-e border-gray-200 pe-3 sm:pe-5 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>
+            <p className={statLabelClass}>{t('activeOrders')}</p>
+            <div dir="ltr" className="mt-1 min-h-[1.75rem]">
+              <span className={`${statValueClass} ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>{activeDisplay}</span>
             </div>
           </div>
-          <div className="flex flex-col gap-1 ps-3 sm:ps-6">
-            <p className="text-[10px] font-bold uppercase leading-snug tracking-wider text-gray-400 sm:text-xs">
-              {t('totalExchanged')}
-            </p>
-            <div className="flex min-h-[1.75rem] items-baseline justify-end gap-1.5" dir="ltr">
-              <span className={statValueClass}>{totalDisplay}</span>
+          <div className={`min-w-0 ps-3 sm:ps-5 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>
+            <p className={statLabelClass}>{t('totalExchanged')}</p>
+            <div
+              dir="ltr"
+              className={`mt-1 flex min-h-[1.75rem] flex-wrap items-baseline gap-1.5 sm:gap-2 ${dir === 'rtl' ? 'justify-end' : 'justify-start'}`}
+            >
+              <span className={`${statValueClass} ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>{totalDisplay}</span>
               <span className="shrink-0 text-sm font-semibold text-gray-500 sm:text-base [font-variant-numeric:lining-nums]">
                 {t('iqd')}
               </span>
@@ -2125,12 +2136,12 @@ function MainContent() {
       case 'home':
       default:
         return (
-          <div className="mx-auto w-full max-w-6xl px-0 sm:px-0 lg:max-w-[88rem]">
+          <div className="mx-auto flex w-full max-w-6xl flex-col px-0 sm:px-0 lg:max-w-[88rem] lg:min-h-[calc(100dvh-10rem)]">
             {/* موبايل: ترحيب فوق | سطح مكتب: صف كامل لتفادي تداخل «إجمالي التبديل» مع عمود النشاط */}
             <div className="lg:hidden">{renderUserGreeting()}</div>
             <div className="mb-6 hidden lg:mb-8 lg:block">{renderUserGreeting()}</div>
 
-            <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-12 lg:gap-10 xl:gap-12">
+            <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-12 lg:gap-10 xl:gap-12 lg:pb-4">
               {/* عمود العروض وطرق الدفع */}
               <div
                 className={`min-w-0 space-y-6 lg:col-span-5 xl:col-span-6 ${selectedMethod ? 'hidden lg:block' : ''}`}
