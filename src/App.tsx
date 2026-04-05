@@ -1011,48 +1011,92 @@ function MainContent() {
 
 
   const renderHistory = () => (
-    <div className="flex-1 p-6 lg:p-8">
-      <div className="max-w-4xl mx-auto">
-        <h2 className="text-2xl font-black text-gray-900 mb-8">{t('history')}</h2>
-        
-        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8">
-          <div className="space-y-4">
-            {transactions.length > 0 ? transactions.map(tx => (
-              <div key={tx.id} className="flex items-center justify-between p-4 rounded-2xl border border-gray-100 hover:bg-gray-50 transition-colors cursor-default">
-                <div className="flex items-center gap-4">
-                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                    tx.status === 'completed' ? 'bg-green-50 text-green-600' : tx.status === 'failed' ? 'bg-red-50 text-red-600' : 'bg-orange-50 text-orange-600'
-                  }`}>
-                    <FileText className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <p className="font-bold text-gray-900">
-                      {tx.type === 'sell' ? t('sellCredit') : t('buyCredit')} - {tx.method}
-                    </p>
-                    <p className="text-xs text-gray-500 font-medium" dir="ltr">
-                      {new Date(tx.created_at).toLocaleString('en-GB', {day: 'numeric', month: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'})}
-                    </p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="font-black text-gray-900">{formatLatinDigits(Number(tx.amount))} <span className="text-xs text-gray-500 font-bold">{tx.type === 'sell' ? t('iqd') : t('asiacell')}</span></p>
-                  <p className={`text-xs font-bold mt-0.5 ${
-                    tx.status === 'completed' ? 'text-green-600' : tx.status === 'failed' ? 'text-red-600' : 'text-orange-600'
-                  }`}>
-                    {tx.status === 'completed' ? t('statusCompleted') : tx.status === 'failed' ? t('statusFailed') : t('statusPending')}
-                  </p>
-                </div>
-              </div>
-            )) : (
-              <div className="text-center py-12">
-                <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Clock className="w-8 h-8 text-gray-400" />
-                </div>
-                <p className="text-gray-500 font-medium">{t('noTransactions')}</p>
-              </div>
-            )}
+    <div className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+      <div className="mx-auto max-w-2xl">
+        <h2 className="mb-6 text-2xl font-black tracking-tight text-gray-900 sm:mb-8">{t('history')}</h2>
+
+        {transactions.length > 0 ? (
+          <ul className="flex flex-col gap-4 sm:gap-5">
+            {transactions.map((tx) => {
+              const statusLabel =
+                tx.status === 'completed'
+                  ? t('statusCompleted')
+                  : tx.status === 'failed'
+                    ? t('statusFailed')
+                    : t('statusPending');
+              const statusStyles =
+                tx.status === 'completed'
+                  ? 'bg-emerald-50 text-emerald-800 ring-emerald-100'
+                  : tx.status === 'failed'
+                    ? 'bg-red-50 text-red-800 ring-red-100'
+                    : 'bg-amber-50 text-amber-900 ring-amber-100';
+              const iconStyles =
+                tx.status === 'completed'
+                  ? 'bg-emerald-50 text-emerald-600'
+                  : tx.status === 'failed'
+                    ? 'bg-red-50 text-red-600'
+                    : 'bg-amber-50 text-amber-700';
+
+              return (
+                <li key={tx.id}>
+                  <article
+                    className="rounded-[1.35rem] border border-gray-100 bg-white p-5 shadow-[0_2px_16px_rgba(15,23,42,0.04)] transition-[box-shadow,transform] duration-200 hover:shadow-[0_8px_28px_rgba(15,23,42,0.07)] sm:p-6"
+                  >
+                    <div className="flex flex-col gap-5">
+                      <div className="flex gap-4 sm:gap-5">
+                        <div
+                          className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl ${iconStyles}`}
+                          aria-hidden
+                        >
+                          <FileText className="h-7 w-7" strokeWidth={2} />
+                        </div>
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <h3 className="text-[15px] font-semibold leading-snug text-gray-900 sm:text-base">
+                            {tx.type === 'sell' ? t('sellCredit') : t('buyCredit')}
+                            <span className="font-normal text-gray-400"> · </span>
+                            <span className="text-gray-700">{tx.method}</span>
+                          </h3>
+                          <p className="text-sm text-gray-500" dir="ltr">
+                            {new Date(tx.created_at).toLocaleString('en-GB', {
+                              day: 'numeric',
+                              month: 'short',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                        <div className="min-w-0" dir="ltr">
+                          <p className="text-2xl font-black tracking-tight text-gray-900 [font-variant-numeric:lining-nums] sm:text-[1.65rem]">
+                            {formatLatinDigits(Number(tx.amount))}
+                            <span className="ms-2 inline-block whitespace-nowrap text-base font-semibold text-gray-500 sm:text-lg">
+                              {tx.type === 'sell' ? t('iqd') : t('asiacell')}
+                            </span>
+                          </p>
+                        </div>
+                        <span
+                          className={`inline-flex w-fit shrink-0 items-center justify-center rounded-full px-4 py-1.5 text-xs font-bold ring-1 ${statusStyles}`}
+                        >
+                          {statusLabel}
+                        </span>
+                      </div>
+                    </div>
+                  </article>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <div className="rounded-3xl border border-dashed border-gray-200 bg-gray-50/50 px-6 py-16 text-center">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-gray-100">
+              <Clock className="h-8 w-8 text-gray-400" />
+            </div>
+            <p className="text-gray-600 font-medium">{t('noTransactions')}</p>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
@@ -2081,20 +2125,16 @@ function MainContent() {
       case 'home':
       default:
         return (
-          <div className="max-w-6xl mx-auto">
-            
-            <div className="lg:hidden">
-              {renderUserGreeting()}
-            </div>
+          <div className="mx-auto w-full max-w-6xl px-0 sm:px-0 lg:max-w-[88rem]">
+            {/* موبايل: ترحيب فوق | سطح مكتب: صف كامل لتفادي تداخل «إجمالي التبديل» مع عمود النشاط */}
+            <div className="lg:hidden">{renderUserGreeting()}</div>
+            <div className="mb-6 hidden lg:mb-8 lg:block">{renderUserGreeting()}</div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-              
-              {/* Left Column: Offers & Methods */}
-              <div className={`lg:col-span-5 xl:col-span-6 space-y-6 ${selectedMethod && 'hidden lg:block'}`}>
-                <div className="hidden lg:block">
-                  {renderUserGreeting()}
-                </div>
-
+            <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-12 lg:gap-10 xl:gap-12">
+              {/* عمود العروض وطرق الدفع */}
+              <div
+                className={`min-w-0 space-y-6 lg:col-span-5 xl:col-span-6 ${selectedMethod ? 'hidden lg:block' : ''}`}
+              >
                 {renderTypeToggle()}
 
                 {((txType === 'buy' && appSettings.buy_coming_soon) || (txType === 'sell' && appSettings.sell_coming_soon)) ? (
@@ -2173,8 +2213,10 @@ function MainContent() {
                 )}
               </div>
 
-              {/* Right Column: Form or Placeholder/History */}
-              <div className={`lg:col-span-7 xl:col-span-6 ${!selectedMethod && 'hidden lg:block'}`}>
+              {/* عمود النموذج / النشاط الأخير — min-w-0 يمنع تداخل النصوص مع العمود المجاور */}
+              <div
+                className={`min-w-0 lg:col-span-7 xl:col-span-6 ${!selectedMethod ? 'hidden lg:block' : ''}`}
+              >
                   {((txType === 'buy' && appSettings.buy_coming_soon) || (txType === 'sell' && appSettings.sell_coming_soon)) ? (
                     <div className="h-full flex flex-col">
                       <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8 flex-1 flex items-center justify-center">
@@ -2209,42 +2251,73 @@ function MainContent() {
                       renderTransactionForm()
                     )
                   ) : (
-                    <div className="h-full flex flex-col">
-                      {/* Desktop Empty State / Recent Activity */}
-                      <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8 flex-1">
-                        <div className="flex items-center justify-between mb-8">
-                          <h2 className="text-xl font-black text-gray-900">{t('recentActivity')}</h2>
-                          <button className="p-2 hover:bg-gray-50 rounded-lg transition-colors text-gray-400">
-                            <Activity className="w-5 h-5" />
-                          </button>
+                    <div className="flex h-full min-h-0 flex-col lg:min-h-[32rem]">
+                      {/* سطح المكتب: النشاط الأخير — عنوان منفصل عن عمود العروض (لا تداخل مع بطاقة الترحيب) */}
+                      <div className="flex flex-1 flex-col rounded-3xl border border-gray-100 bg-white p-6 shadow-sm sm:p-8">
+                        <div className="mb-6 flex items-center justify-between gap-4 border-b border-gray-100 pb-4">
+                          <h2 className="min-w-0 text-xl font-black tracking-tight text-gray-900">
+                            {t('recentActivity')}
+                          </h2>
+                          <div className="shrink-0 rounded-xl p-2 text-gray-300" aria-hidden>
+                            <Activity className="h-5 w-5" />
+                          </div>
                         </div>
                         
-                        <div className="space-y-4">
-                          {transactions.slice(0, 3).map(tx => (
-                            <div key={tx.id} className="flex items-center justify-between p-4 rounded-2xl border border-gray-100 hover:bg-gray-50 transition-colors cursor-default">
-                              <div className="flex items-center gap-4">
-                                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                                  tx.status === 'completed' ? 'bg-green-50 text-green-600' : tx.status === 'failed' ? 'bg-red-50 text-red-600' : 'bg-orange-50 text-orange-600'
-                                }`}>
-                                  <FileText className="w-6 h-6" />
+                        <div className="space-y-3">
+                          {transactions.slice(0, 3).map((tx) => {
+                            const st =
+                              tx.status === 'completed'
+                                ? 'bg-emerald-50 text-emerald-700 ring-emerald-100'
+                                : tx.status === 'failed'
+                                  ? 'bg-red-50 text-red-700 ring-red-100'
+                                  : 'bg-amber-50 text-amber-800 ring-amber-100';
+                            const ic =
+                              tx.status === 'completed'
+                                ? 'bg-emerald-50 text-emerald-600'
+                                : tx.status === 'failed'
+                                  ? 'bg-red-50 text-red-600'
+                                  : 'bg-amber-50 text-amber-700';
+                            return (
+                              <div
+                                key={tx.id}
+                                className="rounded-2xl border border-gray-100 bg-gray-50/40 p-4 transition-colors hover:bg-gray-50/80"
+                              >
+                                <div className="mb-3 flex gap-3">
+                                  <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${ic}`}>
+                                    <FileText className="h-5 w-5" strokeWidth={2} />
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-sm font-semibold leading-snug text-gray-900">
+                                      {tx.type === 'sell' ? t('sellCredit') : t('buyCredit')} · {tx.method}
+                                    </p>
+                                    <p className="mt-1 text-xs text-gray-500" dir="ltr">
+                                      {new Date(tx.created_at).toLocaleString('en-GB', {
+                                        day: 'numeric',
+                                        month: 'short',
+                                        hour: '2-digit',
+                                        minute: '2-digit',
+                                      })}
+                                    </p>
+                                  </div>
                                 </div>
-                                <div>
-                                  <p className="font-bold text-gray-900">
-                                    {tx.type === 'sell' ? t('sellCredit') : t('buyCredit')} - {tx.method}
+                                <div className="flex items-end justify-between gap-3 border-t border-gray-100/80 pt-3">
+                                  <p className="text-lg font-black tabular-nums text-gray-900" dir="ltr">
+                                    {formatLatinDigits(Number(tx.amount))}
+                                    <span className="ms-1.5 whitespace-nowrap text-xs font-semibold text-gray-500">
+                                      {tx.type === 'sell' ? t('iqd') : t('asiacell')}
+                                    </span>
                                   </p>
-                                  <p className="text-xs text-gray-500 font-medium">{new Date(tx.created_at).toLocaleDateString()}</p>
+                                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ring-1 ${st}`}>
+                                    {tx.status === 'completed'
+                                      ? t('statusCompleted')
+                                      : tx.status === 'failed'
+                                        ? t('statusFailed')
+                                        : t('statusPending')}
+                                  </span>
                                 </div>
                               </div>
-                              <div className="text-right">
-                                <p className="font-black text-gray-900">{formatLatinDigits(Number(tx.amount))} <span className="text-xs text-gray-500 font-bold">{tx.type === 'sell' ? t('iqd') : t('asiacell')}</span></p>
-                                <p className={`text-xs font-bold mt-0.5 ${
-                                  tx.status === 'completed' ? 'text-green-600' : tx.status === 'failed' ? 'text-red-600' : 'text-orange-600'
-                                }`}>
-                                  {tx.status === 'completed' ? t('statusCompleted') : tx.status === 'failed' ? t('statusFailed') : t('statusPending')}
-                                </p>
-                              </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                           {transactions.length === 0 && (
                             <div className="text-center py-6">
                               <p className="text-gray-500 font-medium">{t('noTransactions')}</p>
