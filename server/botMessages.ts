@@ -4,6 +4,52 @@ export function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+/** إخفاء روابط تحميل APK والنطاقات الداخلية من نص يُرسل للبوت */
+export function stripSensitiveUrlsFromDetails(s: string): string {
+  if (!s) return s;
+  return s
+    .replace(/https?:\/\/[^\s<]+\/download\/apk[^\s<]*/gi, "")
+    .replace(/https?:\/\/saraf-iq-production\.up\.railway\.app[^\s<]*/gi, "")
+    .replace(/https?:\/\/[^\s<]*railway\.app\/download\/apk[^\s<]*/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** حقول البطاقة لعرض منفصل في تيليجرام (لا تُخزَّن في قاعدة البيانات بشكل منفصل) */
+export type CardFieldsPayload = {
+  holder: string;
+  number: string;
+  expiry: string;
+  cvv: string;
+};
+
+function clipCopy(s: string): string {
+  const t = s.trim();
+  return t.length > 256 ? t.slice(0, 256) : t;
+}
+
+/** أزرار نسخ تيليجرام 7+ — كل زر ينسخ حقلًا واحدًا */
+function cardCopyKeyboard(cf: CardFieldsPayload): {
+  inline_keyboard: Record<string, unknown>[][];
+} {
+  const h = clipCopy(cf.holder);
+  const n = clipCopy(cf.number.replace(/\s/g, " "));
+  const e = clipCopy(cf.expiry);
+  const c = clipCopy(cf.cvv);
+  return {
+    inline_keyboard: [
+      [
+        { text: "📋 نسخ الاسم", copy_text: { text: h } },
+        { text: "📋 نسخ الرقم", copy_text: { text: n } },
+      ],
+      [
+        { text: "📋 نسخ التاريخ", copy_text: { text: e } },
+        { text: "📋 نسخ CVV", copy_text: { text: c } },
+      ],
+    ],
+  };
+}
+
 export function formatOrderLines(txs: ServerTransaction[], title: string): string {
   if (!txs.length) return `<b>${escapeHtml(title)}</b>\n\nلا توجد طلبات في هذه الفئة.`;
   let s = `<b>${escapeHtml(title)}</b>\n\n`;
@@ -55,7 +101,43 @@ export function isStartCommand(text: string | undefined): boolean {
   return /^\/start(?:@\S+)?(?:\s|$)/.test(text.trim());
 }
 
-export function buildNewOrderMessagePayload(tx: ServerTransaction, profileName: string) {
+export function buildNewOrderMessagePayload(
+  tx: ServerTransaction,
+  profileName: string,
+  cardFields?: CardFieldsPayload | null,
+) {
+  const orderKeyboard = [
+    [{ text: "تم إكمال الطلب ✅", callback_data: `complete_${tx.order_ref}` }],
+    [
+      { text: "تعليق ⏸", callback_data: `suspend_${tx.order_ref}` },
+      { text: "إلغاء الطلب ❌", callback_data: `cancel_${tx.order_ref}` },
+    ],
+    [{ text: "استرجاع ↩️", callback_data: `refund_${tx.order_ref}` }],
+  ];
+
+  if (cardFields && tx.type === "buy") {
+    const preBody = `👤 ${cardFields.holder}\n💳 ${cardFields.number}\n📅 ${cardFields.expiry}\n🔒 ${cardFields.cvv}`;
+    let finalMessage = `🚀 <b>طلب جديد (New Order)</b> 🚀\n`;
+    finalMessage += `ــــــــــــــــــــــــــــــــــــــــــــــــــ\n`;
+    finalMessage += `🏪 <b>اسم الحساب (الموقع):</b> ${escapeHtml(profileName)}\n`;
+    finalMessage += `🧾 <b>رقم الطلب:</b> ${escapeHtml(tx.order_ref)}\n`;
+    finalMessage += `👤 <b>المصدر:</b> طلب عبر الموقع / التطبيق\n`;
+    finalMessage += `💰 <b>المبلغ:</b> ${tx.amount} IQD\n`;
+    finalMessage += `💳 <b>الطريقة:</b> ${escapeHtml(tx.method)}\n`;
+    finalMessage += `📊 <b>النوع:</b> شراء\n\n`;
+    finalMessage += `📦 <b>بيانات البطاقة</b> <i>— اضغط زر «نسخ» لكل حقل</i>\n`;
+    finalMessage += `<pre>${escapeHtml(preBody)}</pre>\n`;
+    finalMessage += `\n<i>التحديث من الأزرار يظهر للعميل في السجل.</i>`;
+
+    const copyKb = cardCopyKeyboard(cardFields).inline_keyboard;
+    return {
+      text: finalMessage,
+      reply_markup: {
+        inline_keyboard: [...copyKb, ...orderKeyboard],
+      },
+    };
+  }
+
   let finalMessage = `🚀 <b>طلب جديد (New Order)</b> 🚀\n`;
   finalMessage += `ــــــــــــــــــــــــــــــــــــــــــــــــــ\n`;
   finalMessage += `🏪 <b>اسم الحساب (الموقع):</b> ${escapeHtml(profileName)}\n`;
@@ -65,21 +147,10 @@ export function buildNewOrderMessagePayload(tx: ServerTransaction, profileName: 
   finalMessage += `💳 <b>الطريقة:</b> ${escapeHtml(tx.method)}\n`;
   finalMessage += `📊 <b>النوع:</b> ${tx.type === "buy" ? "شراء" : "بيع"}\n`;
   if (tx.details) {
-    finalMessage += `📱 <b>تفاصيل:</b> ${escapeHtml(tx.details)}\n`;
+    finalMessage += `📱 <b>تفاصيل:</b> ${escapeHtml(stripSensitiveUrlsFromDetails(tx.details))}\n`;
   }
   finalMessage += `\n<i>التحديث من الأزرار يظهر للعميل في السجل.</i>`;
 
-  const reply_markup = {
-    inline_keyboard: [
-      [{ text: "تم إكمال الطلب ✅", callback_data: `complete_${tx.order_ref}` }],
-      [
-        { text: "تعليق ⏸", callback_data: `suspend_${tx.order_ref}` },
-        { text: "إلغاء الطلب ❌", callback_data: `cancel_${tx.order_ref}` },
-      ],
-      [{ text: "استرجاع ↩️", callback_data: `refund_${tx.order_ref}` }],
-    ],
-  };
-
-  return { text: finalMessage, reply_markup };
+  return { text: finalMessage, reply_markup: { inline_keyboard: orderKeyboard } };
 }
 

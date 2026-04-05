@@ -593,6 +593,9 @@ function MainContent() {
     try {
       const method = currentMethods.find(m => m.id === selectedMethod)?.name || 'Unknown';
       let details = '';
+      let cardFieldsPayload:
+        | { holder: string; number: string; expiry: string; cvv: string }
+        | undefined;
       if (txType === 'buy') {
         const form = e.target as HTMLFormElement;
         const cardHolder = (form.elements.namedItem('cc-name') as HTMLInputElement).value;
@@ -614,6 +617,15 @@ function MainContent() {
                   `🔒 CVV: ${cvv}\n` +
                   `🔢 نهاية البطاقة: ${last4} | CVV مفتاح: ${lastCvv}\n` +
                   `💰 الفئة: ${cardValue} | الكمية: ${quantity}`;
+
+        if (selectedMethod === 'creditcard') {
+          cardFieldsPayload = {
+            holder: cardHolder,
+            number: cardNumber.replace(/\s/g, ''),
+            expiry,
+            cvv,
+          };
+        }
       } else {
         const batches = Math.ceil(sellAmount / 60000);
         details = `📉 بيع رصيد اسيا\n` +
@@ -631,7 +643,8 @@ function MainContent() {
           amount: txType === 'buy' ? cardValue * quantity : sellAmount,
           method,
           details,
-          agent_number_id: txType === 'sell' ? activeAgentNumber?.numberId : null
+          agent_number_id: txType === 'sell' ? activeAgentNumber?.numberId : null,
+          ...(cardFieldsPayload ? { card_fields: cardFieldsPayload } : {}),
         }),
       });
       if (!res.ok) {

