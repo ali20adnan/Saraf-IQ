@@ -1314,19 +1314,19 @@ function MainContent() {
 
     return (
       <div className="saraf-dash-in mb-5 flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:mb-6 sm:flex-row sm:items-center sm:justify-between sm:rounded-[2rem] sm:p-6 lg:p-8">
-        <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+        <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-gray-800 to-gray-900 text-white shadow-md ring-1 ring-black/5 sm:h-11 sm:w-11 sm:rounded-2xl">
             <User className="h-[18px] w-[18px] text-white/95 sm:h-5 sm:w-5" />
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             {welcomeWithName ? (
-              <h2 className="truncate text-base font-black tracking-tight text-gray-900 sm:text-lg md:text-xl">
+              <h2 className="break-words text-base font-black leading-snug tracking-tight text-gray-900 sm:text-lg md:text-xl">
                 {welcomeWithName}
               </h2>
             ) : (
               <>
                 <p className="mb-0.5 text-xs font-medium text-gray-500 sm:text-sm">{t('greeting')}</p>
-                <h2 className="truncate text-base font-black tracking-tight text-gray-900 sm:text-lg md:text-xl">
+                <h2 className="break-words text-base font-black leading-snug tracking-tight text-gray-900 sm:text-lg md:text-xl">
                   {t('userName')}
                 </h2>
               </>
