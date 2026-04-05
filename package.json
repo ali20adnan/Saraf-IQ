@@ -19,7 +19,8 @@
     "cap:open": "cap open android",
     "cap:build": "npm run build && cap sync android && cap open android",
     "apk:copy": "node scripts/copy-apk-to-public.mjs",
-    "build-apk": "npm run build && npx cap sync android",
+    "build-apk": "node scripts/android-build.mjs",
+    "apk": "node scripts/android-build.mjs",
     "assets:android": "npx @capacitor/assets generate --android --iconBackgroundColor \"#F8FAFC\" --splashBackgroundColor \"#F8FAFC\" --logoSplashScale 0.35"
   },
   "dependencies": {

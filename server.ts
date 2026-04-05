@@ -37,6 +37,20 @@ async function startServer() {
   app.use(express.json());
   app.set("trust proxy", true);
 
+  /** CORS: تطبيق Capacitor يستدعي Railway من أصل مختلف (مثل https://localhost) */
+  app.use((req, res, next) => {
+    if (req.path.startsWith("/api")) {
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+      if (req.method === "OPTIONS") {
+        res.status(204).end();
+        return;
+      }
+    }
+    next();
+  });
+
   /** إن وُجد: يعيد توجيه GET /download/apk و/saraf-iq-debug.apk إلى رابط خارجي */
   const APK_DOWNLOAD_URL = process.env.APK_DOWNLOAD_URL?.trim();
 

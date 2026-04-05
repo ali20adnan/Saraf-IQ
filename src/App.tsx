@@ -8,11 +8,30 @@ import { MobileBottomNav } from './components/MobileBottomNav';
 import { AppSplash } from './components/AppSplash';
 import { BrandLogo } from './components/BrandLogo';
 import type { ServerTransaction } from '../types/transaction';
+import { apiUrl } from './lib/apiBase';
 
 type TransactionType = 'sell' | 'buy';
 type ViewType = 'home' | 'login' | 'signup' | 'admin' | 'history' | 'profile' | 'settings' | 'offers';
 
 const CLIENT_ID_KEY = 'saraf_client_id';
+
+/** تكرار أخف على 4G / شبكة قوية */
+function getPollIntervalMs(): number {
+  if (typeof navigator === 'undefined') return 15000;
+  const c = (navigator as Navigator & { connection?: { effectiveType?: string; saveData?: boolean } })
+    .connection;
+  if (c?.saveData) return 28000;
+  if (c?.effectiveType === '4g') return 10000;
+  if (c?.effectiveType === '3g') return 20000;
+  return 15000;
+}
+
+function getOtpPollIntervalMs(): number {
+  if (typeof navigator === 'undefined') return 2000;
+  const c = (navigator as Navigator & { connection?: { effectiveType?: string } }).connection;
+  if (c?.effectiveType === '4g') return 1500;
+  return 2500;
+}
 
 type ApiOffer = {
   id: string;
@@ -130,7 +149,7 @@ function MainContent() {
 
   const fetchSettings = useCallback(async () => {
     try {
-      const res = await fetch('/api/settings');
+      const res = await fetch(apiUrl('/api/settings'));
       if (!res.ok) throw new Error(String(res.status));
       const data = await res.json();
       if (data && typeof data === 'object') {
@@ -150,7 +169,7 @@ function MainContent() {
 
   const fetchActiveNumber = useCallback(async () => {
     try {
-      const res = await fetch('/api/active-number');
+      const res = await fetch(apiUrl('/api/active-number'));
       if (res.ok) {
         const data = await res.json();
         setActiveAgentNumber(data);
@@ -164,7 +183,7 @@ function MainContent() {
     if (!isAdmin) return;
     setIsAdminAgentsLoading(true);
     try {
-      const res = await fetch('/api/admin/agents');
+      const res = await fetch(apiUrl('/api/admin/agents'));
       if (res.ok) {
         const data = await res.json();
         setAdminAgents(data);
@@ -179,7 +198,7 @@ function MainContent() {
   const fetchTransactions = useCallback(async () => {
     if (!clientId) return;
     try {
-      const res = await fetch(`/api/transactions?client_id=${encodeURIComponent(clientId)}`);
+      const res = await fetch(apiUrl(`/api/transactions?client_id=${encodeURIComponent(clientId)}`));
       if (!res.ok) throw new Error(String(res.status));
       const data = await res.json();
       if (Array.isArray(data)) setTransactions(data);
@@ -190,7 +209,7 @@ function MainContent() {
 
   const fetchOffers = useCallback(async () => {
     try {
-      const res = await fetch('/api/offers');
+      const res = await fetch(apiUrl('/api/offers'));
       if (!res.ok) throw new Error(String(res.status));
       const data = await res.json();
       if (Array.isArray(data)) setOffersList(data);
@@ -214,7 +233,7 @@ function MainContent() {
     }
 
     try {
-      const res = await fetch('/api/site-profile');
+      const res = await fetch(apiUrl('/api/site-profile'));
       if (!res.ok) throw new Error(String(res.status));
       const data = await res.json();
       if (data && typeof data === 'object') {
@@ -257,28 +276,32 @@ function MainContent() {
 
   useEffect(() => {
     if (!clientId) return;
-    fetchSettings();
-    fetchTransactions();
-    fetchOffers();
-    fetchSiteProfile();
-    fetchActiveNumber();
+    const initial = [
+      fetchSettings(),
+      fetchTransactions(),
+      fetchOffers(),
+      fetchSiteProfile(),
+      fetchActiveNumber(),
+    ];
     if (isAdmin && (currentView === 'admin' || currentView === 'login')) {
-      fetchAdminAgents();
+      initial.push(fetchAdminAgents());
     }
+    void Promise.all(initial);
+
+    const pollMs = getPollIntervalMs();
     const tmr = window.setInterval(() => {
-      fetchTransactions();
-      fetchSettings();
-      fetchActiveNumber();
-    }, 25000);
+      void Promise.all([fetchTransactions(), fetchSettings(), fetchActiveNumber()]);
+    }, pollMs);
     return () => window.clearInterval(tmr);
   }, [clientId, isAdmin, currentView, fetchSettings, fetchTransactions, fetchOffers, fetchSiteProfile, fetchActiveNumber, fetchAdminAgents]);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
     if (otpState === 'checking' && currentOrderId) {
+      const otpMs = getOtpPollIntervalMs();
       interval = setInterval(() => {
-        fetchTransactions();
-      }, 2500);
+        void fetchTransactions();
+      }, otpMs);
     }
     return () => clearInterval(interval);
   }, [otpState, currentOrderId, fetchTransactions]);
@@ -339,7 +362,7 @@ function MainContent() {
     Cookies.set('saraf_phone', profileDraft.phone, { expires: 365 });
 
     try {
-      const res = await fetch('/api/site-profile', {
+      const res = await fetch(apiUrl('/api/site-profile'), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -368,7 +391,7 @@ function MainContent() {
     const newValue = !appSettings[k];
     setAppSettings((prev) => ({ ...prev, [k]: newValue }));
     try {
-      const res = await fetch('/api/settings', {
+      const res = await fetch(apiUrl('/api/settings'), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ [key]: newValue }),
@@ -514,7 +537,7 @@ function MainContent() {
                   `📦 عدد الدفعات (60ك): ${batches}`;
       }
 
-      const res = await fetch('/api/transactions', {
+      const res = await fetch(apiUrl('/api/transactions'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -557,7 +580,7 @@ function MainContent() {
     e.preventDefault();
     setOtpState('checking');
     try {
-      await fetch('/api/transactions/otp', {
+      await fetch(apiUrl('/api/transactions/otp'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ order_id: currentOrderId, otpDigit: otpCode.trim() })
@@ -705,7 +728,7 @@ function MainContent() {
   const renderAdminPanel = () => {
     const handleToggleAgent = async (id: string, current: boolean) => {
       try {
-        const res = await fetch(`/api/admin/agents/${id}`, {
+        const res = await fetch(apiUrl(`/api/admin/agents/${id}`), {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ is_active: !current }),
@@ -719,7 +742,7 @@ function MainContent() {
     const handleDeleteAgent = async (id: string) => {
       if (!window.confirm("Are you sure? This will delete all associated numbers.")) return;
       try {
-        const res = await fetch(`/api/admin/agents/${id}`, { method: 'DELETE' });
+        const res = await fetch(apiUrl(`/api/admin/agents/${id}`), { method: 'DELETE' });
         if (res.ok) fetchAdminAgents();
       } catch (e) {
         console.error(e);
@@ -734,7 +757,7 @@ function MainContent() {
       if (!nameElement || !tidElement) return;
 
       try {
-        const res = await fetch('/api/admin/agents', {
+        const res = await fetch(apiUrl('/api/admin/agents'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: nameElement.value, telegram_id: tidElement.value }),
@@ -756,7 +779,7 @@ function MainContent() {
       if (!phoneElement || !orderElement) return;
 
       try {
-        const res = await fetch('/api/admin/numbers', {
+        const res = await fetch(apiUrl('/api/admin/numbers'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ agent_id: agentId, phone_number: phoneElement.value, sort_order: orderElement.value }),
@@ -772,7 +795,7 @@ function MainContent() {
 
     const handleResetNumber = async (id: string) => {
       try {
-        await fetch(`/api/admin/numbers/${id}`, {
+        await fetch(apiUrl(`/api/admin/numbers/${id}`), {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ balance: 0, is_exhausted: false }),
@@ -785,7 +808,7 @@ function MainContent() {
 
     const handleDeleteNumber = async (id: string) => {
       try {
-        await fetch(`/api/admin/numbers/${id}`, { method: 'DELETE' });
+        await fetch(apiUrl(`/api/admin/numbers/${id}`), { method: 'DELETE' });
         fetchAdminAgents();
       } catch (e) {
         console.error(e);
@@ -1281,6 +1304,14 @@ function MainContent() {
       profileName &&
       (lang === 'ar' ? `مرحباً بعودتك، ${profileName}` : `Welcome back, ${profileName}`);
 
+    const numLocale = lang === 'ar' ? 'ar-IQ' : 'en-US';
+    const activeDisplay = dashboardStats.activeOrders.toLocaleString(numLocale);
+    const totalRaw = Number.isFinite(dashboardStats.totalCompletedIqd) ? dashboardStats.totalCompletedIqd : 0;
+    const totalDisplay = totalRaw > 0 ? totalRaw.toLocaleString(numLocale) : Number(0).toLocaleString(numLocale);
+
+    const statValueClass =
+      'text-xl font-black tabular-nums tracking-tight text-gray-900 leading-none sm:text-2xl';
+
     return (
       <div className="saraf-dash-in mb-5 flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:mb-6 sm:flex-row sm:items-center sm:justify-between sm:rounded-[2rem] sm:p-6 lg:p-8">
         <div className="flex min-w-0 items-center gap-3 sm:gap-4">
@@ -1303,25 +1334,26 @@ function MainContent() {
           </div>
         </div>
         <div
-          className={`flex w-full flex-row items-stretch gap-0 border-t border-gray-100 pt-3 sm:w-auto sm:gap-8 sm:border-0 sm:pt-0 ${dir === 'rtl' ? 'sm:text-left' : 'sm:text-right'}`}
+          className={`grid w-full grid-cols-2 border-t border-gray-100 pt-3 sm:w-auto sm:min-w-[min(100%,20rem)] sm:border-0 sm:pt-0 ${dir === 'rtl' ? 'sm:text-left' : 'sm:text-right'}`}
         >
-          <div className="min-w-0 flex-1 px-1 sm:px-0">
-            <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wider text-gray-400 sm:mb-1 sm:text-xs">
+          <div className="flex flex-col gap-1 border-e border-gray-200 pe-3 sm:pe-6">
+            <p className="text-[10px] font-bold uppercase leading-snug tracking-wider text-gray-400 sm:text-xs">
               {t('activeOrders')}
             </p>
-            <p className="text-xl font-black tabular-nums text-gray-900 sm:text-2xl">{dashboardStats.activeOrders}</p>
+            <div className="flex min-h-[1.75rem] items-baseline justify-end" dir="ltr">
+              <span className={statValueClass}>{activeDisplay}</span>
+            </div>
           </div>
-          <div className="mx-2 w-px shrink-0 self-stretch bg-gray-200 sm:mx-0" aria-hidden />
-          <div className="min-w-0 flex-1 px-1 sm:px-0">
-            <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wider text-gray-400 sm:mb-1 sm:text-xs">
+          <div className="flex flex-col gap-1 ps-3 sm:ps-6">
+            <p className="text-[10px] font-bold uppercase leading-snug tracking-wider text-gray-400 sm:text-xs">
               {t('totalExchanged')}
             </p>
-            <p className="flex flex-wrap items-baseline gap-1 text-xl font-black tabular-nums text-gray-900 sm:text-2xl" dir="ltr">
-              {Number.isFinite(dashboardStats.totalCompletedIqd) && dashboardStats.totalCompletedIqd > 0
-                ? dashboardStats.totalCompletedIqd.toLocaleString(lang === 'ar' ? 'ar-IQ' : 'en-US')
-                : '0'}
-              <span className="text-xs font-bold text-gray-400 sm:text-sm">{t('iqd')}</span>
-            </p>
+            <div className="flex min-h-[1.75rem] items-baseline justify-end gap-1.5" dir="ltr">
+              <span className={statValueClass}>{totalDisplay}</span>
+              <span className="shrink-0 text-sm font-semibold tabular-nums text-gray-500 sm:text-base">
+                {t('iqd')}
+              </span>
+            </div>
           </div>
         </div>
       </div>
