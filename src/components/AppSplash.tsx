@@ -13,13 +13,15 @@ const PRELOAD_IMAGES = [
   '/icons/fastpay.png',
 ];
 
-const MIN_VISIBLE_MS = 900;
-const REDUCED_MOTION_HOLD_MS = 1_000;
-const DESKTOP_INTRO_MS = 650;
+const MIN_VISIBLE_MS = 420;
+const REDUCED_MOTION_HOLD_MS = 720;
+const DESKTOP_INTRO_MS = 420;
 /** مدة كافية لعرض الحركة على الهاتف بدون فيديو ثقيل — أسلس للـ APK */
-const PHONE_MOTION_INTRO_MS = 2_400;
+const PHONE_MOTION_INTRO_MS = 1_600;
 /** أجهزة ضعيفة: إدخال أقصر وبدون خلفية متحركة ثقيلة */
-const PHONE_LOW_END_INTRO_MS = 900;
+const PHONE_LOW_END_INTRO_MS = 550;
+/** لا ننتظر document.fonts إلى ما لا نهاية على WebView */
+const BOOT_ASSETS_MAX_MS = 1_000;
 const PHONE_MAX_WIDTH_PX = 767;
 
 function useLowEndDevice() {
@@ -143,7 +145,9 @@ export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
           }),
       ),
     );
-    Promise.all([fontsReady, imagesReady]).then(() => {
+    const boot = Promise.all([fontsReady, imagesReady]);
+    const capped = new Promise<void>((r) => setTimeout(r, BOOT_ASSETS_MAX_MS));
+    Promise.race([boot, capped]).then(() => {
       if (!cancelled) setBootAssetsReady(true);
     });
     return () => {
@@ -170,7 +174,7 @@ export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
       return () => window.clearTimeout(t);
     }
     const t = window.setTimeout(() => setIntroDone(true), PHONE_MOTION_INTRO_MS);
-    const cap = window.setTimeout(() => setIntroDone(true), 12_000);
+    const cap = window.setTimeout(() => setIntroDone(true), 3_500);
     return () => {
       window.clearTimeout(t);
       window.clearTimeout(cap);

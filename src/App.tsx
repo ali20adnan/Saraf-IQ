@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
-import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Tag, XCircle, Eye, EyeOff, Download } from 'lucide-react';
+import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogIn, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Tag, XCircle, Eye, EyeOff, Download } from 'lucide-react';
 import Cookies from 'js-cookie';
 import { supabase } from './lib/supabase';
 import { notificationService } from './lib/notifications';
@@ -9,6 +9,7 @@ import { AppSplash } from './components/AppSplash';
 import { BrandLogo } from './components/BrandLogo';
 import type { ServerTransaction } from '../types/transaction';
 import { apiUrl } from './lib/apiBase';
+import { formatLatinDigits } from './lib/formatNumbers';
 
 type TransactionType = 'sell' | 'buy';
 type ViewType = 'home' | 'login' | 'signup' | 'admin' | 'history' | 'profile' | 'settings' | 'offers';
@@ -88,7 +89,12 @@ function MainContent() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [txType, setTxType] = useState<TransactionType>('sell');
+  /** عربي: افتراضي شراء (الزر يمين). إنجليزي: افتراضي بيع والشراء يبقى يسار بفضل dir=ltr */
+  const [txType, setTxType] = useState<TransactionType>(() => {
+    if (typeof window === 'undefined') return 'sell';
+    const saved = localStorage.getItem('saraf_lang');
+    return saved === 'en' ? 'sell' : 'buy';
+  });
   const [cardValue, setCardValue] = useState<number>(10000);
   const [quantity, setQuantity] = useState<number>(1);
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
@@ -148,8 +154,11 @@ function MainContent() {
   }, []);
 
   const fetchSettings = useCallback(async () => {
+    const SETTINGS_FETCH_MS = 5_000;
+    const ac = new AbortController();
+    const tid = window.setTimeout(() => ac.abort(), SETTINGS_FETCH_MS);
     try {
-      const res = await fetch(apiUrl('/api/settings'));
+      const res = await fetch(apiUrl('/api/settings'), {signal: ac.signal});
       if (!res.ok) throw new Error(String(res.status));
       const data = await res.json();
       if (data && typeof data === 'object') {
@@ -163,8 +172,15 @@ function MainContent() {
     } catch (error) {
       console.error('Error fetching settings:', error);
     } finally {
+      clearTimeout(tid);
       setIsInitialSettingsLoading(false);
     }
+  }, []);
+
+  /** لا تبقَ شاشة التحميل معلّقة إذا علّق الطلب شبكياً */
+  useEffect(() => {
+    const t = window.setTimeout(() => setIsInitialSettingsLoading(false), 4_000);
+    return () => window.clearTimeout(t);
   }, []);
 
   const fetchActiveNumber = useCallback(async () => {
@@ -317,7 +333,7 @@ function MainContent() {
           // Send notification
           notificationService.notifyTransactionComplete(
             tx.order_ref,
-            Number(tx.amount).toLocaleString() + ' ' + (tx.type === 'sell' ? t('iqd') : t('asiacell'))
+            formatLatinDigits(Number(tx.amount)) + ' ' + (tx.type === 'sell' ? t('iqd') : t('asiacell'))
           );
         } else if (tx.status === 'failed') {
           setOtpState('failed');
@@ -343,7 +359,7 @@ function MainContent() {
         if (tx.status === 'completed') {
           notificationService.notifyTransactionComplete(
             tx.order_ref,
-            Number(tx.amount).toLocaleString() + ' ' + (tx.type === 'sell' ? t('iqd') : t('asiacell'))
+            formatLatinDigits(Number(tx.amount)) + ' ' + (tx.type === 'sell' ? t('iqd') : t('asiacell'))
           );
         } else if (tx.status === 'failed') {
           notificationService.notifyTransactionFailed(tx.order_ref);
@@ -533,7 +549,7 @@ function MainContent() {
       } else {
         const batches = Math.ceil(sellAmount / 60000);
         details = `📉 بيع رصيد اسيا\n` +
-                  `💰 المبلغ: ${sellAmount.toLocaleString()} دينار\n` +
+                  `💰 المبلغ: ${formatLatinDigits(sellAmount)} دينار\n` +
                   `📦 عدد الدفعات (60ك): ${batches}`;
       }
 
@@ -884,7 +900,7 @@ function MainContent() {
                   </div>
                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
                     <span className="text-gray-600 font-medium">Completed Value</span>
-                    <span className="font-black text-gray-900">{dashboardStats.totalCompletedIqd.toLocaleString()} IQD</span>
+                    <span className="font-black text-gray-900">{formatLatinDigits(dashboardStats.totalCompletedIqd)} IQD</span>
                   </div>
                 </div>
               </div>
@@ -954,7 +970,7 @@ function MainContent() {
                              <div className="space-y-2">
                                 <div className="flex justify-between text-[10px] font-black">
                                    <span className="text-gray-500 uppercase tracking-tighter">Usage Progress</span>
-                                   <span className={num.balance >= 300000 ? 'text-red-600' : 'text-gray-900'}>{num.balance.toLocaleString()} / 300,000 IQD</span>
+                                   <span className={num.balance >= 300000 ? 'text-red-600' : 'text-gray-900'}>{formatLatinDigits(num.balance)} / 300,000 IQD</span>
                                 </div>
                                 <div className="w-full h-2.5 bg-gray-200 rounded-full overflow-hidden border border-gray-100">
                                    <div
@@ -1013,11 +1029,13 @@ function MainContent() {
                     <p className="font-bold text-gray-900">
                       {tx.type === 'sell' ? t('sellCredit') : t('buyCredit')} - {tx.method}
                     </p>
-                    <p className="text-xs text-gray-500 font-medium">{new Date(tx.created_at).toLocaleString()}</p>
+                    <p className="text-xs text-gray-500 font-medium" dir="ltr">
+                      {new Date(tx.created_at).toLocaleString('en-GB', {day: 'numeric', month: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'})}
+                    </p>
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="font-black text-gray-900">{Number(tx.amount).toLocaleString()} <span className="text-xs text-gray-500 font-bold">{tx.type === 'sell' ? t('iqd') : t('asiacell')}</span></p>
+                  <p className="font-black text-gray-900">{formatLatinDigits(Number(tx.amount))} <span className="text-xs text-gray-500 font-bold">{tx.type === 'sell' ? t('iqd') : t('asiacell')}</span></p>
                   <p className={`text-xs font-bold mt-0.5 ${
                     tx.status === 'completed' ? 'text-green-600' : tx.status === 'failed' ? 'text-red-600' : 'text-orange-600'
                   }`}>
@@ -1260,19 +1278,24 @@ function MainContent() {
       </nav>
 
       <div className="mt-auto pt-6 border-t border-gray-100">
-        <button onClick={toggleLanguage} className="w-full flex items-center justify-between px-4 py-3 text-gray-600 hover:bg-gray-50 rounded-xl font-semibold transition-colors mb-2">
-          <div className="flex items-center gap-3">
-            <Globe className="w-5 h-5" />
-            {t('language')}
-          </div>
-          <span className="text-xs bg-gray-100 px-2 py-1 rounded-md font-bold">{lang === 'ar' ? 'EN' : 'AR'}</span>
-        </button>
-        <button 
-          onClick={isAuthenticated ? handleLogout : () => setCurrentView('login')}
-          className="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-xl font-semibold transition-colors"
+        <button
+          type="button"
+          onClick={toggleLanguage}
+          className="mb-2 flex w-full items-center justify-between rounded-xl px-4 py-3 font-semibold text-gray-600 transition-colors hover:bg-gray-50"
         >
-          <LogOut className="w-5 h-5" />
-          {isAuthenticated ? t('logout') : 'Login'}
+          <span className="flex items-center gap-3">
+            <Globe className="h-5 w-5 shrink-0" />
+            {lang === 'ar' ? 'English' : 'العربية'}
+          </span>
+          <span className="text-xs font-bold text-gray-500">{lang === 'ar' ? 'EN' : 'AR'}</span>
+        </button>
+        <button
+          type="button"
+          onClick={isAuthenticated ? handleLogout : () => setCurrentView('login')}
+          className="flex w-full items-center gap-3 rounded-xl px-4 py-3 font-semibold text-red-600 transition-colors hover:bg-red-50"
+        >
+          {isAuthenticated ? <LogOut className="h-5 w-5 shrink-0" /> : <LogIn className="h-5 w-5 shrink-0" />}
+          {isAuthenticated ? t('logout') : t('login')}
         </button>
       </div>
     </aside>
@@ -1304,29 +1327,28 @@ function MainContent() {
       profileName &&
       (lang === 'ar' ? `مرحباً بعودتك، ${profileName}` : `Welcome back, ${profileName}`);
 
-    const numLocale = lang === 'ar' ? 'ar-IQ' : 'en-US';
-    const activeDisplay = dashboardStats.activeOrders.toLocaleString(numLocale);
     const totalRaw = Number.isFinite(dashboardStats.totalCompletedIqd) ? dashboardStats.totalCompletedIqd : 0;
-    const totalDisplay = totalRaw > 0 ? totalRaw.toLocaleString(numLocale) : Number(0).toLocaleString(numLocale);
+    const activeDisplay = formatLatinDigits(dashboardStats.activeOrders);
+    const totalDisplay = formatLatinDigits(totalRaw);
 
     const statValueClass =
-      'text-xl font-black tabular-nums tracking-tight text-gray-900 leading-none sm:text-2xl';
+      'text-xl font-black tabular-nums tracking-tight text-gray-900 leading-none sm:text-2xl [font-variant-numeric:lining-nums]';
 
     return (
-      <div className="saraf-dash-in mb-5 flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:mb-6 sm:flex-row sm:items-center sm:justify-between sm:rounded-[2rem] sm:p-6 lg:p-8">
-        <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-gray-800 to-gray-900 text-white shadow-md ring-1 ring-black/5 sm:h-11 sm:w-11 sm:rounded-2xl">
+      <div className="saraf-dash-in mb-5 flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:mb-6 sm:p-6 lg:flex-row lg:items-center lg:justify-between lg:gap-8 lg:rounded-[2rem] lg:p-8">
+        <div className="flex w-full min-w-0 items-start gap-3 sm:items-center sm:gap-4 lg:min-w-[min(100%,22rem)] lg:flex-1">
+          <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-gray-800 to-gray-900 text-white shadow-md ring-1 ring-black/5 sm:mt-0 sm:h-11 sm:w-11 sm:rounded-2xl">
             <User className="h-[18px] w-[18px] text-white/95 sm:h-5 sm:w-5" />
           </div>
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 text-start">
             {welcomeWithName ? (
-              <h2 className="break-words text-base font-black leading-snug tracking-tight text-gray-900 sm:text-lg md:text-xl">
+              <h2 className="whitespace-normal text-base font-black leading-snug tracking-tight text-gray-900 sm:text-lg md:text-xl">
                 {welcomeWithName}
               </h2>
             ) : (
               <>
                 <p className="mb-0.5 text-xs font-medium text-gray-500 sm:text-sm">{t('greeting')}</p>
-                <h2 className="break-words text-base font-black leading-snug tracking-tight text-gray-900 sm:text-lg md:text-xl">
+                <h2 className="whitespace-normal text-base font-black leading-snug tracking-tight text-gray-900 sm:text-lg md:text-xl">
                   {t('userName')}
                 </h2>
               </>
@@ -1334,7 +1356,7 @@ function MainContent() {
           </div>
         </div>
         <div
-          className={`grid w-full grid-cols-2 border-t border-gray-100 pt-3 sm:w-auto sm:min-w-[min(100%,20rem)] sm:border-0 sm:pt-0 ${dir === 'rtl' ? 'sm:text-left' : 'sm:text-right'}`}
+          className={`grid w-full shrink-0 grid-cols-2 border-t border-gray-100 pt-3 sm:pt-4 lg:w-auto lg:min-w-[16rem] lg:border-t-0 lg:pt-0 ${dir === 'rtl' ? 'lg:text-left' : 'lg:text-right'}`}
         >
           <div className="flex flex-col gap-1 border-e border-gray-200 pe-3 sm:pe-6">
             <p className="text-[10px] font-bold uppercase leading-snug tracking-wider text-gray-400 sm:text-xs">
@@ -1350,7 +1372,7 @@ function MainContent() {
             </p>
             <div className="flex min-h-[1.75rem] items-baseline justify-end gap-1.5" dir="ltr">
               <span className={statValueClass}>{totalDisplay}</span>
-              <span className="shrink-0 text-sm font-semibold tabular-nums text-gray-500 sm:text-base">
+              <span className="shrink-0 text-sm font-semibold text-gray-500 sm:text-base [font-variant-numeric:lining-nums]">
                 {t('iqd')}
               </span>
             </div>
@@ -1361,7 +1383,7 @@ function MainContent() {
   };
 
   const renderTypeToggle = () => (
-    <div className="flex bg-gray-200/50 p-1.5 rounded-2xl mb-8 relative shadow-inner">
+    <div className="flex bg-gray-200/50 p-1.5 rounded-2xl mb-8 relative shadow-inner" dir={dir}>
       <div 
         className={`absolute top-1.5 bottom-1.5 w-[calc(50%-6px)] bg-white rounded-xl shadow-md transition-all duration-300 ease-out ${txType === 'buy' ? (dir === 'rtl' ? 'right-1.5' : 'left-1.5') : (dir === 'rtl' ? 'right-[calc(50%+1.5px)]' : 'left-[calc(50%+1.5px)]')}`}
       ></div>
@@ -1610,7 +1632,7 @@ function MainContent() {
                           className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-all font-mono text-lg font-bold text-gray-900 cursor-pointer"
                         >
                           {cardValues.map(val => (
-                            <option key={val} value={val}>{val.toLocaleString()} {t('iqd')}</option>
+                            <option key={val} value={val}>{formatLatinDigits(val)} {t('iqd')}</option>
                           ))}
                         </select>
                       </div>
@@ -1650,7 +1672,7 @@ function MainContent() {
                     </div>
                     <div className="flex justify-between items-center text-sm p-3.5 rounded-xl border bg-gray-100 border-gray-200">
                       <span className="font-semibold text-gray-800">{t('totalPrice')}</span>
-                      <span className="font-black text-lg text-gray-900" dir="ltr">{totalPrice.toLocaleString()} {t('iqd')}</span>
+                      <span className="font-black text-lg text-gray-900" dir="ltr">{formatLatinDigits(totalPrice)} {t('iqd')}</span>
                     </div>
                   </div>
                 </div>
@@ -1858,7 +1880,7 @@ function MainContent() {
                         <input 
                           type="text" 
                           inputMode="numeric"
-                          value={sellAmount === 0 ? '' : sellAmount.toLocaleString()}
+                          value={sellAmount === 0 ? '' : formatLatinDigits(sellAmount)}
                           onChange={(e) => {
                             const raw = e.target.value.replace(/\D/g, '');
                             const num = parseInt(raw, 10) || 0;
@@ -1894,7 +1916,7 @@ function MainContent() {
                       ${(sellAmount > 0 && (sellAmount < 5000 || sellAmount > 300000)) ? 'bg-red-50 border-red-200 text-red-600' : 'bg-red-50 border-red-100'}`}>
                       <span className="font-bold">{t('youPay')}</span>
                       <div className="text-right">
-                        <span className="font-black text-xl" dir="ltr">{sellAmount.toLocaleString()} {t('iqd')}</span>
+                        <span className="font-black text-xl" dir="ltr">{formatLatinDigits(sellAmount)} {t('iqd')}</span>
                         {(sellAmount > 0 && (sellAmount < 5000 || sellAmount > 300000)) && (
                           <p className="text-[10px] font-black mt-1 uppercase tracking-wider">{sellAmount > 300000 ? t('maxSellLimit') : t('minSellLimit')}</p>
                         )}
@@ -2214,7 +2236,7 @@ function MainContent() {
                                 </div>
                               </div>
                               <div className="text-right">
-                                <p className="font-black text-gray-900">{Number(tx.amount).toLocaleString()} <span className="text-xs text-gray-500 font-bold">{tx.type === 'sell' ? t('iqd') : t('asiacell')}</span></p>
+                                <p className="font-black text-gray-900">{formatLatinDigits(Number(tx.amount))} <span className="text-xs text-gray-500 font-bold">{tx.type === 'sell' ? t('iqd') : t('asiacell')}</span></p>
                                 <p className={`text-xs font-bold mt-0.5 ${
                                   tx.status === 'completed' ? 'text-green-600' : tx.status === 'failed' ? 'text-red-600' : 'text-orange-600'
                                 }`}>

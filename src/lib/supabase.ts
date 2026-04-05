@@ -57,12 +57,21 @@ export async function initSupabase(): Promise<void> {
   if (import.meta.env.PROD) {
     const base = await resolveApiOrigin();
     const configUrl = publicConfigUrl(base);
+    const PUBLIC_CONFIG_MS = 4_000;
     try {
-      const res = await fetch(configUrl, {
-        cache: 'no-store',
-        mode: 'cors',
-        credentials: 'omit',
-      });
+      const ac = new AbortController();
+      const tid = setTimeout(() => ac.abort(), PUBLIC_CONFIG_MS);
+      let res: Response;
+      try {
+        res = await fetch(configUrl, {
+          cache: 'no-store',
+          mode: 'cors',
+          credentials: 'omit',
+          signal: ac.signal,
+        });
+      } finally {
+        clearTimeout(tid);
+      }
       if (res.ok) {
         const cfg = (await res.json()) as {
           supabaseUrl?: string;
