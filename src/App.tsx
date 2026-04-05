@@ -1287,9 +1287,6 @@ function MainContent() {
                 <div>
                   <h3 className="font-bold text-gray-900">{t('downloadAndroidApp')}</h3>
                   <p className="text-sm text-gray-500">{t('downloadAndroidAppDesc')}</p>
-                  <p className="text-xs text-gray-400 mt-2 font-mono break-all" dir="ltr">
-                    {apkDownloadHref()}
-                  </p>
                 </div>
                 <a
                   href={apkDownloadHref()}
