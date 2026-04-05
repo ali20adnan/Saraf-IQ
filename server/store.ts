@@ -123,6 +123,10 @@ const defaultAppSettings: Record<string, string> = {
 
   buy_coming_soon: "false",
   sell_coming_soon: "false",
+  /** روابط وعرض الأرقام في بطاقة الصفحة الرئيسية — يُعدّل من البوت */
+  link_support: "https://t.me/sarafiq_support",
+  hero_buy_amount_display: "100,000",
+  hero_sell_amount_display: "95,000",
 };
 
 function isValidHttpUrl(s: string): boolean {
@@ -132,6 +136,56 @@ function isValidHttpUrl(s: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** مفاتيح نصية يمكن ضبطها من البوت (لا تُمرّر إلى الواجهة كأنواع boolean) */
+export const SITE_STRING_SETTING_KEYS = [
+  "link_support",
+  "hero_buy_amount_display",
+  "hero_sell_amount_display",
+] as const;
+
+export type SiteContentPublic = {
+  supportUrl: string;
+  heroBuyAmountDisplay: string;
+  heroSellAmountDisplay: string;
+};
+
+export async function getSiteContent(): Promise<SiteContentPublic> {
+  const merged: Record<string, string> = { ...defaultAppSettings };
+  if (db) {
+    const { data, error } = await db.from("settings").select("key, value");
+    if (!error && data?.length) {
+      for (const row of data as { key: string; value: string }[]) {
+        if (row.key && typeof row.value === "string") merged[row.key] = row.value;
+      }
+    }
+  }
+  const fileSettings = loadFileStore().app_settings;
+  const final = { ...merged, ...fileSettings };
+  const support = (final.link_support || defaultAppSettings.link_support).trim();
+  return {
+    supportUrl: isValidHttpUrl(support) ? support : defaultAppSettings.link_support,
+    heroBuyAmountDisplay: (final.hero_buy_amount_display || defaultAppSettings.hero_buy_amount_display).trim(),
+    heroSellAmountDisplay: (final.hero_sell_amount_display || defaultAppSettings.hero_sell_amount_display).trim(),
+  };
+}
+
+export async function setSiteStringSetting(key: string, value: string): Promise<void> {
+  if (!SITE_STRING_SETTING_KEYS.includes(key as (typeof SITE_STRING_SETTING_KEYS)[number])) {
+    throw new Error("invalid site string key");
+  }
+  const v = value.trim();
+  if (key === "link_support" && !isValidHttpUrl(v)) {
+    throw new Error("invalid support URL");
+  }
+  if (db) {
+    const { error } = await db.from("settings").upsert({ key, value: v }, { onConflict: "key" });
+    if (error) console.error("setSiteStringSetting db:", error);
+  }
+  const st = loadFileStore();
+  st.app_settings = { ...st.app_settings, [key]: v };
+  saveFileStore(st);
 }
 
 function getSupabase(): SupabaseClient | null {

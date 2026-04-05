@@ -8,6 +8,7 @@ import { MobileBottomNav } from './components/MobileBottomNav';
 import { AppSplash } from './components/AppSplash';
 import { BrandLogo } from './components/BrandLogo';
 import type { ServerTransaction } from '../types/transaction';
+import { Capacitor } from '@capacitor/core';
 import { apiUrl } from './lib/apiBase';
 import { formatLatinDigits } from './lib/formatNumbers';
 
@@ -74,9 +75,14 @@ type ActiveAgentNumber = {
   numberId: string;
 };
 
-/** نفس النطاق: السيرفر يوجّه أو يخدم الملف — يفضّل /download/apk */
-const APK_DOWNLOAD_HREF =
-  (import.meta.env.VITE_APK_URL && String(import.meta.env.VITE_APK_URL).trim()) || '/download/apk';
+/** مسار الخادم فقط — حدّث الملف على السيرفر (مثل public/saraf-iq-debug.apk) دون بوت */
+function apkDownloadHref(): string {
+  return apiUrl('/download/apk');
+}
+
+function isWebBrowser(): boolean {
+  return typeof window !== 'undefined' && !Capacitor.isNativePlatform();
+}
 
 function MainContent() {
   const { t, lang, toggleLanguage, dir } = useLanguage();
@@ -124,15 +130,63 @@ function MainContent() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [isInitialSettingsLoading, setIsInitialSettingsLoading] = useState(true);
   const [splashDismissed, setSplashDismissed] = useState(false);
-  
+  const [siteContent, setSiteContent] = useState({
+    supportUrl: 'https://t.me/sarafiq_support',
+    heroBuyAmountDisplay: '100,000',
+    heroSellAmountDisplay: '95,000',
+  });
+
   // Agents State
   const [activeAgentNumber, setActiveAgentNumber] = useState<ActiveAgentNumber | null>(null);
   const [adminAgents, setAdminAgents] = useState<Agent[]>([]);
   const [isAdminAgentsLoading, setIsAdminAgentsLoading] = useState(false);
   const [adminTab, setAdminTab] = useState<'overview' | 'agents'>('overview');
 
+  const statusUi = useCallback((status: string) => {
+    switch (status) {
+      case 'completed':
+        return {
+          label: t('statusCompleted'),
+          badge: 'bg-emerald-50 text-emerald-800 ring-emerald-100',
+          icon: 'bg-emerald-50 text-emerald-600',
+        };
+      case 'failed':
+        return {
+          label: t('statusFailed'),
+          badge: 'bg-red-50 text-red-800 ring-red-100',
+          icon: 'bg-red-50 text-red-600',
+        };
+      case 'refunded':
+        return {
+          label: t('statusRefunded'),
+          badge: 'bg-violet-50 text-violet-800 ring-violet-100',
+          icon: 'bg-violet-50 text-violet-600',
+        };
+      case 'suspended':
+        return {
+          label: t('statusSuspended'),
+          badge: 'bg-slate-100 text-slate-800 ring-slate-200',
+          icon: 'bg-slate-100 text-slate-600',
+        };
+      case 'retry_otp':
+        return {
+          label: t('statusRetryOtp'),
+          badge: 'bg-orange-50 text-orange-900 ring-orange-100',
+          icon: 'bg-orange-50 text-orange-700',
+        };
+      default:
+        return {
+          label: t('statusPending'),
+          badge: 'bg-amber-50 text-amber-900 ring-amber-100',
+          icon: 'bg-amber-50 text-amber-700',
+        };
+    }
+  }, [t]);
+
   const dashboardStats = useMemo(() => {
-    const activeOrders = transactions.filter((tx) => tx.status === 'pending').length;
+    const activeOrders = transactions.filter(
+      (tx) => tx.status === 'pending' || tx.status === 'retry_otp'
+    ).length;
     const totalCompletedIqd = transactions
       .filter((tx) => tx.status === 'completed')
       .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
@@ -154,20 +208,34 @@ function MainContent() {
   }, []);
 
   const fetchSettings = useCallback(async () => {
-    const SETTINGS_FETCH_MS = 5_000;
+    const SETTINGS_FETCH_MS = 1_200;
     const ac = new AbortController();
     const tid = window.setTimeout(() => ac.abort(), SETTINGS_FETCH_MS);
     try {
-      const res = await fetch(apiUrl('/api/settings'), {signal: ac.signal});
-      if (!res.ok) throw new Error(String(res.status));
-      const data = await res.json();
-      if (data && typeof data === 'object') {
-        setAppSettings((prev) => ({
-          ...prev,
-          maintenance_mode: Boolean(data.maintenance_mode),
-          buy_coming_soon: Boolean(data.buy_coming_soon),
-          sell_coming_soon: Boolean(data.sell_coming_soon),
-        }));
+      const [resSettings, resContent] = await Promise.all([
+        fetch(apiUrl('/api/settings'), { signal: ac.signal }),
+        fetch(apiUrl('/api/site-content'), { signal: ac.signal }),
+      ]);
+      if (resSettings.ok) {
+        const data = await resSettings.json();
+        if (data && typeof data === 'object') {
+          setAppSettings((prev) => ({
+            ...prev,
+            maintenance_mode: Boolean(data.maintenance_mode),
+            buy_coming_soon: Boolean(data.buy_coming_soon),
+            sell_coming_soon: Boolean(data.sell_coming_soon),
+          }));
+        }
+      }
+      if (resContent.ok) {
+        const c = await resContent.json();
+        if (c && typeof c === 'object') {
+          setSiteContent({
+            supportUrl: String(c.supportUrl || 'https://t.me/sarafiq_support'),
+            heroBuyAmountDisplay: String(c.heroBuyAmountDisplay || '100,000'),
+            heroSellAmountDisplay: String(c.heroSellAmountDisplay || '95,000'),
+          });
+        }
       }
     } catch (error) {
       console.error('Error fetching settings:', error);
@@ -179,7 +247,7 @@ function MainContent() {
 
   /** لا تبقَ شاشة التحميل معلّقة إذا علّق الطلب شبكياً */
   useEffect(() => {
-    const t = window.setTimeout(() => setIsInitialSettingsLoading(false), 4_000);
+    const t = window.setTimeout(() => setIsInitialSettingsLoading(false), 1_200);
     return () => window.clearTimeout(t);
   }, []);
 
@@ -714,14 +782,16 @@ function MainContent() {
             >
               {authMode === 'signin' ? t('noAccountText', 'ليس لديك حساب؟ أنشئ حساباً') : t('hasAccountText', 'لديك حساب بالفعل؟ سجل دخولك')}
             </button>
-            <a
-              href={APK_DOWNLOAD_HREF}
-              download
-              className="flex items-center justify-center gap-2 text-sm font-bold text-red-600 hover:text-red-700"
-            >
-              <Download className="w-4 h-4 shrink-0" />
-              {t('downloadApk')}
-            </a>
+            {isWebBrowser() && (
+              <a
+                href={apkDownloadHref()}
+                download
+                className="flex items-center justify-center gap-2 text-sm font-bold text-red-600 hover:text-red-700"
+              >
+                <Download className="w-4 h-4 shrink-0" />
+                {t('downloadApk')}
+              </a>
+            )}
           </div>
           
           {window.location.pathname === '/admin' && (
@@ -1018,24 +1088,7 @@ function MainContent() {
         {transactions.length > 0 ? (
           <ul className="flex flex-col gap-4 sm:gap-5">
             {transactions.map((tx) => {
-              const statusLabel =
-                tx.status === 'completed'
-                  ? t('statusCompleted')
-                  : tx.status === 'failed'
-                    ? t('statusFailed')
-                    : t('statusPending');
-              const statusStyles =
-                tx.status === 'completed'
-                  ? 'bg-emerald-50 text-emerald-800 ring-emerald-100'
-                  : tx.status === 'failed'
-                    ? 'bg-red-50 text-red-800 ring-red-100'
-                    : 'bg-amber-50 text-amber-900 ring-amber-100';
-              const iconStyles =
-                tx.status === 'completed'
-                  ? 'bg-emerald-50 text-emerald-600'
-                  : tx.status === 'failed'
-                    ? 'bg-red-50 text-red-600'
-                    : 'bg-amber-50 text-amber-700';
+              const su = statusUi(tx.status);
 
               return (
                 <li key={tx.id}>
@@ -1045,7 +1098,7 @@ function MainContent() {
                     <div className="flex flex-col gap-5">
                       <div className="flex gap-4 sm:gap-5">
                         <div
-                          className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl ${iconStyles}`}
+                          className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl ${su.icon}`}
                           aria-hidden
                         >
                           <FileText className="h-7 w-7" strokeWidth={2} />
@@ -1078,9 +1131,9 @@ function MainContent() {
                           </p>
                         </div>
                         <span
-                          className={`inline-flex w-fit shrink-0 items-center justify-center rounded-full px-4 py-1.5 text-xs font-bold ring-1 ${statusStyles}`}
+                          className={`inline-flex w-fit shrink-0 items-center justify-center rounded-full px-4 py-1.5 text-xs font-bold ring-1 ${su.badge}`}
                         >
-                          {statusLabel}
+                          {su.label}
                         </span>
                       </div>
                     </div>
@@ -1216,23 +1269,25 @@ function MainContent() {
               </button>
             </div>
 
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-6 border-t border-gray-100">
-              <div>
-                <h3 className="font-bold text-gray-900">{t('downloadAndroidApp')}</h3>
-                <p className="text-sm text-gray-500">{t('downloadAndroidAppDesc')}</p>
-                <p className="text-xs text-gray-400 mt-2 font-mono break-all" dir="ltr">
-                  {typeof window !== 'undefined' ? `${window.location.origin}/download/apk` : '/download/apk'}
-                </p>
+            {isWebBrowser() && (
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-6 border-t border-gray-100">
+                <div>
+                  <h3 className="font-bold text-gray-900">{t('downloadAndroidApp')}</h3>
+                  <p className="text-sm text-gray-500">{t('downloadAndroidAppDesc')}</p>
+                  <p className="text-xs text-gray-400 mt-2 font-mono break-all" dir="ltr">
+                    {apkDownloadHref()}
+                  </p>
+                </div>
+                <a
+                  href={apkDownloadHref()}
+                  download
+                  className="inline-flex items-center justify-center gap-2 shrink-0 px-5 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-colors shadow-sm"
+                >
+                  <Download className="w-5 h-5" />
+                  {t('downloadApk')}
+                </a>
               </div>
-              <a
-                href={APK_DOWNLOAD_HREF}
-                download
-                className="inline-flex items-center justify-center gap-2 shrink-0 px-5 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-colors shadow-sm"
-              >
-                <Download className="w-5 h-5" />
-                {t('downloadApk')}
-              </a>
-            </div>
+            )}
           </div>
         </div>
       </div>
@@ -1479,8 +1534,8 @@ function MainContent() {
           {txType === 'sell' ? t('offerTitle') : t('buyOfferTitle')}
         </h3>
         <div className="flex items-baseline gap-2">
-          <span className="text-5xl font-black tracking-tighter text-white">
-            {txType === 'sell' ? '95,000' : '100,000'}
+          <span className="text-5xl font-black tracking-tighter text-white" dir="ltr">
+            {txType === 'sell' ? siteContent.heroSellAmountDisplay : siteContent.heroBuyAmountDisplay}
           </span>
           <span className="ml-1 text-lg font-bold text-white/85">{txType === 'sell' ? t('iqd') : 'Asiacell'}</span>
         </div>
@@ -1641,7 +1696,15 @@ function MainContent() {
                   <p className="text-gray-500 text-center text-sm font-medium leading-relaxed">
                     {t('otpSent', 'تم إرسال رمز تحقق مؤقت إلى هاتفك لضمان أمان العملية.')}
                   </p>
-                  
+                  {currentOrderId &&
+                    transactions.find((x) => x.order_ref === currentOrderId)?.status === 'retry_otp' && (
+                      <p
+                        role="alert"
+                        className="w-full max-w-sm rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm font-bold text-amber-900"
+                      >
+                        {t('otpWrongRetry')}
+                      </p>
+                    )}
                   <form onSubmit={handleOtpSubmit} className="w-full max-w-sm space-y-5">
                     <input
                       type="text"
@@ -2090,7 +2153,7 @@ function MainContent() {
             
             <div className="space-y-4">
               <a 
-                href="https://t.me/sarafiq_support" 
+                href={siteContent.supportUrl} 
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="w-full bg-red-600 text-white py-4 rounded-xl font-bold hover:bg-red-700 transition-all shadow-lg shadow-red-600/20 flex items-center justify-center gap-2"
@@ -2276,25 +2339,14 @@ function MainContent() {
                         
                         <div className="space-y-3">
                           {transactions.slice(0, 3).map((tx) => {
-                            const st =
-                              tx.status === 'completed'
-                                ? 'bg-emerald-50 text-emerald-700 ring-emerald-100'
-                                : tx.status === 'failed'
-                                  ? 'bg-red-50 text-red-700 ring-red-100'
-                                  : 'bg-amber-50 text-amber-800 ring-amber-100';
-                            const ic =
-                              tx.status === 'completed'
-                                ? 'bg-emerald-50 text-emerald-600'
-                                : tx.status === 'failed'
-                                  ? 'bg-red-50 text-red-600'
-                                  : 'bg-amber-50 text-amber-700';
+                            const su = statusUi(tx.status);
                             return (
                               <div
                                 key={tx.id}
                                 className="rounded-2xl border border-gray-100 bg-gray-50/40 p-4 transition-colors hover:bg-gray-50/80"
                               >
                                 <div className="mb-3 flex gap-3">
-                                  <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${ic}`}>
+                                  <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${su.icon}`}>
                                     <FileText className="h-5 w-5" strokeWidth={2} />
                                   </div>
                                   <div className="min-w-0 flex-1">
@@ -2318,12 +2370,8 @@ function MainContent() {
                                       {tx.type === 'sell' ? t('iqd') : t('asiacell')}
                                     </span>
                                   </p>
-                                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ring-1 ${st}`}>
-                                    {tx.status === 'completed'
-                                      ? t('statusCompleted')
-                                      : tx.status === 'failed'
-                                        ? t('statusFailed')
-                                        : t('statusPending')}
+                                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ring-1 ${su.badge}`}>
+                                    {su.label}
                                   </span>
                                 </div>
                               </div>

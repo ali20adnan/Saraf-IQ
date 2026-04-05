@@ -13,16 +13,28 @@ const PRELOAD_IMAGES = [
   '/icons/fastpay.png',
 ];
 
-const MIN_VISIBLE_MS = 420;
-const REDUCED_MOTION_HOLD_MS = 720;
-const DESKTOP_INTRO_MS = 420;
-/** مدة كافية لعرض الحركة على الهاتف بدون فيديو ثقيل — أسلس للـ APK */
-const PHONE_MOTION_INTRO_MS = 1_600;
-/** أجهزة ضعيفة: إدخال أقصر وبدون خلفية متحركة ثقيلة */
-const PHONE_LOW_END_INTRO_MS = 550;
-/** لا ننتظر document.fonts إلى ما لا نهاية على WebView */
-const BOOT_ASSETS_MAX_MS = 1_000;
+/** حد أدنى بصري قصير — الإغلاق يعتمد أساساً على جاهزية الإعدادات والأصول */
+const MIN_VISIBLE_MS = 80;
+const REDUCED_MOTION_HOLD_MS = 200;
+const DESKTOP_INTRO_MS = 120;
+/** هاتف + حركة: أقصر من ثانية إجمالاً مع بقية الشروط */
+const PHONE_MOTION_INTRO_MS = 420;
+/** أجهزة ضعيفة / WebView */
+const PHONE_LOW_END_INTRO_MS = 180;
+/** لا نحجز الشاشة بانتظار الخطوط والصور */
+const BOOT_ASSETS_MAX_MS = 350;
 const PHONE_MAX_WIDTH_PX = 767;
+
+/** يختصر المدد قليلاً عند RTT منخفض (شبكة سريعة) */
+function introMs(base: number): number {
+  if (typeof navigator === 'undefined') return base;
+  const c = (navigator as Navigator & { connection?: { rtt?: number; saveData?: boolean } }).connection;
+  if (c?.saveData) return Math.max(base, 220);
+  const rtt = c?.rtt;
+  if (typeof rtt === 'number' && rtt <= 30) return Math.max(50, Math.floor(base * 0.4));
+  if (typeof rtt === 'number' && rtt <= 120) return Math.max(70, Math.floor(base * 0.65));
+  return base;
+}
 
 function useLowEndDevice() {
   const [low, setLow] = useState(false);
@@ -165,16 +177,16 @@ export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
 
   useEffect(() => {
     if (!isPhoneViewport) {
-      const t = window.setTimeout(() => setIntroDone(true), DESKTOP_INTRO_MS);
+      const t = window.setTimeout(() => setIntroDone(true), introMs(DESKTOP_INTRO_MS));
       return () => window.clearTimeout(t);
     }
     if (phoneReduced) {
-      const ms = lowEndDevice ? PHONE_LOW_END_INTRO_MS : REDUCED_MOTION_HOLD_MS;
+      const ms = introMs(lowEndDevice ? PHONE_LOW_END_INTRO_MS : REDUCED_MOTION_HOLD_MS);
       const t = window.setTimeout(() => setIntroDone(true), ms);
       return () => window.clearTimeout(t);
     }
-    const t = window.setTimeout(() => setIntroDone(true), PHONE_MOTION_INTRO_MS);
-    const cap = window.setTimeout(() => setIntroDone(true), 3_500);
+    const t = window.setTimeout(() => setIntroDone(true), introMs(PHONE_MOTION_INTRO_MS));
+    const cap = window.setTimeout(() => setIntroDone(true), introMs(900));
     return () => {
       window.clearTimeout(t);
       window.clearTimeout(cap);
@@ -187,7 +199,7 @@ export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
     const wait = Math.max(0, MIN_VISIBLE_MS - elapsed);
     const timer = window.setTimeout(() => {
       setVisible(false);
-      window.setTimeout(() => onCompleteRef.current(), 300);
+      window.setTimeout(() => onCompleteRef.current(), 120);
     }, wait);
     return () => window.clearTimeout(timer);
   }, [settingsReady, introDone, bootAssetsReady, swCacheReady]);
@@ -230,9 +242,13 @@ export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
               animate={{y: [0, -7, 0]}}
               transition={{duration: 2.4, repeat: Infinity, ease: 'easeInOut'}}
             >
-              <div className="rounded-[2rem] bg-white/95 p-6 shadow-[0_28px_80px_rgba(0,0,0,0.5)] ring-1 ring-white/25">
-                <BrandLogo alt={appTitle} size="xl" priority className="drop-shadow-sm" />
-              </div>
+              {/* بدون صندوق أبيض — الشعار يُعرض كما في الملف (يفضّل PNG بخلفية شفافة) */}
+              <BrandLogo
+                alt={appTitle}
+                size="xl"
+                priority
+                className="drop-shadow-[0_16px_48px_rgba(0,0,0,0.65)]"
+              />
             </motion.div>
           </motion.div>
         )}
@@ -241,10 +257,23 @@ export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
           <motion.div
             initial={{scale: 0.92, opacity: 0}}
             animate={{scale: 1, opacity: 1}}
-            transition={{duration: 0.4, ease: [0.22, 1, 0.36, 1]}}
-            className="rounded-[2rem] bg-white p-5 shadow-[0_24px_64px_rgba(15,23,42,0.08)] ring-1 ring-gray-200/80"
+            transition={{duration: 0.28, ease: [0.22, 1, 0.36, 1]}}
+            className={
+              darkPhone
+                ? 'relative'
+                : 'relative rounded-[1.75rem] bg-white/80 p-4 shadow-[0_20px_50px_rgba(15,23,42,0.06)] ring-1 ring-gray-200/60'
+            }
           >
-            <BrandLogo alt={appTitle} size="xl" priority className="drop-shadow-sm" />
+            <BrandLogo
+              alt={appTitle}
+              size="xl"
+              priority
+              className={
+                darkPhone
+                  ? 'drop-shadow-[0_14px_40px_rgba(0,0,0,0.55)]'
+                  : 'drop-shadow-sm'
+              }
+            />
           </motion.div>
         )}
 

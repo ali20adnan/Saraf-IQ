@@ -30,7 +30,7 @@ export function BrandLogo({alt, size = 'md', priority = false, className = '', .
       fetchPriority={priority ? 'high' : 'auto'}
       loading={priority ? 'eager' : 'lazy'}
       draggable={false}
-      className={`object-contain object-center select-none [image-rendering:auto] ${sizeStyles[size]} ${className}`}
+      className={`bg-transparent object-contain object-center select-none [image-rendering:auto] ${sizeStyles[size]} ${className}`}
       {...rest}
     />
   );

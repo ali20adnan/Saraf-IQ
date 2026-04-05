@@ -32,7 +32,7 @@ export const whenPrecacheReady = new Promise<void>((resolve) => {
     },
   });
 
-  /** كان 14s فيُبقى شاشة التحميل طويلاً — يكفي بضع ثوانٍ لتهيئة الـ SW */
-  const MAX_WAIT_MS = 2_500;
+  /** سقف قصير — لا نحجز الشاشة الافتتاحية أكثر من ~ثانية بسبب الـ SW */
+  const MAX_WAIT_MS = 450;
   setTimeout(resolveReady, MAX_WAIT_MS);
 });

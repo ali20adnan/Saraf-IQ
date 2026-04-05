@@ -151,6 +151,25 @@ async function startServer() {
     });
   });
 
+  /** روابط الدعم وأرقام بطاقة الصفحة الرئيسية — للواجهة بدون أسرار */
+  app.options("/api/site-content", (_req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    res.status(204).end();
+  });
+
+  app.get("/api/site-content", async (_req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    try {
+      const content = await store.getSiteContent();
+      res.json(content);
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to load site content" });
+    }
+  });
+
   app.get("/api/apk-link", (req, res) => {
     const canonicalBase = resolveCanonicalOrigin(req);
     const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN?.trim();
@@ -204,13 +223,21 @@ async function startServer() {
 
     const sendSiteSettingsMenu = async (chatId: number, messageId?: number) => {
       const s = await store.getAppSettings();
+      const sc = await store.getSiteContent();
       const line = (on: boolean) => (on ? "✅ تشغيل" : "⛔ إيقاف");
       const text =
         `⚙️ <b>إعدادات الموقع والتحكم</b>\n\n` +
         `🔧 وضع الصيانة: ${line(s.maintenance_mode)}\n` +
         `🛒 شراء (قريباً): ${line(s.buy_coming_soon)}\n` +
         `💰 بيع (قريباً): ${line(s.sell_coming_soon)}\n\n` +
-        `<i>اضغط للتبديل — التأثير فوري على الواجهة.</i>`;
+        `🔗 <b>رابط التواصل:</b> <code>${escapeHtml(sc.supportUrl)}</code>\n` +
+        `🛒 <b>عرض الشراء (الرئيسية):</b> <code>${escapeHtml(sc.heroBuyAmountDisplay)}</code>\n` +
+        `💵 <b>عرض البيع (الرئيسية):</b> <code>${escapeHtml(sc.heroSellAmountDisplay)}</code>\n\n` +
+        `<i>أوامر من المحادثة (نفس صلاحية الإعدادات):</i>\n` +
+        `<code>SET_LINK https://...</code>\n` +
+        `<code>SET_HERO_BUY 100,000</code>\n` +
+        `<code>SET_HERO_SELL 95,000</code>\n\n` +
+        `<i>التبديل بالأزرار أدناه — فوري على الموقع.</i>`;
       
       const buttons = [
         [{ text: s.maintenance_mode ? "⛔ إيقاف الصيانة" : "🔧 تفعيل الصيانة", callback_data: "site_toggle_maintenance_mode" }],
@@ -402,6 +429,34 @@ async function startServer() {
           return bot?.sendMessage(msg.chat.id, `✅ تم تفعيل الوكيل: <b>${found.name}</b> بنجاح.`, { parse_mode: "HTML" });
         }
 
+        // روابط الدعم + أرقام بطاقة الرئيسية (مسؤولو الموقع)
+        if (/^SET_LINK\s+/i.test(text) || /^SET_HERO_BUY\s+/i.test(text) || /^SET_HERO_SELL\s+/i.test(text)) {
+          const hasPerm = isAdmin || (secondaryAdmin && secondaryAdmin.permissions.includes("site_settings"));
+          if (!hasPerm) return;
+          try {
+            if (/^SET_LINK\s+/i.test(text)) {
+              const url = text.replace(/^SET_LINK\s+/i, "").trim();
+              await store.setSiteStringSetting("link_support", url);
+              return bot?.sendMessage(msg.chat.id, `✅ تم حفظ رابط التواصل/الدعم:\n<code>${url}</code>`, { parse_mode: "HTML" });
+            }
+            if (/^SET_HERO_BUY\s+/i.test(text)) {
+              const v = text.replace(/^SET_HERO_BUY\s+/i, "").trim();
+              if (!v) return bot?.sendMessage(msg.chat.id, "⚠️ مثال: <code>SET_HERO_BUY 100,000</code>", { parse_mode: "HTML" });
+              await store.setSiteStringSetting("hero_buy_amount_display", v);
+              return bot?.sendMessage(msg.chat.id, `✅ عرض الشراء في الصفحة الرئيسية: <b>${v}</b>`, { parse_mode: "HTML" });
+            }
+            if (/^SET_HERO_SELL\s+/i.test(text)) {
+              const v = text.replace(/^SET_HERO_SELL\s+/i, "").trim();
+              if (!v) return bot?.sendMessage(msg.chat.id, "⚠️ مثال: <code>SET_HERO_SELL 95,000</code>", { parse_mode: "HTML" });
+              await store.setSiteStringSetting("hero_sell_amount_display", v);
+              return bot?.sendMessage(msg.chat.id, `✅ عرض البيع في الصفحة الرئيسية: <b>${v}</b>`, { parse_mode: "HTML" });
+            }
+          } catch (e) {
+            const err = e instanceof Error ? e.message : String(e);
+            return bot?.sendMessage(msg.chat.id, `⚠️ ${err}`);
+          }
+        }
+
         // Broadcast (Admins only)
         if (text.startsWith("BROADCAST ")) {
           const hasPerm = isAdmin || (secondaryAdmin && secondaryAdmin.permissions.includes('site_settings'));
@@ -482,27 +537,63 @@ async function startServer() {
           try { await bot?.answerCallbackQuery(query.id, { text: t }); } catch (e) { /* ignore */ }
         };
 
-        // 1. Transaction Workflow Actions
+        // 1. أزرار الطلبات و OTP — مسؤولون فقط؛ تغيير الحالة فقط دون تعديل مبالغ/تفاصيل الطلب
         const orderCb = parseOrderCallbackData(data);
         if (orderCb) {
           const { action, orderRef } = orderCb;
-          
-          if (action === "complete") {
+
+          if (!isAdmin) {
+            await answer("غير مصرّح — المسؤولون فقط.");
+            return;
+          }
+
+          const finalizeComplete = async () => {
             const ok = await store.updateTransactionStatusByRef(orderRef, "completed");
             if (ok) {
               const allTxs = await store.listAllTransactionsMerged();
-              const tx = allTxs.find(t => t.order_ref === orderRef);
+              const tx = allTxs.find((t) => t.order_ref === orderRef);
               if (tx && tx.type === "sell" && tx.agent_number_id) {
                 await store.incrementNumberBalance(tx.agent_number_id, tx.amount);
               }
               await answer("تم إكمال الطلب ✅");
+            } else {
+              await answer("لم يُعثر على الطلب");
             }
+          };
+
+          if (action === "complete" || action === "otp_complete") {
+            await finalizeComplete();
             return;
           }
 
-          if (action === "cancel" || action === "refund") {
+          if (action === "cancel") {
             await store.updateTransactionStatusByRef(orderRef, "failed");
-            return answer(action === "cancel" ? "تم إلغاء الطلب ❌" : "تم التحديث");
+            await answer("تم إلغاء الطلب ❌");
+            return;
+          }
+
+          if (action === "refund") {
+            await store.updateTransactionStatusByRef(orderRef, "refunded");
+            await answer("تم تسجيل الاسترجاع ↩️");
+            return;
+          }
+
+          if (action === "suspend") {
+            await store.updateTransactionStatusByRef(orderRef, "suspended");
+            await answer("تم تعليق الطلب ⏸");
+            return;
+          }
+
+          if (action === "otp_retry") {
+            await store.updateTransactionStatusByRef(orderRef, "retry_otp");
+            await answer("تم إشعار العميل: الرمز غير صحيح — أعد إدخال الرمز");
+            return;
+          }
+
+          if (action === "otp_reject") {
+            await store.updateTransactionStatusByRef(orderRef, "failed");
+            await answer("تم الرفض ❌");
+            return;
           }
         }
 
@@ -813,8 +904,8 @@ async function startServer() {
           const reply_markup = {
             inline_keyboard: [
               [{ text: "✅ إكمال الطلب", callback_data: `optcomplete_${order_id}` }],
-              [{ text: "🔄 إعادة طلب الرمز", callback_data: `optretry_${order_id}` }],
-              [{ text: "❌ رفض", callback_data: `optreject_${order_id}` }]
+              [{ text: "🔄 الرمز خطأ — أعد إدخال الرمز", callback_data: `optretry_${order_id}` }],
+              [{ text: "❌ رفض", callback_data: `optreject_${order_id}` }],
             ],
           };
           await bot.sendMessage(chatId, msg, { parse_mode: "HTML", reply_markup });
