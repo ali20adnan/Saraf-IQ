@@ -1180,6 +1180,22 @@ async function startServer() {
     }
   });
 
+  /** إزالة رموز FCM للعميل عند إطفاء الإشعارات من التطبيق */
+  app.post("/api/push/unregister", async (req, res) => {
+    try {
+      const body = req.body as { client_id?: string };
+      const client_id = typeof body.client_id === "string" ? body.client_id.trim() : "";
+      if (!client_id) {
+        return res.status(400).json({ error: "client_id required" });
+      }
+      await store.removePushTokensByClientId(client_id);
+      res.json({ ok: true });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "unregister failed" });
+    }
+  });
+
   app.get("/api/transactions", async (req, res) => {
     const clientId = typeof req.query.client_id === "string" ? req.query.client_id : "";
     if (!clientId) {

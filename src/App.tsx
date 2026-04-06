@@ -503,24 +503,32 @@ function MainContent() {
 
   const toggleNotifications = async () => {
     const newValue = !notificationsEnabled;
-    
+
     if (newValue) {
       const granted = await notificationService.requestPermission();
       if (granted) {
+        notificationService.toggle(true);
         setNotificationsEnabled(true);
+        if (clientId) {
+          await notificationService.initNativePush(clientId);
+        }
         notificationService.sendNotification(
           lang === 'ar' ? 'الإشعارات مفعلة!' : 'Notifications Enabled!',
           {
-            body: lang === 'ar' 
-              ? 'سيتم إرسال تنبيهات مع كل تحديث على طلباتك'
-              : 'You will receive alerts for all your order updates',
+            body:
+              lang === 'ar'
+                ? 'سيتم إرسال تنبيهات مع كل تحديث على طلباتك'
+                : 'You will receive alerts for all your order updates',
             icon: '/icons/logo.png',
-          }
+          },
         );
       }
     } else {
       notificationService.toggle(false);
       setNotificationsEnabled(false);
+      if (clientId) {
+        await notificationService.unregisterNativePush(clientId);
+      }
     }
   };
 

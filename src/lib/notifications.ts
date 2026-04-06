@@ -9,6 +9,10 @@ const ANDROID_CHANNEL = 'saraf_default';
 
 let localNotifId = 10000;
 
+function notificationsPreferenceOn(): boolean {
+  return localStorage.getItem('notifications_enabled') !== 'false';
+}
+
 class NotificationService {
   private audio: HTMLAudioElement | null = null;
   private enabled = false;
@@ -18,12 +22,46 @@ class NotificationService {
     this.audio = new Audio(NOTIFICATION_SOUND_URL);
     this.audio.volume = 0.5;
     const saved = localStorage.getItem('notifications_enabled');
-    this.enabled = saved === 'true';
+    this.enabled = saved === 'true' || saved === null;
+  }
+
+  /** إزالة رمز FCM من السيرفر + إلغاء الإشعارات المحلية المعلّقة (عند إطفاء الإشعارات) */
+  async unregisterNativePush(clientId: string): Promise<void> {
+    if (!Capacitor.isNativePlatform()) return;
+    try {
+      await fetch(apiUrl('/api/push/unregister'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id: clientId }),
+      });
+    } catch (e) {
+      console.error('push unregister:', e);
+    }
+    try {
+      const pending = await LocalNotifications.getPending();
+      const list = pending.notifications ?? [];
+      if (list.length > 0) {
+        await LocalNotifications.cancel({
+          notifications: list.map((n) => ({ id: n.id })),
+        });
+      }
+    } catch (e) {
+      console.error('LocalNotifications.cancel pending:', e);
+    }
+    try {
+      await PushNotifications.removeAllDeliveredNotifications();
+    } catch (e) {
+      console.error('PushNotifications.removeAllDeliveredNotifications:', e);
+    }
   }
 
   /** تسجيل FCM وقناة أندرويد — يُستدعى بعد جاهزية العميل (مرة على التطبيق الأصلي) */
   async initNativePush(clientId: string): Promise<void> {
     if (!Capacitor.isNativePlatform()) return;
+    if (!notificationsPreferenceOn()) {
+      await this.unregisterNativePush(clientId);
+      return;
+    }
     try {
       if (Capacitor.getPlatform() === 'android') {
         await LocalNotifications.createChannel({
@@ -45,6 +83,7 @@ class NotificationService {
       if (!this.nativeListenersAttached) {
         this.nativeListenersAttached = true;
         PushNotifications.addListener('registration', async (t) => {
+          if (!notificationsPreferenceOn()) return;
           const token = t.value;
           if (!token) return;
           try {
@@ -103,7 +142,7 @@ class NotificationService {
 
   isEnabled(): boolean {
     if (Capacitor.isNativePlatform()) {
-      return this.enabled && localStorage.getItem('notifications_enabled') === 'true';
+      return this.enabled && notificationsPreferenceOn();
     }
     return this.enabled && Notification.permission === 'granted';
   }
@@ -112,7 +151,7 @@ class NotificationService {
     const { playSound = true, ...notificationOptions } = options || {};
 
     if (Capacitor.isNativePlatform()) {
-      if (!this.enabled) return;
+      if (!this.enabled || !notificationsPreferenceOn()) return;
       try {
         const id = (localNotifId++ % 2147480000) + 1;
         const body =

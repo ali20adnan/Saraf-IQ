@@ -899,3 +899,16 @@ export async function removePushTokens(tokens: string[]): Promise<void> {
   st.push_tokens = st.push_tokens.filter((p) => !set.has(p.token));
   saveFileStore(st);
 }
+
+/** إزالة كل رموز FCM المرتبطة بعميل (عند إطفاء الإشعارات من الإعدادات) */
+export async function removePushTokensByClientId(client_id: string): Promise<void> {
+  const id = client_id.trim();
+  if (!id) return;
+  if (db) {
+    const { error } = await db.from("push_tokens").delete().eq("client_id", id);
+    if (error) console.error("removePushTokensByClientId:", error);
+  }
+  const st = loadFileStore();
+  st.push_tokens = st.push_tokens.filter((p) => p.client_id !== id);
+  saveFileStore(st);
+}
