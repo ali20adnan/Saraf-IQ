@@ -25,6 +25,9 @@ const config = {
     PushNotifications: {
       presentationOptions: ['badge', 'sound', 'alert'],
     },
+    LocalNotifications: {
+      iconColor: '#dc2626',
+    },
   },
 };
 

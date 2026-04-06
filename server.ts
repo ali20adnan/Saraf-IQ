@@ -19,6 +19,7 @@ import {
 } from "./server/botMessages";
 import * as store from "./server/store";
 import type { Admin, ServerTransaction } from "./server/store";
+import { sendFcmAnnouncement } from "./server/pushFcm";
 
 type TelegramBotInstance = InstanceType<typeof TelegramBot>;
 
@@ -276,11 +277,13 @@ async function startServer() {
     const sendAdminHome = async (chatId: number, messageId?: number, forUserId?: number) => {
       const msg = `👔 <b>لوحة تحكم الإدارة</b>\nمرحباً بك، يمكنك إدارة الوكلاء، المسؤولين ومراقبة النظام.`;
       let showLinks = false;
+      let showAppPush = false;
       if (forUserId != null) {
         const isSuper = forUserId.toString() === process.env.TELEGRAM_CHAT_ID;
         const admins = await store.listAdmins();
         const sec = admins.find((a) => a.telegram_id === forUserId);
         showLinks = adminCanEditLinks(isSuper, sec);
+        showAppPush = isSuper || (sec?.permissions.includes("site_settings") ?? false);
       }
       const inline_keyboard: TelegramBotTypes.InlineKeyboardButton[][] = [
         [{ text: "📊 حالة النظام", callback_data: "admin_status" }, { text: "👥 الوكلاء", callback_data: "admin_agents" }],
@@ -290,6 +293,9 @@ async function startServer() {
       ];
       if (showLinks) {
         inline_keyboard.push([{ text: "🔗 تعديل الروابط", callback_data: "menu_edit_links" }]);
+      }
+      if (showAppPush) {
+        inline_keyboard.push([{ text: "📲 إشعارات التطبيق", callback_data: "menu_app_notifications" }]);
       }
       const reply_markup = { inline_keyboard };
       if (messageId) {
@@ -344,6 +350,32 @@ async function startServer() {
         [{ text: "📎 تعديل رابط التواصل", callback_data: "link_prompt_support" }],
         [{ text: "🛒 تعديل عرض الشراء", callback_data: "link_prompt_hero_buy" }],
         [{ text: "💵 تعديل عرض البيع", callback_data: "link_prompt_hero_sell" }],
+        [{ text: "🔙 رجوع", callback_data: "admin_home" }],
+      ];
+      if (messageId) {
+        await bot?.editMessageText(text, {
+          chat_id: chatId,
+          message_id: messageId,
+          parse_mode: "HTML",
+          reply_markup: { inline_keyboard: buttons },
+        });
+      } else {
+        await bot?.sendMessage(chatId, text, { parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } });
+      }
+    };
+
+    const sendAppNotificationsMenu = async (chatId: number, messageId?: number) => {
+      const rows = await store.listPushTokens();
+      const n = new Set(rows.map((r) => r.token)).size;
+      const text =
+        `📲 <b>إشعارات تطبيق (APK / iOS)</b>\n\n` +
+        `أجهزة مسجّلة تقريباً: <b>${n}</b>\n\n` +
+        `لإرسال بلاغ أو عرض أو تنبيه لكل مستخدمي التطبيق، أرسل رسالة بهذا الشكل:\n` +
+        `<pre>PUSH_NOTIFY\nعنوان قصير\nنص الإشعار أو التفاصيل...</pre>\n\n` +
+        `يُرسل عبر Firebase (FCM). اضبط على السيرفر المتغير:\n` +
+        `<code>FCM_SERVER_KEY</code> (مفتاح الخادم من Firebase → Cloud Messaging).\n\n` +
+        `للبث عبر تيليجرام فقط لمستخدمي البوت: <code>BROADCAST نص</code>`;
+      const buttons: TelegramBotTypes.InlineKeyboardButton[][] = [
         [{ text: "🔙 رجوع", callback_data: "admin_home" }],
       ];
       if (messageId) {
@@ -620,6 +652,48 @@ async function startServer() {
              } catch (e) { /* ignore blocked users */ }
           }
           return bot?.sendMessage(msg.chat.id, `✅ تم الانتهاء من البث بنجاح!\nوصلت الرسالة لـ ${count} مستخدم من أصل ${users.length}.`, { parse_mode: "HTML" });
+        }
+
+        // إشعارات تطبيق الجوال (FCM) — نفس صلاحية البث/الإعدادات
+        if (/^PUSH_NOTIFY(\s|$)/i.test(text)) {
+          const hasPerm =
+            isAdmin ||
+            (secondaryAdmin && secondaryAdmin.permissions.includes("site_settings"));
+          if (!hasPerm) return;
+          const rest = text.replace(/^PUSH_NOTIFY\s*/i, "").trim();
+          const lines = rest.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+          if (lines.length < 1) {
+            return bot?.sendMessage(
+              msg.chat.id,
+              "⚠️ مثال:\n<pre>PUSH_NOTIFY\nعنوان\nنص الإشعار</pre>",
+              { parse_mode: "HTML" },
+            );
+          }
+          const title = lines[0].slice(0, 120);
+          const body = lines.length > 1 ? lines.slice(1).join("\n").slice(0, 4000) : title;
+          await bot?.sendMessage(msg.chat.id, "🔄 جاري الإرسال عبر Firebase…");
+          const result = await sendFcmAnnouncement(title, body);
+          if (result.error === "missing FCM_SERVER_KEY") {
+            return bot?.sendMessage(
+              msg.chat.id,
+              "❌ اضبط المتغير <code>FCM_SERVER_KEY</code> على السيرفر (Firebase → إعدادات المشروع → Cloud Messaging → مفتاح الخادم).",
+              { parse_mode: "HTML" },
+            );
+          }
+          if (result.error === "no_tokens") {
+            return bot?.sendMessage(
+              msg.chat.id,
+              "⚠️ لا توجد أجهزة مسجّلة بعد. يفتح المستخدم التطبيق ويقبل إشعارات النظام.",
+            );
+          }
+          return bot?.sendMessage(
+            msg.chat.id,
+            `✅ إشعار التطبيق\n` +
+              `وصل تقريباً: <b>${result.sent}</b>\n` +
+              `لم يُستلم: ${result.failed}\n` +
+              `رموز أُزيلت (غير صالحة): ${result.invalidTokensRemoved}`,
+            { parse_mode: "HTML" },
+          );
         }
 
         // Add Offer (Admins only)
@@ -939,6 +1013,17 @@ async function startServer() {
              return sendAdminManagementMenu(chatId, messageId);
           }
 
+          if (data === "menu_app_notifications") {
+            const canPush =
+              isSuperAdmin ||
+              (secondaryAdmin?.permissions.includes("site_settings") ?? false);
+            if (!canPush) {
+              await answer("لا تملك صلاحية إشعارات التطبيق.");
+              return;
+            }
+            return sendAppNotificationsMenu(chatId, messageId);
+          }
+
           if (data === "menu_edit_links") {
             if (!canEditLinks) {
               await answer("لا تملك صلاحية تعديل الروابط.");
@@ -1062,6 +1147,27 @@ async function startServer() {
 
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok" });
+  });
+
+  /** تسجيل رمز FCM من تطبيق أندرويد/آيفون — يرتبط بـ client_id */
+  app.post("/api/push/register", async (req, res) => {
+    try {
+      const body = req.body as { token?: string; client_id?: string; platform?: string };
+      const token = typeof body.token === "string" ? body.token.trim() : "";
+      const client_id = typeof body.client_id === "string" ? body.client_id.trim() : "";
+      if (!token || !client_id || token.length > 4096) {
+        return res.status(400).json({ error: "token and client_id required" });
+      }
+      await store.upsertPushToken({
+        token,
+        client_id,
+        platform: typeof body.platform === "string" ? body.platform.slice(0, 32) : "unknown",
+      });
+      res.json({ ok: true });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "register failed" });
+    }
   });
 
   app.get("/api/transactions", async (req, res) => {

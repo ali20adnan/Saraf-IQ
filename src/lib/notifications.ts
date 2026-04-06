@@ -1,23 +1,85 @@
-// Notification service with sound and browser notifications
+// إشعارات الويب + إشعارات أندرويد/آيفون (محلية + تسجيل FCM للبث من السيرفر)
+import { Capacitor } from '@capacitor/core';
+import { LocalNotifications } from '@capacitor/local-notifications';
+import { PushNotifications } from '@capacitor/push-notifications';
+import { apiUrl } from './apiBase';
 
-// Apple-style notification sound
 const NOTIFICATION_SOUND_URL = 'https://www.myinstants.com/media/sounds/apple-original.mp3';
+const ANDROID_CHANNEL = 'saraf_default';
+
+let localNotifId = 10000;
 
 class NotificationService {
   private audio: HTMLAudioElement | null = null;
   private enabled = false;
+  private nativeListenersAttached = false;
 
   constructor() {
-    // Initialize audio
     this.audio = new Audio(NOTIFICATION_SOUND_URL);
     this.audio.volume = 0.5;
-    
-    // Check saved preference
     const saved = localStorage.getItem('notifications_enabled');
     this.enabled = saved === 'true';
   }
 
+  /** تسجيل FCM وقناة أندرويد — يُستدعى بعد جاهزية العميل (مرة على التطبيق الأصلي) */
+  async initNativePush(clientId: string): Promise<void> {
+    if (!Capacitor.isNativePlatform()) return;
+    try {
+      if (Capacitor.getPlatform() === 'android') {
+        await LocalNotifications.createChannel({
+          id: ANDROID_CHANNEL,
+          name: 'Saraf IQ',
+          description: 'الطلبات والتنبيهات والعروض',
+          importance: 5,
+          vibration: true,
+        });
+      }
+
+      const pushPerm = await PushNotifications.requestPermissions();
+      if (pushPerm.receive === 'granted') {
+        await PushNotifications.register();
+      }
+
+      await LocalNotifications.requestPermissions();
+
+      if (!this.nativeListenersAttached) {
+        this.nativeListenersAttached = true;
+        PushNotifications.addListener('registration', async (t) => {
+          const token = t.value;
+          if (!token) return;
+          try {
+            await fetch(apiUrl('/api/push/register'), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                token,
+                client_id: clientId,
+                platform: Capacitor.getPlatform(),
+              }),
+            });
+          } catch (e) {
+            console.error('push register:', e);
+          }
+        });
+        PushNotifications.addListener('registrationError', (err) => {
+          console.error('Push registrationError:', err);
+        });
+      }
+    } catch (e) {
+      console.error('initNativePush:', e);
+    }
+  }
+
   async requestPermission(): Promise<boolean> {
+    if (Capacitor.isNativePlatform()) {
+      const loc = await LocalNotifications.requestPermissions();
+      const push = await PushNotifications.requestPermissions();
+      const ok = loc.display === 'granted' || push.receive === 'granted';
+      this.enabled = ok;
+      localStorage.setItem('notifications_enabled', String(ok));
+      return ok;
+    }
+
     if (!('Notification' in window)) {
       console.log('This browser does not support notifications');
       return false;
@@ -40,24 +102,47 @@ class NotificationService {
   }
 
   isEnabled(): boolean {
+    if (Capacitor.isNativePlatform()) {
+      return this.enabled && localStorage.getItem('notifications_enabled') === 'true';
+    }
     return this.enabled && Notification.permission === 'granted';
   }
 
   async sendNotification(title: string, options?: NotificationOptions & { playSound?: boolean }) {
     const { playSound = true, ...notificationOptions } = options || {};
 
-    // Play sound
+    if (Capacitor.isNativePlatform()) {
+      if (!this.enabled) return;
+      try {
+        const id = (localNotifId++ % 2147480000) + 1;
+        const body =
+          typeof notificationOptions.body === 'string' ? notificationOptions.body : '';
+        await LocalNotifications.schedule({
+          notifications: [
+            {
+              title,
+              body,
+              id,
+              ...(Capacitor.getPlatform() === 'android' ? { channelId: ANDROID_CHANNEL } : {}),
+              schedule: { at: new Date(Date.now() + 120) },
+            },
+          ],
+        });
+      } catch (e) {
+        console.error('LocalNotifications.schedule:', e);
+      }
+      return;
+    }
+
     if (playSound && this.audio) {
       try {
         this.audio.currentTime = 0;
         await this.audio.play();
-      } catch (e) {
-        // Audio play failed, possibly due to user interaction requirement
-        console.log('Audio play failed');
+      } catch {
+        /* يتطلب تفاعلاً أحياناً */
       }
     }
 
-    // Show browser notification
     if (this.enabled && Notification.permission === 'granted') {
       try {
         const notification = new Notification(title, {
@@ -73,7 +158,6 @@ class NotificationService {
           notification.close();
         };
 
-        // Auto close after 5 seconds
         setTimeout(() => notification.close(), 5000);
       } catch (e) {
         console.log('Notification failed:', e);
@@ -81,9 +165,8 @@ class NotificationService {
     }
   }
 
-  // Transaction status notifications
   notifyTransactionComplete(orderRef: string, amount: string) {
-    this.sendNotification('تم إكمال الطلب! ✅', {
+    void this.sendNotification('تم إكمال الطلب! ✅', {
       body: `طلبك #${orderRef} بمبلغ ${amount} تم بنجاح`,
       icon: '/icons/logo.png',
       tag: `tx-complete-${orderRef}`,
@@ -91,7 +174,7 @@ class NotificationService {
   }
 
   notifyTransactionFailed(orderRef: string) {
-    this.sendNotification('فشل الطلب ❌', {
+    void this.sendNotification('فشل الطلب ❌', {
       body: `لم نتمكن من إكمال طلبك #${orderRef}. يرجى المحاولة مرة أخرى.`,
       icon: '/icons/logo.png',
       tag: `tx-failed-${orderRef}`,
@@ -99,7 +182,7 @@ class NotificationService {
   }
 
   notifyNewMessage(title: string, message: string) {
-    this.sendNotification(title, {
+    void this.sendNotification(title, {
       body: message,
       icon: '/icons/logo.png',
       tag: 'new-message',

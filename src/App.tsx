@@ -207,6 +207,12 @@ function MainContent() {
     setClientId(id);
   }, []);
 
+  /** تسجيل FCM على أندرويد/آيفون بعد الشاشة الافتتاحية */
+  useEffect(() => {
+    if (!clientId || !splashDismissed) return;
+    void notificationService.initNativePush(clientId);
+  }, [clientId, splashDismissed]);
+
   const fetchSettings = useCallback(async () => {
     const SETTINGS_FETCH_MS = 1_200;
     const ac = new AbortController();
@@ -1467,14 +1473,14 @@ function MainContent() {
     const totalDisplay = formatLatinDigits(totalRaw);
 
     const statValueClass =
-      'block text-xl font-black tabular-nums tracking-normal text-gray-900 leading-none sm:text-2xl [font-variant-numeric:lining-nums]';
+      'inline-block text-xl font-black tabular-nums tracking-normal text-gray-900 leading-none sm:text-2xl [font-variant-numeric:lining-nums]';
     const statLabelClass =
       'text-[10px] font-bold leading-snug tracking-wide text-gray-400 sm:text-xs' +
       (lang === 'en' ? ' uppercase' : '');
 
     return (
-      <div className="mb-5 flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:mb-6 sm:p-6 lg:mb-6 lg:flex-row lg:items-center lg:justify-between lg:gap-8 lg:rounded-[2rem] lg:p-8">
-        <div className="flex w-full min-w-0 items-start gap-3 sm:items-center sm:gap-4 lg:min-w-[min(100%,22rem)] lg:flex-1">
+      <div className="mb-5 flex flex-col gap-4 overflow-visible rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:mb-6 sm:p-6 lg:mb-6 lg:flex-row lg:items-center lg:justify-between lg:gap-6 lg:rounded-[2rem] lg:p-8 xl:gap-10">
+        <div className="flex w-full min-w-0 items-start gap-3 sm:items-center sm:gap-4 lg:min-w-0 lg:max-w-[min(100%,42rem)] lg:flex-1">
           <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-gray-800 to-gray-900 text-white shadow-md ring-1 ring-black/5 sm:mt-0 sm:h-11 sm:w-11 sm:rounded-2xl">
             <User className="h-[18px] w-[18px] text-white/95 sm:h-5 sm:w-5" />
           </div>
@@ -1491,24 +1497,27 @@ function MainContent() {
             )}
           </div>
         </div>
-        {/* أرقام لاتينية: محاذاة يمين في RTL حتى لا يظهر الصفر بعيداً عن عنوان عربي */}
+        {/* إحصائيات: أعمدة minmax(min-content) لتجنّب قص الأرقام في RTL */}
         <div
-          className={`grid w-full shrink-0 grid-cols-2 gap-x-3 border-t border-gray-100 pt-3 sm:pt-4 sm:gap-x-6 lg:w-auto lg:min-w-[14rem] lg:max-w-md lg:border-t-0 lg:pt-0 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}
+          className={`grid w-full shrink-0 gap-x-4 border-t border-gray-100 pt-3 sm:gap-x-6 sm:pt-4 lg:w-auto lg:min-w-[min(100%,22rem)] lg:shrink-0 lg:border-t-0 lg:pt-0 xl:min-w-[24rem] ${dir === 'rtl' ? 'text-right' : 'text-left'}`}
+          style={{
+            gridTemplateColumns: "minmax(min-content, 1fr) minmax(min-content, 1fr)",
+          }}
         >
-          <div className={`min-w-0 border-e border-gray-200 pe-3 sm:pe-5 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>
+          <div className={`overflow-visible border-e border-gray-200 pe-3 sm:pe-5 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>
             <p className={statLabelClass}>{t('activeOrders')}</p>
-            <div dir="ltr" className="mt-1 min-h-[1.75rem]">
+            <div dir="ltr" className="mt-1 min-h-[1.75rem] whitespace-nowrap">
               <span className={`${statValueClass} ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>{activeDisplay}</span>
             </div>
           </div>
-          <div className={`min-w-0 ps-3 sm:ps-5 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>
+          <div className={`overflow-visible ps-3 sm:ps-5 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>
             <p className={statLabelClass}>{t('totalExchanged')}</p>
             <div
               dir="ltr"
-              className={`mt-1 flex min-h-[1.75rem] flex-wrap items-baseline gap-2 sm:gap-2.5 ${dir === 'rtl' ? 'justify-end' : 'justify-start'}`}
+              className={`mt-1 flex min-h-[1.75rem] flex-nowrap items-baseline gap-2 sm:gap-2.5 ${dir === 'rtl' ? 'justify-end' : 'justify-start'} overflow-visible`}
             >
-              <span className={`${statValueClass} ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>{totalDisplay}</span>
-              <span className="shrink-0 text-sm font-semibold tabular-nums text-gray-500 sm:text-base [font-variant-numeric:lining-nums]">
+              <span className={`${statValueClass} max-w-none ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>{totalDisplay}</span>
+              <span className="shrink-0 whitespace-nowrap text-sm font-semibold tabular-nums text-gray-500 sm:text-base [font-variant-numeric:lining-nums]">
                 {t('iqd')}
               </span>
             </div>

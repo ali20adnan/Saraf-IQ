@@ -55,6 +55,13 @@ export type BotUser = {
   created_at: string;
 };
 
+export type PushTokenRecord = {
+  token: string;
+  client_id: string;
+  platform: string;
+  updated_at: string;
+};
+
 type FileStore = {
   transactions: ServerTransaction[];
   offers: ServerOffer[];
@@ -64,6 +71,7 @@ type FileStore = {
   agent_numbers: AgentNumber[];
   admins: Admin[];
   bot_users: BotUser[];
+  push_tokens: PushTokenRecord[];
 };
 
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -226,6 +234,7 @@ function loadFileStore(): FileStore {
         agent_numbers: [],
         admins: [],
         bot_users: [],
+        push_tokens: [],
       };
     }
     const raw = fs.readFileSync(DATA_FILE, "utf-8");
@@ -244,6 +253,7 @@ function loadFileStore(): FileStore {
       agent_numbers: Array.isArray(parsed.agent_numbers) ? parsed.agent_numbers : [],
       admins: Array.isArray(parsed.admins) ? parsed.admins : [],
       bot_users: Array.isArray(parsed.bot_users) ? parsed.bot_users : [],
+      push_tokens: Array.isArray(parsed.push_tokens) ? parsed.push_tokens : [],
     };
   } catch {
     return {
@@ -255,6 +265,7 @@ function loadFileStore(): FileStore {
       agent_numbers: [],
       admins: [],
       bot_users: [],
+      push_tokens: [],
     };
   }
 }
@@ -850,4 +861,41 @@ export async function deleteOffer(id: string) {
   const store = loadFileStore();
   store.offers = store.offers.filter((o) => o.id !== id);
   saveFileStore(store);
+}
+
+/** تسجيل رمز FCM للتطبيق (أندرويد/آيفون) */
+export async function upsertPushToken(input: { token: string; client_id: string; platform: string }): Promise<void> {
+  const updated_at = new Date().toISOString();
+  const row: PushTokenRecord = { ...input, updated_at };
+  if (db) {
+    const { error } = await db.from("push_tokens").upsert(
+      { token: input.token, client_id: input.client_id, platform: input.platform, updated_at },
+      { onConflict: "token" }
+    );
+    if (error) console.error("upsertPushToken:", error);
+  }
+  const st = loadFileStore();
+  const ix = st.push_tokens.findIndex((p) => p.token === input.token);
+  if (ix === -1) st.push_tokens.push(row);
+  else st.push_tokens[ix] = row;
+  saveFileStore(st);
+}
+
+export async function listPushTokens(): Promise<PushTokenRecord[]> {
+  if (db) {
+    const { data, error } = await db.from("push_tokens").select("*");
+    if (!error && data?.length) return data as PushTokenRecord[];
+  }
+  return loadFileStore().push_tokens;
+}
+
+export async function removePushTokens(tokens: string[]): Promise<void> {
+  if (!tokens.length) return;
+  if (db) {
+    await db.from("push_tokens").delete().in("token", tokens);
+  }
+  const st = loadFileStore();
+  const set = new Set(tokens);
+  st.push_tokens = st.push_tokens.filter((p) => !set.has(p.token));
+  saveFileStore(st);
 }
