@@ -1152,9 +1152,9 @@ function MainContent() {
 
                       <div className="flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                         <div className="min-w-0" dir="ltr">
-                          <p className="text-2xl font-black tracking-tight text-gray-900 [font-variant-numeric:lining-nums] sm:text-[1.65rem]">
+                          <p className="text-2xl font-black tracking-normal text-gray-900 tabular-nums [font-variant-numeric:lining-nums] sm:text-[1.65rem]">
                             {formatLatinDigits(Number(tx.amount))}
-                            <span className="ms-2 inline-block whitespace-nowrap text-base font-semibold text-gray-500 sm:text-lg">
+                            <span className="ms-2 inline-block whitespace-nowrap text-base font-semibold tabular-nums text-gray-500 sm:text-lg">
                               {tx.type === 'sell' ? t('iqd') : t('asiacell')}
                             </span>
                           </p>
@@ -1467,7 +1467,7 @@ function MainContent() {
     const totalDisplay = formatLatinDigits(totalRaw);
 
     const statValueClass =
-      'block text-xl font-black tabular-nums tracking-tight text-gray-900 leading-none sm:text-2xl [font-variant-numeric:lining-nums]';
+      'block text-xl font-black tabular-nums tracking-normal text-gray-900 leading-none sm:text-2xl [font-variant-numeric:lining-nums]';
     const statLabelClass =
       'text-[10px] font-bold leading-snug tracking-wide text-gray-400 sm:text-xs' +
       (lang === 'en' ? ' uppercase' : '');
@@ -1505,10 +1505,10 @@ function MainContent() {
             <p className={statLabelClass}>{t('totalExchanged')}</p>
             <div
               dir="ltr"
-              className={`mt-1 flex min-h-[1.75rem] flex-wrap items-baseline gap-1.5 sm:gap-2 ${dir === 'rtl' ? 'justify-end' : 'justify-start'}`}
+              className={`mt-1 flex min-h-[1.75rem] flex-wrap items-baseline gap-2 sm:gap-2.5 ${dir === 'rtl' ? 'justify-end' : 'justify-start'}`}
             >
               <span className={`${statValueClass} ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>{totalDisplay}</span>
-              <span className="shrink-0 text-sm font-semibold text-gray-500 sm:text-base [font-variant-numeric:lining-nums]">
+              <span className="shrink-0 text-sm font-semibold tabular-nums text-gray-500 sm:text-base [font-variant-numeric:lining-nums]">
                 {t('iqd')}
               </span>
             </div>
@@ -1559,11 +1559,16 @@ function MainContent() {
         <h3 className="mb-1 text-sm font-medium uppercase tracking-wide text-white/70">
           {txType === 'sell' ? t('offerTitle') : t('buyOfferTitle')}
         </h3>
-        <div className="flex items-baseline gap-2">
-          <span className="text-5xl font-black tracking-tighter text-white" dir="ltr">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span
+            className="min-w-0 max-w-full text-[clamp(1.75rem,6vw,3rem)] font-black leading-[1.1] tracking-normal text-white tabular-nums [font-variant-numeric:lining-nums] [text-rendering:geometricPrecision]"
+            dir="ltr"
+          >
             {txType === 'sell' ? siteContent.heroSellAmountDisplay : siteContent.heroBuyAmountDisplay}
           </span>
-          <span className="ml-1 text-lg font-bold text-white/85">{txType === 'sell' ? t('iqd') : 'Asiacell'}</span>
+          <span className="shrink-0 text-lg font-bold leading-none text-white/85">
+            {txType === 'sell' ? t('iqd') : 'Asiacell'}
+          </span>
         </div>
       </div>
       <div
@@ -1628,9 +1633,14 @@ function MainContent() {
                   </span>
                 </div>
                 <h3 className="mb-2 text-sm font-medium leading-relaxed text-white/90">{item.title}</h3>
-                <div className="flex flex-wrap items-baseline gap-2">
-                  <span className="text-4xl font-black tracking-tight text-white sm:text-5xl">{item.amount}</span>
-                  <span className="text-base font-bold text-white/85">{item.unit}</span>
+                <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                  <span
+                    className="min-w-0 text-4xl font-black leading-[1.1] tracking-normal text-white tabular-nums [font-variant-numeric:lining-nums] sm:text-5xl"
+                    dir="ltr"
+                  >
+                    {item.amount}
+                  </span>
+                  <span className="shrink-0 text-base font-bold text-white/85">{item.unit}</span>
                 </div>
               </div>
               <div
@@ -2390,12 +2400,14 @@ function MainContent() {
                                   </div>
                                 </div>
                                 <div className="flex items-end justify-between gap-3 border-t border-gray-100/80 pt-3">
-                                  <p className="text-lg font-black tabular-nums text-gray-900" dir="ltr">
-                                    {formatLatinDigits(Number(tx.amount))}
-                                    <span className="ms-1.5 whitespace-nowrap text-xs font-semibold text-gray-500">
+                                  <div className="min-w-0 flex flex-wrap items-baseline gap-x-2 gap-y-0.5" dir="ltr">
+                                    <span className="text-lg font-black tracking-normal text-gray-900 tabular-nums [font-variant-numeric:lining-nums]">
+                                      {formatLatinDigits(Number(tx.amount))}
+                                    </span>
+                                    <span className="whitespace-nowrap text-xs font-semibold tabular-nums text-gray-500">
                                       {tx.type === 'sell' ? t('iqd') : t('asiacell')}
                                     </span>
-                                  </p>
+                                  </div>
                                   <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ring-1 ${su.badge}`}>
                                     {su.label}
                                   </span>
