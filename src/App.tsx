@@ -404,15 +404,8 @@ function MainContent() {
           setOtpState('input');
           setShowOtpStep(false);
           setIsSuccess(true);
-          // Send notification
-          notificationService.notifyTransactionComplete(
-            tx.order_ref,
-            formatLatinDigits(Number(tx.amount)) + ' ' + (tx.type === 'sell' ? t('iqd') : t('asiacell'))
-          );
         } else if (tx.status === 'failed') {
           setOtpState('failed');
-          // Send notification
-          notificationService.notifyTransactionFailed(tx.order_ref);
         } else if (tx.status === 'retry_otp') {
           setOtpState('input');
           setOtpCode('');
@@ -421,27 +414,33 @@ function MainContent() {
     }
   }, [transactions, otpState, currentOrderId, lang, t]);
 
-  // Monitor transaction status changes for notifications
+  // إشعارات محلية للويب فقط — على APK يصل التنبيه عبر FCM من السيرفر عند تغيّر الحالة
   useEffect(() => {
     if (transactions.length === 0) return;
-    
-    // Check for newly completed or failed transactions
-    transactions.forEach(tx => {
-      const prevTx = prevTransactionsRef.current.find(t => t.id === tx.id);
+    if (Capacitor.isNativePlatform()) {
+      prevTransactionsRef.current = transactions;
+      return;
+    }
+
+    transactions.forEach((tx) => {
+      const prevTx = prevTransactionsRef.current.find((t) => t.id === tx.id);
       if (prevTx && prevTx.status !== tx.status) {
-        // Status changed
+        const amountLabel =
+          formatLatinDigits(Number(tx.amount)) + ' ' + (tx.type === 'sell' ? t('iqd') : t('asiacell'));
         if (tx.status === 'completed') {
-          notificationService.notifyTransactionComplete(
-            tx.order_ref,
-            formatLatinDigits(Number(tx.amount)) + ' ' + (tx.type === 'sell' ? t('iqd') : t('asiacell'))
-          );
+          notificationService.notifyTransactionStatusChange('completed', tx.order_ref, amountLabel);
         } else if (tx.status === 'failed') {
-          notificationService.notifyTransactionFailed(tx.order_ref);
+          notificationService.notifyTransactionStatusChange('failed', tx.order_ref);
+        } else if (
+          tx.status === 'refunded' ||
+          tx.status === 'suspended' ||
+          tx.status === 'retry_otp'
+        ) {
+          notificationService.notifyTransactionStatusChange(tx.status, tx.order_ref);
         }
       }
     });
-    
-    // Store current transactions for next comparison
+
     prevTransactionsRef.current = transactions;
   }, [transactions, lang, t]);
 

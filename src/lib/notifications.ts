@@ -220,6 +220,44 @@ class NotificationService {
     });
   }
 
+  /** للويب: تغيّر حالة الطلب (على التطبيق الأصلي يُرسل السيرفر FCM) */
+  notifyTransactionStatusChange(
+    status: 'completed' | 'failed' | 'refunded' | 'suspended' | 'retry_otp',
+    orderRef: string,
+    amountLabel?: string,
+  ) {
+    if (status === 'completed' && amountLabel) {
+      this.notifyTransactionComplete(orderRef, amountLabel);
+      return;
+    }
+    if (status === 'failed') {
+      this.notifyTransactionFailed(orderRef);
+      return;
+    }
+    const map: Record<string, { title: string; body: string }> = {
+      refunded: {
+        title: 'استرجاع ↩️',
+        body: `تم تسجيل الاسترجاع للطلب #${orderRef}.`,
+      },
+      suspended: {
+        title: 'طلب معلّق ⏸',
+        body: `طلبك #${orderRef} في حالة تعليق.`,
+      },
+      retry_otp: {
+        title: 'تحقق من الرمز',
+        body: `أعد إدخال رمز التحقق للطلب #${orderRef}.`,
+      },
+    };
+    const m = map[status];
+    if (m) {
+      void this.sendNotification(m.title, {
+        body: m.body,
+        icon: '/icons/logo.png',
+        tag: `tx-${status}-${orderRef}`,
+      });
+    }
+  }
+
   notifyNewMessage(title: string, message: string) {
     void this.sendNotification(title, {
       body: message,

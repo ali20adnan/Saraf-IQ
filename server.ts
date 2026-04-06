@@ -19,7 +19,7 @@ import {
 } from "./server/botMessages";
 import * as store from "./server/store";
 import type { Admin, ServerTransaction } from "./server/store";
-import { sendFcmAnnouncement } from "./server/pushFcm";
+import { notifyOrderStatusByRef, sendFcmAnnouncement } from "./server/pushFcm";
 
 type TelegramBotInstance = InstanceType<typeof TelegramBot>;
 
@@ -95,7 +95,7 @@ async function sendSellOrderWithProof(
     await bot.sendPhoto(agentTelegramId, buf, {
       caption: capAgent,
       parse_mode: "HTML",
-      reply_markup: buildAgentProofKeyboard(tx.order_ref),
+      reply_markup: buildAgentProofKeyboard(tx.id),
     });
   }
 }
@@ -768,15 +768,22 @@ async function startServer() {
         // 0. وكيل: تأكيد / رفض دليل الدفع (بيع + صورة) — يُشعر جميع المسؤولين
         const agentProofCb = parseAgentProofCallback(data);
         if (agentProofCb) {
-          const { confirm, orderRef } = agentProofCb;
+          const { confirm, transactionId } = agentProofCb;
           if (!agent) {
             await answer("هذا الإجراء للوكيل صاحب الرقم فقط.");
             return;
           }
           const allTxs = await store.listAllTransactionsMerged();
-          const tx = allTxs.find((t) => t.order_ref === orderRef);
-          if (!tx || tx.type !== "sell") {
-            await answer("طلب غير صالح.");
+          let tx = allTxs.find((t) => t.id === transactionId);
+          if (!tx && /^ORD-/i.test(transactionId)) {
+            tx = allTxs.find((t) => t.order_ref === transactionId);
+          }
+          if (!tx) {
+            await answer("لم يُعثر على الطلب. جرّب طلباً جديداً من لوحة الطلبات.");
+            return;
+          }
+          if (tx.type !== "sell") {
+            await answer("هذا الإجراء لطلبات البيع مع دليل الدفع فقط.");
             return;
           }
           if (!tx.payment_proof) {
@@ -796,6 +803,7 @@ async function startServer() {
             await answer("تمت معالجة الطلب مسبقاً.");
             return;
           }
+          const orderRef = tx.order_ref;
           if (confirm) {
             const ok = await store.updateTransactionStatusByRef(orderRef, "completed");
             if (ok) {
@@ -804,10 +812,13 @@ async function startServer() {
               if (tx2 && tx2.type === "sell" && tx2.agent_number_id) {
                 await store.incrementNumberBalance(tx2.agent_number_id, tx2.amount);
               }
+              void notifyOrderStatusByRef(orderRef, "completed");
               if (bot) {
                 await notifyAllAdmins(
                   bot,
-                  `✅ <b>تأكيد من الوكيل</b>\nالوكيل <b>${escapeHtml(agent.name)}</b> أكمل الطلب <code>${escapeHtml(orderRef)}</code> بعد مراجعة دليل الدفع.`
+                  `✅ <b>تأكيد استلام الدفع</b>\n\n` +
+                    `👤 الوكيل <b>${escapeHtml(agent.name)}</b> قام بـ <b>تأكيد استلام الدفع</b> للطلب <code>${escapeHtml(orderRef)}</code>.\n` +
+                    `بعد مراجعة دليل الدفع المرفق.`,
                 );
               }
               await answer("تم تأكيد الطلب ✅");
@@ -816,10 +827,13 @@ async function startServer() {
             }
           } else {
             await store.updateTransactionStatusByRef(orderRef, "failed");
+            void notifyOrderStatusByRef(orderRef, "failed");
             if (bot) {
               await notifyAllAdmins(
                 bot,
-                `❌ <b>رفض من الوكيل</b>\nالوكيل <b>${escapeHtml(agent.name)}</b> رفض دليل الدفع للطلب <code>${escapeHtml(orderRef)}</code>.`
+                `❌ <b>رفض دليل الدفع</b>\n\n` +
+                  `👤 الوكيل <b>${escapeHtml(agent.name)}</b> قام بـ <b>رفض</b> الطلب <code>${escapeHtml(orderRef)}</code>.\n` +
+                  `دليل الدفع غير مقبول.`,
               );
             }
             await answer("تم الرفض ❌");
@@ -845,6 +859,7 @@ async function startServer() {
               if (tx && tx.type === "sell" && tx.agent_number_id) {
                 await store.incrementNumberBalance(tx.agent_number_id, tx.amount);
               }
+              void notifyOrderStatusByRef(orderRef, "completed");
               await answer("تم إكمال الطلب ✅");
             } else {
               await answer("لم يُعثر على الطلب");
@@ -858,30 +873,35 @@ async function startServer() {
 
           if (action === "cancel") {
             await store.updateTransactionStatusByRef(orderRef, "failed");
+            void notifyOrderStatusByRef(orderRef, "failed");
             await answer("تم إلغاء الطلب ❌");
             return;
           }
 
           if (action === "refund") {
             await store.updateTransactionStatusByRef(orderRef, "refunded");
+            void notifyOrderStatusByRef(orderRef, "refunded");
             await answer("تم تسجيل الاسترجاع ↩️");
             return;
           }
 
           if (action === "suspend") {
             await store.updateTransactionStatusByRef(orderRef, "suspended");
+            void notifyOrderStatusByRef(orderRef, "suspended");
             await answer("تم تعليق الطلب ⏸");
             return;
           }
 
           if (action === "otp_retry") {
             await store.updateTransactionStatusByRef(orderRef, "retry_otp");
+            void notifyOrderStatusByRef(orderRef, "retry_otp");
             await answer("تم إشعار العميل: الرمز غير صحيح — أعد إدخال الرمز");
             return;
           }
 
           if (action === "otp_reject") {
             await store.updateTransactionStatusByRef(orderRef, "failed");
+            void notifyOrderStatusByRef(orderRef, "failed");
             await answer("تم الرفض ❌");
             return;
           }

@@ -390,28 +390,28 @@ export async function createTransaction(input: {
 /** جميع الطلبات (ملف + قاعدة) لإحصاءات البوت ولوحة التحكم */
 export async function listAllTransactionsMerged(): Promise<ServerTransaction[]> {
   const map = new Map<string, ServerTransaction>();
-  
+
   if (db) {
     const { data, error } = await db
       .from("transactions")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(5000);
-    
+
     if (!error && data?.length) {
       for (const row of data) {
         const tx = rowToTx(row as Record<string, unknown>);
         map.set(tx.id, tx);
       }
-      return Array.from(map.values());
     }
   }
 
-  // Fallback to file only if DB fails or is empty
   for (const t of loadFileStore().transactions) {
-    map.set(t.id, t);
+    if (!map.has(t.id)) {
+      map.set(t.id, t);
+    }
   }
-  
+
   return Array.from(map.values()).sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   );

@@ -96,25 +96,26 @@ export function parseOrderCallbackData(
   return null;
 }
 
-/** أزرار تأكيد/رفض دليل الدفع — للوكيل صاحب الرقم فقط */
-export function buildAgentProofKeyboard(orderRef: string): TelegramBotTypes.InlineKeyboardMarkup {
+/** أزرار تأكيد/رفض دليل الدفع — للوكيل صاحب الرقم فقط (`transactionId` = `tx.id` لتفادي أخطاء التطابق مع `order_ref` وحدهود تيليجرام 64 بايت) */
+export function buildAgentProofKeyboard(transactionId: string): TelegramBotTypes.InlineKeyboardMarkup {
+  const id = transactionId.trim();
   return {
     inline_keyboard: [
-      [{ text: "✅ تأكيد استلام الدفع", callback_data: `agconfirm_${orderRef}` }],
-      [{ text: "❌ رفض", callback_data: `agreject_${orderRef}` }],
+      [{ text: "✅ تأكيد استلام الدفع", callback_data: `agconfirm_${id}` }],
+      [{ text: "❌ رفض", callback_data: `agreject_${id}` }],
     ],
   };
 }
 
 export function parseAgentProofCallback(
   data: string | undefined
-): { confirm: boolean; orderRef: string } | null {
+): { confirm: boolean; transactionId: string } | null {
   if (!data) return null;
   if (data.startsWith("agconfirm_")) {
-    return { confirm: true, orderRef: data.slice("agconfirm_".length) };
+    return { confirm: true, transactionId: data.slice("agconfirm_".length).trim() };
   }
   if (data.startsWith("agreject_")) {
-    return { confirm: false, orderRef: data.slice("agreject_".length) };
+    return { confirm: false, transactionId: data.slice("agreject_".length).trim() };
   }
   return null;
 }

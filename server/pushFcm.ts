@@ -110,28 +110,15 @@ async function sendFcmV1(
   return { sent, invalid };
 }
 
-export async function sendFcmAnnouncement(title: string, body: string): Promise<{
-  sent: number;
-  failed: number;
-  invalidTokensRemoved: number;
-  error?: string;
-}> {
+/** إرسال FCM لقائمة رموز (مشترك بين البث والعميل الواحد) */
+async function deliverFcm(tokens: string[], title: string, body: string): Promise<{ sent: number; invalid: string[] }> {
   const serverKey = process.env.FCM_SERVER_KEY?.trim();
   const sa = parseServiceAccount();
-
   if (!serverKey && !sa?.project_id) {
-    return {
-      sent: 0,
-      failed: 0,
-      invalidTokensRemoved: 0,
-      error: "missing_fcm_credentials",
-    };
+    return { sent: 0, invalid: [] };
   }
-
-  const rows = await store.listPushTokens();
-  const tokens = [...new Set(rows.map((r) => r.token).filter(Boolean))];
   if (tokens.length === 0) {
-    return { sent: 0, failed: 0, invalidTokensRemoved: 0, error: "no_tokens" };
+    return { sent: 0, invalid: [] };
   }
 
   const invalid: string[] = [];
@@ -140,12 +127,7 @@ export async function sendFcmAnnouncement(title: string, body: string): Promise<
   if (sa?.project_id && !serverKey) {
     const accessToken = await getFcmV1AccessToken(sa);
     if (!accessToken) {
-      return {
-        sent: 0,
-        failed: 0,
-        invalidTokensRemoved: 0,
-        error: "fcm_v1_token_failed",
-      };
+      return { sent: 0, invalid: [] };
     }
     const r = await sendFcmV1(sa.project_id, accessToken, title, body, tokens);
     sent = r.sent;
@@ -198,6 +180,101 @@ export async function sendFcmAnnouncement(title: string, body: string): Promise<
       }
     }
   }
+
+  return { sent, invalid };
+}
+
+/** إشعار عميل واحد (حالة الطلب) — لا يعطل السيرفر عند الفشل */
+export async function sendFcmToClient(clientId: string, title: string, body: string): Promise<void> {
+  try {
+    const cid = clientId.trim();
+    if (!cid) return;
+    const rows = await store.listPushTokens();
+    const tokens = [
+      ...new Set(rows.filter((r) => r.client_id === cid).map((r) => r.token).filter(Boolean)),
+    ];
+    if (tokens.length === 0) return;
+    const { invalid } = await deliverFcm(tokens, title, body);
+    if (invalid.length) {
+      await store.removePushTokens([...new Set(invalid)]);
+    }
+  } catch (e) {
+    console.error("sendFcmToClient:", e);
+  }
+}
+
+/** إشعار FCM عند تغيّر حالة الطلب (شراء/رفض وغيرها) */
+export async function notifyOrderStatusByRef(orderRef: string, status: string): Promise<void> {
+  const all = await store.listAllTransactionsMerged();
+  const tx = all.find((t) => t.order_ref === orderRef);
+  if (!tx?.client_id) return;
+  const ref = orderRef;
+  let title: string;
+  let body: string;
+  switch (status) {
+    case "completed":
+      title = "تم إكمال الطلب ✅";
+      body = `طلبك #${ref} تم بنجاح.`;
+      break;
+    case "failed":
+      title = "تم رفض الطلب ❌";
+      body = `طلبك #${ref} لم يُعتمد أو أُلغي.`;
+      break;
+    case "refunded":
+      title = "استرجاع ↩️";
+      body = `تم تسجيل الاسترجاع للطلب #${ref}.`;
+      break;
+    case "suspended":
+      title = "طلب معلّق ⏸";
+      body = `طلبك #${ref} في حالة تعليق.`;
+      break;
+    case "retry_otp":
+      title = "تحقق من الرمز";
+      body = `أعد إدخال رمز التحقق للطلب #${ref}.`;
+      break;
+    default:
+      return;
+  }
+  await sendFcmToClient(tx.client_id, title, body);
+}
+
+export async function sendFcmAnnouncement(title: string, body: string): Promise<{
+  sent: number;
+  failed: number;
+  invalidTokensRemoved: number;
+  error?: string;
+}> {
+  const serverKey = process.env.FCM_SERVER_KEY?.trim();
+  const sa = parseServiceAccount();
+
+  if (!serverKey && !sa?.project_id) {
+    return {
+      sent: 0,
+      failed: 0,
+      invalidTokensRemoved: 0,
+      error: "missing_fcm_credentials",
+    };
+  }
+
+  const rows = await store.listPushTokens();
+  const tokens = [...new Set(rows.map((r) => r.token).filter(Boolean))];
+  if (tokens.length === 0) {
+    return { sent: 0, failed: 0, invalidTokensRemoved: 0, error: "no_tokens" };
+  }
+
+  if (sa?.project_id && !serverKey) {
+    const accessToken = await getFcmV1AccessToken(sa);
+    if (!accessToken) {
+      return {
+        sent: 0,
+        failed: 0,
+        invalidTokensRemoved: 0,
+        error: "fcm_v1_token_failed",
+      };
+    }
+  }
+
+  const { sent, invalid } = await deliverFcm(tokens, title, body);
 
   if (invalid.length) {
     await store.removePushTokens([...new Set(invalid)]);
