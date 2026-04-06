@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS public.admins (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   telegram_id BIGINT NOT NULL UNIQUE,
   name TEXT NOT NULL,
-  permissions TEXT[] DEFAULT ARRAY['manage_agents', 'site_settings', 'view_stats'],
+  permissions TEXT[] DEFAULT ARRAY['manage_agents', 'site_settings', 'edit_links', 'view_stats'],
   created_at TIMESTAMPTZ DEFAULT now()
 );
 

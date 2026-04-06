@@ -18,9 +18,17 @@ import {
   type CardFieldsPayload,
 } from "./server/botMessages";
 import * as store from "./server/store";
-import type { ServerTransaction } from "./server/store";
+import type { Admin, ServerTransaction } from "./server/store";
 
 type TelegramBotInstance = InstanceType<typeof TelegramBot>;
+
+type PendingLinkKey = "link_support" | "hero_buy_amount_display" | "hero_sell_amount_display";
+const pendingLinkEdits = new Map<number, PendingLinkKey>();
+
+function adminCanEditLinks(isSuperAdmin: boolean, secondary: Admin | undefined): boolean {
+  if (isSuperAdmin) return true;
+  return secondary?.permissions.includes("edit_links") ?? false;
+}
 
 async function sendOrderTelegram(
   bot: TelegramBotInstance,
@@ -265,16 +273,25 @@ async function startServer() {
     /** polling: false ثم deleteWebHook — إن وُجد webhook يمنع getUpdates من العمل */
     bot = new TelegramBot(botToken, { polling: false });
 
-    const sendAdminHome = async (chatId: number, messageId?: number) => {
+    const sendAdminHome = async (chatId: number, messageId?: number, forUserId?: number) => {
       const msg = `👔 <b>لوحة تحكم الإدارة</b>\nمرحباً بك، يمكنك إدارة الوكلاء، المسؤولين ومراقبة النظام.`;
-      const reply_markup = {
-        inline_keyboard: [
-          [{ text: "📊 حالة النظام", callback_data: "admin_status" }, { text: "👥 الوكلاء", callback_data: "admin_agents" }],
-          [{ text: "🖥️ إحصائيات عامة", callback_data: "menu_orders" }, { text: "🛡️ إدارة المسؤولين", callback_data: "admin_mgmt_list" }],
-          [{ text: "📦 إدارة العروض", callback_data: "omv_" }],
-          [{ text: "⚙️ إعدادات الموقع", callback_data: "menu_site_settings" }],
-        ]
-      };
+      let showLinks = false;
+      if (forUserId != null) {
+        const isSuper = forUserId.toString() === process.env.TELEGRAM_CHAT_ID;
+        const admins = await store.listAdmins();
+        const sec = admins.find((a) => a.telegram_id === forUserId);
+        showLinks = adminCanEditLinks(isSuper, sec);
+      }
+      const inline_keyboard: TelegramBotTypes.InlineKeyboardButton[][] = [
+        [{ text: "📊 حالة النظام", callback_data: "admin_status" }, { text: "👥 الوكلاء", callback_data: "admin_agents" }],
+        [{ text: "🖥️ إحصائيات عامة", callback_data: "menu_orders" }, { text: "🛡️ إدارة المسؤولين", callback_data: "admin_mgmt_list" }],
+        [{ text: "📦 إدارة العروض", callback_data: "omv_" }],
+        [{ text: "⚙️ إعدادات الموقع", callback_data: "menu_site_settings" }],
+      ];
+      if (showLinks) {
+        inline_keyboard.push([{ text: "🔗 تعديل الروابط", callback_data: "menu_edit_links" }]);
+      }
+      const reply_markup = { inline_keyboard };
       if (messageId) {
         await bot?.editMessageText(msg, { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup });
       } else {
@@ -298,6 +315,7 @@ async function startServer() {
         `<code>SET_LINK https://...</code>\n` +
         `<code>SET_HERO_BUY 100,000</code>\n` +
         `<code>SET_HERO_SELL 95,000</code>\n\n` +
+        `<i>لتعديل الروابط بأزرار: القائمة الرئيسية ← 🔗 تعديل الروابط (يتطلب صلاحية).</i>\n` +
         `<i>التبديل بالأزرار أدناه — فوري على الموقع.</i>`;
       
       const buttons = [
@@ -309,6 +327,32 @@ async function startServer() {
 
       if (messageId) {
         await bot?.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } });
+      } else {
+        await bot?.sendMessage(chatId, text, { parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } });
+      }
+    };
+
+    const sendEditLinksMenu = async (chatId: number, messageId?: number) => {
+      const sc = await store.getSiteContent();
+      const text =
+        `🔗 <b>تعديل الروابط والعناوين</b>\n\n` +
+        `📎 <b>رابط التواصل:</b>\n<code>${escapeHtml(sc.supportUrl)}</code>\n\n` +
+        `🛒 <b>عرض الشراء (الرئيسية):</b> <code>${escapeHtml(sc.heroBuyAmountDisplay)}</code>\n` +
+        `💵 <b>عرض البيع (الرئيسية):</b> <code>${escapeHtml(sc.heroSellAmountDisplay)}</code>\n\n` +
+        `<i>اضغط زرًا ثم أرسل القيمة الجديدة في رسالة.</i>`;
+      const buttons: TelegramBotTypes.InlineKeyboardButton[][] = [
+        [{ text: "📎 تعديل رابط التواصل", callback_data: "link_prompt_support" }],
+        [{ text: "🛒 تعديل عرض الشراء", callback_data: "link_prompt_hero_buy" }],
+        [{ text: "💵 تعديل عرض البيع", callback_data: "link_prompt_hero_sell" }],
+        [{ text: "🔙 رجوع", callback_data: "admin_home" }],
+      ];
+      if (messageId) {
+        await bot?.editMessageText(text, {
+          chat_id: chatId,
+          message_id: messageId,
+          parse_mode: "HTML",
+          reply_markup: { inline_keyboard: buttons },
+        });
       } else {
         await bot?.sendMessage(chatId, text, { parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } });
       }
@@ -355,6 +399,7 @@ async function startServer() {
         inline_keyboard: [
           [{ text: `${p('manage_agents')} إدارة الوكلاء`, callback_data: `adp_${a.id}_manage_agents` }],
           [{ text: `${p('site_settings')} إعدادات الموقع`, callback_data: `adp_${a.id}_site_settings` }],
+          [{ text: `${p('edit_links')} تعديل الروابط`, callback_data: `adp_${a.id}_edit_links` }],
           [{ text: `${p('manage_admins')} إدارة المسؤولين`, callback_data: `adp_${a.id}_manage_admins` }],
           [{ text: `${p('view_stats')} عرض الإحصائيات`, callback_data: `adp_${a.id}_view_stats` }],
           [{ text: "❌ حذف المسؤول", callback_data: `amd_${a.id}` }],
@@ -421,9 +466,42 @@ async function startServer() {
         }
 
         if (isStartCommand(text)) {
-          if (isAdmin || secondaryAdmin) return sendAdminHome(msg.chat.id);
+          pendingLinkEdits.delete(userId);
+          if (isAdmin || secondaryAdmin) return sendAdminHome(msg.chat.id, undefined, userId);
           if (agent) return sendAgentHome(msg.chat.id, agent.name);
           return sendWelcomeGuest(msg.chat.id);
+        }
+
+        const isSuperAdminUser = userId.toString() === process.env.TELEGRAM_CHAT_ID;
+        const canEditLinksUser = adminCanEditLinks(isSuperAdminUser, secondaryAdmin);
+
+        if (pendingLinkEdits.has(userId)) {
+          if (!canEditLinksUser) {
+            pendingLinkEdits.delete(userId);
+            return;
+          }
+          const key = pendingLinkEdits.get(userId)!;
+          const raw = text.trim();
+          if (!raw) {
+            return bot?.sendMessage(msg.chat.id, "⚠️ أرسل نصاً غير فارغ.", { parse_mode: "HTML" });
+          }
+          try {
+            if (key === "link_support") {
+              await store.setSiteStringSetting("link_support", raw);
+              await bot?.sendMessage(msg.chat.id, `✅ تم حفظ رابط التواصل:\n<code>${escapeHtml(raw)}</code>`, { parse_mode: "HTML" });
+            } else if (key === "hero_buy_amount_display") {
+              await store.setSiteStringSetting("hero_buy_amount_display", raw);
+              await bot?.sendMessage(msg.chat.id, `✅ عرض الشراء في الرئيسية: <b>${escapeHtml(raw)}</b>`, { parse_mode: "HTML" });
+            } else if (key === "hero_sell_amount_display") {
+              await store.setSiteStringSetting("hero_sell_amount_display", raw);
+              await bot?.sendMessage(msg.chat.id, `✅ عرض البيع في الرئيسية: <b>${escapeHtml(raw)}</b>`, { parse_mode: "HTML" });
+            }
+          } catch (e) {
+            const err = e instanceof Error ? e.message : String(e);
+            await bot?.sendMessage(msg.chat.id, `⚠️ ${err}`);
+          }
+          pendingLinkEdits.delete(userId);
+          return;
         }
 
         // --- COMMANDS ---
@@ -492,7 +570,11 @@ async function startServer() {
 
         // روابط الدعم + أرقام بطاقة الرئيسية (مسؤولو الموقع)
         if (/^SET_LINK\s+/i.test(text) || /^SET_HERO_BUY\s+/i.test(text) || /^SET_HERO_SELL\s+/i.test(text)) {
-          const hasPerm = isAdmin || (secondaryAdmin && secondaryAdmin.permissions.includes("site_settings"));
+          const hasPerm =
+            isAdmin ||
+            (secondaryAdmin &&
+              (secondaryAdmin.permissions.includes("site_settings") ||
+                secondaryAdmin.permissions.includes("edit_links")));
           if (!hasPerm) return;
           try {
             if (/^SET_LINK\s+/i.test(text)) {
@@ -590,7 +672,8 @@ async function startServer() {
         const adminsList = await store.listAdmins();
         const secondaryAdmin = adminsList.find(a => a.telegram_id === userId);
         const isAdmin = isSuperAdmin || !!secondaryAdmin;
-        
+        const canEditLinks = adminCanEditLinks(isSuperAdmin, secondaryAdmin);
+
         const agentsList = await store.listAgents();
         const agent = agentsList.find(a => a.telegram_id === userId);
 
@@ -722,7 +805,7 @@ async function startServer() {
 
         // 2. Admin Logic
         if (isAdmin) {
-          if (data === "admin_home") return sendAdminHome(chatId, messageId);
+          if (data === "admin_home") return sendAdminHome(chatId, messageId, userId);
 
           if (data === "admin_status") {
             const active = await store.getActiveSellNumber();
@@ -815,7 +898,7 @@ async function startServer() {
              const aid = data.replace("ada_", "");
              await store.deleteAgent(aid);
              await answer("تم حذف الوكيل");
-             return sendAdminHome(chatId, messageId);
+             return sendAdminHome(chatId, messageId, userId);
           }
 
           if (data.startsWith("aap_")) {
@@ -854,6 +937,34 @@ async function startServer() {
              await store.deleteAdmin(aid);
              await answer("تم حذف المسؤول");
              return sendAdminManagementMenu(chatId, messageId);
+          }
+
+          if (data === "menu_edit_links") {
+            if (!canEditLinks) {
+              await answer("لا تملك صلاحية تعديل الروابط.");
+              return;
+            }
+            return sendEditLinksMenu(chatId, messageId);
+          }
+          if (data === "link_prompt_support" || data === "link_prompt_hero_buy" || data === "link_prompt_hero_sell") {
+            if (!canEditLinks) {
+              await answer("لا تملك صلاحية تعديل الروابط.");
+              return;
+            }
+            const map: Record<string, PendingLinkKey> = {
+              link_prompt_support: "link_support",
+              link_prompt_hero_buy: "hero_buy_amount_display",
+              link_prompt_hero_sell: "hero_sell_amount_display",
+            };
+            const storeKey = map[data];
+            pendingLinkEdits.set(userId, storeKey);
+            const prompts: Record<string, string> = {
+              link_prompt_support: "📎 أرسل رابط التواصل الكامل (يجب أن يبدأ بـ https:// أو http://):",
+              link_prompt_hero_buy: "🛒 أرسل نص عرض الشراء كما يظهر في الصفحة الرئيسية (مثال: 100,000):",
+              link_prompt_hero_sell: "💵 أرسل نص عرض البيع كما يظهر في الصفحة الرئيسية (مثال: 95,000):",
+            };
+            await bot?.sendMessage(chatId, prompts[data] ?? "", { parse_mode: "HTML" });
+            return answer("أرسل القيمة في رسالة");
           }
 
           if (data === "menu_site_settings") return sendSiteSettingsMenu(chatId, messageId);

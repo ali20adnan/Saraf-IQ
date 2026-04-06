@@ -36,7 +36,7 @@ export type Admin = {
   id: string;
   telegram_id: number;
   name: string;
-  permissions: string[]; // ['manage_agents', 'site_settings', 'manage_admins', 'view_stats']
+  permissions: string[]; // ['manage_agents', 'site_settings', 'edit_links', 'manage_admins', 'view_stats']
   created_at: string;
 };
 
@@ -743,7 +743,7 @@ export async function createAdmin(input: { telegram_id: number; name: string }):
     id,
     telegram_id: input.telegram_id,
     name: input.name,
-    permissions: ['manage_agents', 'site_settings', 'view_stats'], // Default
+    permissions: ['manage_agents', 'site_settings', 'edit_links', 'view_stats'], // Default
     created_at: new Date().toISOString(),
   };
   if (db) await db.from("admins").insert([row]);
