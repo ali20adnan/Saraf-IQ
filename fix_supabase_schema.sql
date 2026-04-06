@@ -136,6 +136,8 @@ CREATE INDEX IF NOT EXISTS idx_bot_users_telegram ON public.bot_users(telegram_i
 -- صورة دليل الدفع (بيع) — data URL؛ للقواعد التي أُنشئت قبل هذا العمود:
 ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS payment_proof TEXT;
 
+-- لإضافة edit_links لمسؤولين قدامى دون إعادة إنشاء الجدول: نفّذ الملف add_edit_links_to_admins.sql
+
 -- ============================================
 -- العروض الافتراضية (Default Offers)
 -- استخدم UUID حقيقية بدلاً من 'seed-1'

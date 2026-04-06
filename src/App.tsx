@@ -746,7 +746,7 @@ function MainContent() {
         <div className="bg-white p-8 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100">
           {/* Logo and Identity */}
           <div className="flex flex-col items-center gap-3 mb-8">
-            <div className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center shadow-md border border-red-100/50 p-2">
+            <div className="w-24 h-24 rounded-3xl flex items-center justify-center p-2 bg-transparent">
               <BrandLogo alt={t('appTitle')} size="xl" priority />
             </div>
             <div>
@@ -2155,7 +2155,7 @@ function MainContent() {
             
             {/* Logo and Identity */}
             <div className="flex flex-col items-center gap-3 mb-10">
-              <div className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center shadow-md border border-red-100/50 overflow-hidden p-2">
+              <div className="w-24 h-24 rounded-3xl flex items-center justify-center overflow-hidden p-2 bg-transparent">
                 <BrandLogo alt={t('appTitle')} size="xl" priority />
               </div>
               <div>

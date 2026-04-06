@@ -19,7 +19,7 @@ type Props = Omit<ImgHTMLAttributes<HTMLImageElement>, 'src' | 'decoding'> & {
 };
 
 /** Square logo asset; intrinsic 512×512 assumed for crisp downscaling on phones */
-export function BrandLogo({alt, size = 'md', priority = false, className = '', ...rest}: Props) {
+export function BrandLogo({alt, size = 'md', priority = false, className = '', style, ...rest}: Props) {
   return (
     <img
       src="/icons/logo.png"
@@ -31,6 +31,7 @@ export function BrandLogo({alt, size = 'md', priority = false, className = '', .
       loading={priority ? 'eager' : 'lazy'}
       draggable={false}
       className={`bg-transparent object-contain object-center select-none [image-rendering:auto] ${sizeStyles[size]} ${className}`}
+      style={{ backgroundColor: 'transparent', ...style }}
       {...rest}
     />
   );

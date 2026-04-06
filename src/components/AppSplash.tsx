@@ -205,6 +205,8 @@ export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
   }, [settingsReady, introDone, bootAssetsReady, swCacheReady]);
 
   const darkPhone = phoneMotion;
+  /** WebView/APK: نفس مسار سطح المكتب — بدون صندوق أبيض حول PNG الشفاف */
+  const logoWithoutWhiteCard = !isPhoneViewport || isNativeApp;
 
   return (
     <motion.div
@@ -261,7 +263,7 @@ export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
             className={
               darkPhone
                 ? 'relative'
-                : !isPhoneViewport
+                : logoWithoutWhiteCard
                   ? 'relative'
                   : 'relative rounded-[1.75rem] bg-white/80 p-4 shadow-[0_20px_50px_rgba(15,23,42,0.06)] ring-1 ring-gray-200/60'
             }
@@ -273,7 +275,7 @@ export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
               className={
                 darkPhone
                   ? 'drop-shadow-[0_14px_40px_rgba(0,0,0,0.55)]'
-                  : !isPhoneViewport
+                  : logoWithoutWhiteCard
                     ? 'drop-shadow-[0_12px_32px_rgba(15,23,42,0.08)]'
                     : 'drop-shadow-sm'
               }
