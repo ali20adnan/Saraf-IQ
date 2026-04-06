@@ -372,8 +372,9 @@ async function startServer() {
         `أجهزة مسجّلة تقريباً: <b>${n}</b>\n\n` +
         `لإرسال بلاغ أو عرض أو تنبيه لكل مستخدمي التطبيق، أرسل رسالة بهذا الشكل:\n` +
         `<pre>PUSH_NOTIFY\nعنوان قصير\nنص الإشعار أو التفاصيل...</pre>\n\n` +
-        `يُرسل عبر Firebase (FCM). اضبط على السيرفر المتغير:\n` +
-        `<code>FCM_SERVER_KEY</code> (مفتاح الخادم من Firebase → Cloud Messaging).\n\n` +
+        `يُرسل عبر Firebase (FCM). على Railway (أو السيرفر) اضبط أحد الخيارين:\n` +
+        `<code>FCM_SERVER_KEY</code> — مفتاح الخادم (Legacy) من إعدادات المشروع → Cloud Messaging؛ أو\n` +
+        `<code>FCM_SERVICE_ACCOUNT_JSON</code> — محتوى ملف JSON لحساب الخدمة (FCM HTTP v1).\n\n` +
         `للبث عبر تيليجرام فقط لمستخدمي البوت: <code>BROADCAST نص</code>`;
       const buttons: TelegramBotTypes.InlineKeyboardButton[][] = [
         [{ text: "🔙 رجوع", callback_data: "admin_home" }],
@@ -673,10 +674,19 @@ async function startServer() {
           const body = lines.length > 1 ? lines.slice(1).join("\n").slice(0, 4000) : title;
           await bot?.sendMessage(msg.chat.id, "🔄 جاري الإرسال عبر Firebase…");
           const result = await sendFcmAnnouncement(title, body);
-          if (result.error === "missing FCM_SERVER_KEY") {
+          if (result.error === "missing_fcm_credentials") {
             return bot?.sendMessage(
               msg.chat.id,
-              "❌ اضبط المتغير <code>FCM_SERVER_KEY</code> على السيرفر (Firebase → إعدادات المشروع → Cloud Messaging → مفتاح الخادم).",
+              "❌ اضبط على السيرفر أحد المتغيرين:\n" +
+                "• <code>FCM_SERVER_KEY</code> — Firebase → إعدادات المشروع → Cloud Messaging → مفتاح الخادم (Legacy)\n" +
+                "• أو <code>FCM_SERVICE_ACCOUNT_JSON</code> — JSON كامل لحساب الخدمة (مشروع Firebase → إعدادات الحساب → مفاتيح حساب الخدمة → إنشاء مفتاح JSON)",
+              { parse_mode: "HTML" },
+            );
+          }
+          if (result.error === "fcm_v1_token_failed") {
+            return bot?.sendMessage(
+              msg.chat.id,
+              "❌ فشل الحصول على رمز OAuth لـ FCM. تحقق من صحة <code>FCM_SERVICE_ACCOUNT_JSON</code> وأن حساب الخدمة لديه صلاحية Firebase Cloud Messaging.",
               { parse_mode: "HTML" },
             );
           }
