@@ -10,4 +10,6 @@ export type ServerTransaction = {
   created_at: string;
   details?: string | null;
   agent_number_id?: string | null;
+  /** صورة دليل الدفع (بيع) — data URL؛ لا تُعاد للعميل في JSON */
+  payment_proof?: string | null;
 };

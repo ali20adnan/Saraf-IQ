@@ -313,6 +313,7 @@ function rowToTx(row: Record<string, unknown>): ServerTransaction {
         : new Date(row.created_at as string).toISOString(),
     details: row.details != null ? String(row.details) : null,
     agent_number_id: row.agent_number_id != null ? String(row.agent_number_id) : null,
+    payment_proof: row.payment_proof != null ? String(row.payment_proof) : null,
   };
 }
 
@@ -324,6 +325,7 @@ export async function createTransaction(input: {
   method: string;
   details?: string;
   agent_number_id?: string;
+  payment_proof?: string | null;
 }): Promise<ServerTransaction> {
   const order_ref = genOrderRef();
   const id = globalThis.crypto?.randomUUID?.() ?? `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -339,6 +341,7 @@ export async function createTransaction(input: {
     created_at,
     details: input.details ?? null,
     agent_number_id: input.agent_number_id ?? null,
+    payment_proof: input.payment_proof ?? null,
   };
 
   if (db) {
@@ -356,6 +359,7 @@ export async function createTransaction(input: {
           status: "pending",
           details: input.details ?? null,
           agent_number_id: input.agent_number_id ?? null,
+          payment_proof: input.payment_proof ?? null,
         },
       ])
       .select()
@@ -620,6 +624,14 @@ export async function listAgentNumbers(agentId?: string): Promise<AgentNumber[]>
   }
   const nums = loadFileStore().agent_numbers;
   return agentId ? nums.filter(n => n.agent_id === agentId).sort((a,b) => a.sort_order - b.sort_order) : nums;
+}
+
+export async function getAgentNumberById(id: string): Promise<AgentNumber | null> {
+  if (db) {
+    const { data, error } = await db.from("agent_numbers").select("*").eq("id", id).maybeSingle();
+    if (!error && data) return data as AgentNumber;
+  }
+  return loadFileStore().agent_numbers.find((n) => n.id === id) ?? null;
 }
 
 export async function addAgentNumber(agentId: string, phoneNumber: string, sortOrder: number): Promise<AgentNumber> {

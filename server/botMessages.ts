@@ -1,3 +1,4 @@
+import type * as TelegramBotTypes from "node-telegram-bot-api";
 import type { ServerTransaction } from "../types/transaction.js";
 
 export function escapeHtml(s: string): string {
@@ -95,6 +96,40 @@ export function parseOrderCallbackData(
   return null;
 }
 
+/** أزرار تأكيد/رفض دليل الدفع — للوكيل صاحب الرقم فقط */
+export function buildAgentProofKeyboard(orderRef: string): TelegramBotTypes.InlineKeyboardMarkup {
+  return {
+    inline_keyboard: [
+      [{ text: "✅ تأكيد استلام الدفع", callback_data: `agconfirm_${orderRef}` }],
+      [{ text: "❌ رفض", callback_data: `agreject_${orderRef}` }],
+    ],
+  };
+}
+
+export function parseAgentProofCallback(
+  data: string | undefined
+): { confirm: boolean; orderRef: string } | null {
+  if (!data) return null;
+  if (data.startsWith("agconfirm_")) {
+    return { confirm: true, orderRef: data.slice("agconfirm_".length) };
+  }
+  if (data.startsWith("agreject_")) {
+    return { confirm: false, orderRef: data.slice("agreject_".length) };
+  }
+  return null;
+}
+
+/** تحويل data URL (صورة) إلى Buffer لتيليجرام sendPhoto */
+export function dataUrlImageToBuffer(dataUrl: string): Buffer | null {
+  const m = /^data:image\/(jpeg|jpg|png|gif|webp);base64,(.+)$/i.exec(dataUrl.trim());
+  if (!m?.[2]) return null;
+  try {
+    return Buffer.from(m[2], "base64");
+  } catch {
+    return null;
+  }
+}
+
 /** أوامر /start و /start@BotName و /start payload (تيليجرام يرسلها كما هي) */
 export function isStartCommand(text: string | undefined): boolean {
   if (!text) return false;
@@ -146,6 +181,9 @@ export function buildNewOrderMessagePayload(
   finalMessage += `💰 <b>المبلغ:</b> ${tx.amount} IQD\n`;
   finalMessage += `💳 <b>الطريقة:</b> ${escapeHtml(tx.method)}\n`;
   finalMessage += `📊 <b>النوع:</b> ${tx.type === "buy" ? "شراء" : "بيع"}\n`;
+  if (tx.type === "sell" && tx.payment_proof) {
+    finalMessage += `📷 <b>دليل الدفع:</b> مرفق كصورة مع هذه الرسالة.\n`;
+  }
   if (tx.details) {
     finalMessage += `📱 <b>تفاصيل:</b> ${escapeHtml(stripSensitiveUrlsFromDetails(tx.details))}\n`;
   }

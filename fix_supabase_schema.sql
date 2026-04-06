@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS public.transactions (
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed')),
   details TEXT,
   agent_number_id UUID,
+  payment_proof TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -131,6 +132,9 @@ CREATE INDEX IF NOT EXISTS idx_agent_numbers_agent ON public.agent_numbers(agent
 CREATE INDEX IF NOT EXISTS idx_transactions_client ON public.transactions(client_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_order_ref ON public.transactions(order_ref);
 CREATE INDEX IF NOT EXISTS idx_bot_users_telegram ON public.bot_users(telegram_id);
+
+-- صورة دليل الدفع (بيع) — data URL؛ للقواعد التي أُنشئت قبل هذا العمود:
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS payment_proof TEXT;
 
 -- ============================================
 -- العروض الافتراضية (Default Offers)

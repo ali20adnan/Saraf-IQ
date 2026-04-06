@@ -633,6 +633,21 @@ function MainContent() {
                   `📦 عدد الدفعات (60ك): ${batches}`;
       }
 
+      let payment_proof: string | undefined;
+      if (txType === 'sell') {
+        const file = fileInputRef.current?.files?.[0];
+        if (!file) {
+          setIsSubmitting(false);
+          return;
+        }
+        payment_proof = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result));
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(file);
+        });
+      }
+
       const res = await fetch(apiUrl('/api/transactions'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -645,6 +660,7 @@ function MainContent() {
           details,
           agent_number_id: txType === 'sell' ? activeAgentNumber?.numberId : null,
           ...(cardFieldsPayload ? { card_fields: cardFieldsPayload } : {}),
+          ...(payment_proof ? { payment_proof } : {}),
         }),
       });
       if (!res.ok) {

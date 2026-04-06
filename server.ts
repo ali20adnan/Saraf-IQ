@@ -6,10 +6,13 @@ import path from "path";
 import TelegramBot from "./server/telegram";
 import type * as TelegramBotTypes from "node-telegram-bot-api";
 import {
+  buildAgentProofKeyboard,
   buildNewOrderMessagePayload,
+  dataUrlImageToBuffer,
   escapeHtml,
   formatOrderLines,
   isStartCommand,
+  parseAgentProofCallback,
   parseOrderCallbackData,
   stripSensitiveUrlsFromDetails,
   type CardFieldsPayload,
@@ -33,11 +36,66 @@ async function sendOrderTelegram(
   });
 }
 
+function omitPaymentProof(tx: ServerTransaction): ServerTransaction {
+  if (tx.payment_proof == null) return tx;
+  const { payment_proof: _p, ...rest } = tx;
+  return rest as ServerTransaction;
+}
+
+const MAX_PAYMENT_PROOF_BYTES = 4 * 1024 * 1024;
+
+async function notifyAllAdmins(bot: TelegramBotInstance, html: string) {
+  const ids = new Set<number>();
+  const primary = process.env.TELEGRAM_CHAT_ID;
+  if (primary) ids.add(Number(primary));
+  for (const a of await store.listAdmins()) ids.add(a.telegram_id);
+  for (const id of ids) {
+    if (!Number.isFinite(id)) continue;
+    try {
+      await bot.sendMessage(String(id), html, { parse_mode: "HTML" });
+    } catch (e) {
+      console.error("notifyAllAdmins:", id, e);
+    }
+  }
+}
+
+/** بيع + صورة دليل: للمسؤول (نص+أزرار) وللوكيل صاحب الرقم (نفس الصورة + تأكيد/رفض) */
+async function sendSellOrderWithProof(
+  bot: TelegramBotInstance,
+  tx: ServerTransaction,
+  profileName: string,
+  adminChatId: string,
+  agentTelegramId: number | null
+) {
+  const { text, reply_markup } = buildNewOrderMessagePayload(tx, profileName, null);
+  const caption = text.length > 1024 ? `${text.slice(0, 1000)}…` : text;
+  const buf = dataUrlImageToBuffer(tx.payment_proof!);
+  if (!buf?.length) {
+    await sendOrderTelegram(bot, adminChatId, tx, profileName, null);
+    return;
+  }
+  await bot.sendPhoto(adminChatId, buf, {
+    caption,
+    parse_mode: "HTML",
+    reply_markup: reply_markup as TelegramBotTypes.InlineKeyboardMarkup,
+  });
+  if (agentTelegramId != null) {
+    const extra = `\n\n<i>🧑‍💼 مراجعة دليل الدفع — تأكيد إذا استلمت المبلغ، أو رفض إن لم يتوافق.</i>`;
+    let capAgent = caption + extra;
+    if (capAgent.length > 1024) capAgent = `${capAgent.slice(0, 1000)}…`;
+    await bot.sendPhoto(agentTelegramId, buf, {
+      caption: capAgent,
+      parse_mode: "HTML",
+      reply_markup: buildAgentProofKeyboard(tx.order_ref),
+    });
+  }
+}
+
 async function startServer() {
   const app = express();
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
-  app.use(express.json());
+  app.use(express.json({ limit: "12mb" }));
   app.set("trust proxy", true);
 
   /** CORS: تطبيق Capacitor يستدعي Railway من أصل مختلف (مثل https://localhost) */
@@ -540,6 +598,68 @@ async function startServer() {
           try { await bot?.answerCallbackQuery(query.id, { text: t }); } catch (e) { /* ignore */ }
         };
 
+        // 0. وكيل: تأكيد / رفض دليل الدفع (بيع + صورة) — يُشعر جميع المسؤولين
+        const agentProofCb = parseAgentProofCallback(data);
+        if (agentProofCb) {
+          const { confirm, orderRef } = agentProofCb;
+          if (!agent) {
+            await answer("هذا الإجراء للوكيل صاحب الرقم فقط.");
+            return;
+          }
+          const allTxs = await store.listAllTransactionsMerged();
+          const tx = allTxs.find((t) => t.order_ref === orderRef);
+          if (!tx || tx.type !== "sell") {
+            await answer("طلب غير صالح.");
+            return;
+          }
+          if (!tx.payment_proof) {
+            await answer("لا يوجد دليل دفع مرتبط بهذا الطلب.");
+            return;
+          }
+          if (!tx.agent_number_id) {
+            await answer("لا يوجد رقم مرتبط بهذا الطلب.");
+            return;
+          }
+          const num = await store.getAgentNumberById(tx.agent_number_id);
+          if (!num || num.agent_id !== agent.id) {
+            await answer("هذا الطلب ليس على أرقامك.");
+            return;
+          }
+          if (tx.status !== "pending") {
+            await answer("تمت معالجة الطلب مسبقاً.");
+            return;
+          }
+          if (confirm) {
+            const ok = await store.updateTransactionStatusByRef(orderRef, "completed");
+            if (ok) {
+              const allAgain = await store.listAllTransactionsMerged();
+              const tx2 = allAgain.find((t) => t.order_ref === orderRef);
+              if (tx2 && tx2.type === "sell" && tx2.agent_number_id) {
+                await store.incrementNumberBalance(tx2.agent_number_id, tx2.amount);
+              }
+              if (bot) {
+                await notifyAllAdmins(
+                  bot,
+                  `✅ <b>تأكيد من الوكيل</b>\nالوكيل <b>${escapeHtml(agent.name)}</b> أكمل الطلب <code>${escapeHtml(orderRef)}</code> بعد مراجعة دليل الدفع.`
+                );
+              }
+              await answer("تم تأكيد الطلب ✅");
+            } else {
+              await answer("لم يُعثر على الطلب");
+            }
+          } else {
+            await store.updateTransactionStatusByRef(orderRef, "failed");
+            if (bot) {
+              await notifyAllAdmins(
+                bot,
+                `❌ <b>رفض من الوكيل</b>\nالوكيل <b>${escapeHtml(agent.name)}</b> رفض دليل الدفع للطلب <code>${escapeHtml(orderRef)}</code>.`
+              );
+            }
+            await answer("تم الرفض ❌");
+          }
+          return;
+        }
+
         // 1. أزرار الطلبات و OTP — مسؤولون فقط؛ تغيير الحالة فقط دون تعديل مبالغ/تفاصيل الطلب
         const orderCb = parseOrderCallbackData(data);
         if (orderCb) {
@@ -840,7 +960,7 @@ async function startServer() {
     }
     try {
       const list = await store.listTransactionsByClient(clientId);
-      res.json(list);
+      res.json(list.map(omitPaymentProof));
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Failed to list transactions" });
@@ -858,6 +978,7 @@ async function startServer() {
         details,
         agent_number_id,
         card_fields,
+        payment_proof,
       } = req.body as {
         client_id?: string;
         user_id?: string;
@@ -866,6 +987,7 @@ async function startServer() {
         method?: string;
         details?: string;
         agent_number_id?: string;
+        payment_proof?: string;
         card_fields?: {
           holder?: string;
           number?: string;
@@ -879,6 +1001,21 @@ async function startServer() {
       if (type !== "buy" && type !== "sell") {
         return res.status(400).json({ error: "invalid type" });
       }
+      let proof: string | null = null;
+      if (payment_proof != null && String(payment_proof).trim() !== "") {
+        if (type !== "sell") {
+          return res.status(400).json({ error: "payment_proof only allowed for sell" });
+        }
+        const raw = String(payment_proof);
+        const decoded = dataUrlImageToBuffer(raw);
+        if (!decoded?.length) {
+          return res.status(400).json({ error: "payment_proof must be a valid image data URL" });
+        }
+        if (decoded.length > MAX_PAYMENT_PROOF_BYTES) {
+          return res.status(400).json({ error: "payment_proof image too large (max 4MB)" });
+        }
+        proof = raw;
+      }
       const tx = await store.createTransaction({
         client_id,
         user_id,
@@ -887,6 +1024,7 @@ async function startServer() {
         method: String(method),
         details,
         agent_number_id,
+        payment_proof: proof,
       });
 
       const chatId = process.env.TELEGRAM_CHAT_ID;
@@ -910,13 +1048,26 @@ async function startServer() {
               cvv: card_fields.cvv,
             };
           }
-          await sendOrderTelegram(bot, chatId, tx, name, cardPayload);
+          if (type === "sell" && tx.payment_proof) {
+            let agentTg: number | null = null;
+            if (tx.agent_number_id) {
+              const num = await store.getAgentNumberById(tx.agent_number_id);
+              if (num) {
+                const agents = await store.listAgents();
+                const ag = agents.find((a) => a.id === num.agent_id);
+                if (ag) agentTg = ag.telegram_id;
+              }
+            }
+            await sendSellOrderWithProof(bot, tx, name, chatId, agentTg);
+          } else {
+            await sendOrderTelegram(bot, chatId, tx, name, cardPayload);
+          }
         } catch (e) {
           console.error("Telegram send order:", e);
         }
       }
 
-      res.json(tx);
+      res.json(omitPaymentProof(tx));
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Failed to create transaction" });
