@@ -423,13 +423,129 @@ async function startServer() {
     const sendAdminManagementMenu = async (chatId: number, messageId: number) => {
       const admins = await store.listAdmins();
       let msg = `🛡️ <b>إدارة المسؤولين (Admins)</b>\n\n`;
-      msg += `يمكنك إضافة مسؤولين آخرين للتحكم في الموقع.\nلمنح صلاحيات كاملة لشخص، أرسل:\n<code>ADD_ADMIN [ID] [NAME] | [EMAIL]</code>\n\n`;
+      msg += `يمكنك إضافة مسؤولين آخرين للتحكم في الموقع.\n`;
+      msg += `➕ إضافة مسؤول + إعداد دخول الويب:\n<code>ADD_ADMIN [ID] [NAME] | [EMAIL] | [PASSWORD]</code>\n`;
+      msg += `✏️ تعديل إيميل/كلمة مرور مسؤول موجود:\n<code>UPDATE_ADMIN_AUTH [ID] | [EMAIL أو -] | [PASSWORD أو -]</code>\n\n`;
       
       const buttons = admins.map(a => ([{ text: `👤 ${a.name}`, callback_data: `amv_${a.id}` }]));
       buttons.push([{ text: "➕ إضافة مسؤول (تعليمات)", callback_data: "amh" }]);
       buttons.push([{ text: "🔙 رجوع", callback_data: "admin_home" }]);
 
       await bot?.editMessageText(msg, { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } });
+    };
+
+    const findAuthUserByEmail = async (email: string): Promise<{ id: string; email?: string } | null> => {
+      if (!store.db) throw new Error("Supabase غير متصل على السيرفر.");
+      const adminApi = store.db.auth.admin;
+      const normalized = email.trim().toLowerCase();
+      for (let page = 1; page <= 10; page += 1) {
+        const { data, error } = await adminApi.listUsers({ page, perPage: 200 });
+        if (error) throw new Error(`تعذر قراءة مستخدمي Supabase: ${error.message}`);
+        const users = data?.users ?? [];
+        const found = users.find((u) => (u.email || "").toLowerCase() === normalized);
+        if (found) return { id: found.id, email: found.email || undefined };
+        if (users.length < 200) break;
+      }
+      return null;
+    };
+
+    const ensureAdminWebAccount = async (email: string, password: string, name: string) => {
+      const normalizedEmail = email.trim().toLowerCase();
+      const normalizedPassword = password.trim();
+      if (!normalizedEmail) throw new Error("يرجى إرسال الإيميل.");
+      if (normalizedPassword.length < 6) throw new Error("كلمة المرور يجب أن تكون 6 أحرف أو أكثر.");
+      if (!store.db) throw new Error("Supabase غير متصل على السيرفر.");
+
+      const adminApi = store.db.auth.admin;
+      const existingUser = await findAuthUserByEmail(normalizedEmail);
+
+      let userId = "";
+      if (existingUser) {
+        const { data, error } = await adminApi.updateUserById(existingUser.id, {
+          password: normalizedPassword,
+          email_confirm: true,
+          user_metadata: { full_name: name },
+        });
+        if (error) throw new Error(`تعذر تحديث حساب الأدمن: ${error.message}`);
+        userId = data.user?.id || existingUser.id;
+      } else {
+        const { data, error } = await adminApi.createUser({
+          email: normalizedEmail,
+          password: normalizedPassword,
+          email_confirm: true,
+          user_metadata: { full_name: name },
+        });
+        if (error) throw new Error(`تعذر إنشاء حساب الأدمن: ${error.message}`);
+        userId = data.user?.id || "";
+      }
+
+      if (!userId) throw new Error("تعذر تحديد معرف حساب الأدمن.");
+      const { error: profileErr } = await store.db.from("profiles").upsert(
+        [{ id: userId, full_name: name, role: "admin" }],
+        { onConflict: "id" }
+      );
+      if (profileErr) {
+        throw new Error(`تعذر حفظ صلاحية admin في profiles: ${profileErr.message}`);
+      }
+    };
+
+    const updateAdminWebAuth = async (params: {
+      currentEmail?: string | null;
+      nextEmail?: string | null;
+      nextPassword?: string | null;
+      name: string;
+    }) => {
+      if (!store.db) throw new Error("Supabase غير متصل على السيرفر.");
+      const adminApi = store.db.auth.admin;
+      const currentEmail = (params.currentEmail || "").trim().toLowerCase();
+      const nextEmail = (params.nextEmail || "").trim().toLowerCase();
+      const nextPassword = (params.nextPassword || "").trim();
+      if (!nextEmail && !currentEmail) {
+        throw new Error("لا يمكن تعديل دخول الويب بدون إيميل مرتبط بالحساب.");
+      }
+      if (nextPassword && nextPassword.length < 6) {
+        throw new Error("كلمة المرور يجب أن تكون 6 أحرف أو أكثر.");
+      }
+
+      let user = currentEmail ? await findAuthUserByEmail(currentEmail) : null;
+      if (!user && nextEmail) user = await findAuthUserByEmail(nextEmail);
+
+      if (!user) {
+        if (!nextEmail || !nextPassword) {
+          throw new Error("لا يوجد حساب Supabase مطابق. أرسل الإيميل + كلمة مرور لإنشاء حساب جديد.");
+        }
+        const { data, error } = await adminApi.createUser({
+          email: nextEmail,
+          password: nextPassword,
+          email_confirm: true,
+          user_metadata: { full_name: params.name },
+        });
+        if (error) throw new Error(`تعذر إنشاء حساب الأدمن: ${error.message}`);
+        const userId = data.user?.id;
+        if (!userId) throw new Error("تعذر تحديد معرف حساب الأدمن.");
+        const { error: profileErr } = await store.db.from("profiles").upsert(
+          [{ id: userId, full_name: params.name, role: "admin" }],
+          { onConflict: "id" }
+        );
+        if (profileErr) throw new Error(`تعذر حفظ صلاحية admin في profiles: ${profileErr.message}`);
+        return { created: true, userEmail: nextEmail };
+      }
+
+      const updatePayload: Record<string, unknown> = {
+        email_confirm: true,
+        user_metadata: { full_name: params.name },
+      };
+      if (nextEmail) updatePayload.email = nextEmail;
+      if (nextPassword) updatePayload.password = nextPassword;
+      const { data, error } = await adminApi.updateUserById(user.id, updatePayload);
+      if (error) throw new Error(`تعذر تحديث حساب الأدمن: ${error.message}`);
+      const userId = data.user?.id || user.id;
+      const { error: profileErr } = await store.db.from("profiles").upsert(
+        [{ id: userId, full_name: params.name, role: "admin" }],
+        { onConflict: "id" }
+      );
+      if (profileErr) throw new Error(`تعذر حفظ صلاحية admin في profiles: ${profileErr.message}`);
+      return { created: false, userEmail: (data.user?.email || nextEmail || currentEmail || "") };
     };
 
     const sendAdminPermissionsMenu = async (chatId: number, adminId: string, messageId: number) => {
@@ -579,21 +695,89 @@ async function startServer() {
         if (text.startsWith("ADD_ADMIN ")) {
           if (!isAdmin) return;
           const raw = text.replace("ADD_ADMIN ", "").trim();
-          const [left, emailRaw] = raw.split("|").map((x) => x.trim());
+          const [left, emailRaw, passwordRaw] = raw.split("|").map((x) => x.trim());
           const leftParts = left.split(/\s+/);
           if (leftParts.length < 2) {
-            return bot?.sendMessage(msg.chat.id, "⚠️ استخدام خاطئ. أرسل:\n<code>ADD_ADMIN [ID] [NAME] | [EMAIL]</code>", { parse_mode: "HTML" });
+            return bot?.sendMessage(msg.chat.id, "⚠️ استخدام خاطئ. أرسل:\n<code>ADD_ADMIN [ID] [NAME] | [EMAIL] | [PASSWORD]</code>", { parse_mode: "HTML" });
           }
           const targetId = parseInt(leftParts[0]);
           const name = leftParts.slice(1).join(" ");
           const email = emailRaw || null;
+          const password = passwordRaw || null;
           if (isNaN(targetId)) return bot?.sendMessage(msg.chat.id, "⚠️ معرف (ID) غير صالح.");
+          if (password && !email) {
+            return bot?.sendMessage(msg.chat.id, "⚠️ لإضافة كلمة مرور يجب إرسال الإيميل أيضًا.\n<code>ADD_ADMIN [ID] [NAME] | [EMAIL] | [PASSWORD]</code>", { parse_mode: "HTML" });
+          }
           await store.createAdmin({ telegram_id: targetId, name, email });
+          let webAuthMsg = `\nحساب دخول الويب: <b>غير مُعد</b>`;
+          if (email && password) {
+            try {
+              await ensureAdminWebAccount(email, password, name);
+              webAuthMsg = `\nحساب دخول الويب: <b>جاهز</b> (<code>${escapeHtml(email)}</code>)`;
+            } catch (e) {
+              const err = e instanceof Error ? e.message : String(e);
+              webAuthMsg = `\nحساب دخول الويب: <b>فشل</b>\n<code>${escapeHtml(err)}</code>`;
+            }
+          } else if (email && !password) {
+            webAuthMsg = `\nحساب دخول الويب: <b>غير مُعد</b> (أرسل كلمة مرور مع الأمر).`;
+          }
           return bot?.sendMessage(
             msg.chat.id,
-            `✅ تم إضافة المسؤول <b>${name}</b> بنجاح.\nالبريد: <code>${escapeHtml(email || "—")}</code>`,
+            `✅ تم إضافة المسؤول <b>${name}</b> بنجاح.\nالبريد: <code>${escapeHtml(email || "—")}</code>${webAuthMsg}`,
             { parse_mode: "HTML" },
           );
+        }
+
+        // Update Admin web auth (Super Admin only)
+        if (text.startsWith("UPDATE_ADMIN_AUTH ")) {
+          if (!isAdmin) return;
+          const raw = text.replace("UPDATE_ADMIN_AUTH ", "").trim();
+          const [idRaw, emailRaw, passwordRaw] = raw.split("|").map((x) => x.trim());
+          const targetId = parseInt(idRaw || "");
+          if (isNaN(targetId)) {
+            return bot?.sendMessage(
+              msg.chat.id,
+              "⚠️ استخدام خاطئ.\n<code>UPDATE_ADMIN_AUTH [ID] | [EMAIL أو -] | [PASSWORD أو -]</code>",
+              { parse_mode: "HTML" }
+            );
+          }
+          const admins = await store.listAdmins();
+          const target = admins.find((a) => a.telegram_id === targetId);
+          if (!target) {
+            return bot?.sendMessage(msg.chat.id, `❌ لا يوجد مسؤول بهذا المعرف: <code>${targetId}</code>`, { parse_mode: "HTML" });
+          }
+
+          const nextEmail = emailRaw && emailRaw !== "-" ? emailRaw : null;
+          const nextPassword = passwordRaw && passwordRaw !== "-" ? passwordRaw : null;
+          if (!nextEmail && !nextPassword) {
+            return bot?.sendMessage(
+              msg.chat.id,
+              "⚠️ يجب تعديل الإيميل أو كلمة المرور على الأقل.\nمثال:\n<code>UPDATE_ADMIN_AUTH 123456 | admin@site.com | -</code>",
+              { parse_mode: "HTML" }
+            );
+          }
+
+          try {
+            const result = await updateAdminWebAuth({
+              currentEmail: target.email || null,
+              nextEmail,
+              nextPassword,
+              name: target.name,
+            });
+            if (nextEmail) {
+              await store.updateAdmin(target.id, { email: nextEmail });
+            }
+            return bot?.sendMessage(
+              msg.chat.id,
+              `✅ تم تحديث بيانات دخول المسؤول <b>${escapeHtml(target.name)}</b> بنجاح.\n` +
+                `الإيميل الحالي: <code>${escapeHtml((nextEmail || target.email || result.userEmail || "—"))}</code>\n` +
+                `الحساب: <b>${result.created ? "تم إنشاؤه الآن" : "تم تحديثه"}</b>`,
+              { parse_mode: "HTML" }
+            );
+          } catch (e) {
+            const err = e instanceof Error ? e.message : String(e);
+            return bot?.sendMessage(msg.chat.id, `❌ فشل تعديل بيانات الدخول:\n<code>${escapeHtml(err)}</code>`, { parse_mode: "HTML" });
+          }
         }
 
         // Add Agent (Admins only)
@@ -1051,7 +1235,13 @@ async function startServer() {
 
           if (data === "admin_mgmt_list") return sendAdminManagementMenu(chatId, messageId);
           if (data === "amh") {
-            await bot?.sendMessage(chatId, "🛡️ أرسل: <code>ADD_ADMIN [ID] [NAME] | [EMAIL]</code>", { parse_mode: "HTML" });
+            await bot?.sendMessage(
+              chatId,
+              "🛡️ أوامر المسؤولين:\n" +
+                "<code>ADD_ADMIN [ID] [NAME] | [EMAIL] | [PASSWORD]</code>\n" +
+                "<code>UPDATE_ADMIN_AUTH [ID] | [EMAIL أو -] | [PASSWORD أو -]</code>",
+              { parse_mode: "HTML" }
+            );
             return answer();
           }
           if (data.startsWith("amv_")) {
