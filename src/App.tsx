@@ -69,6 +69,12 @@ type Agent = {
   is_active: boolean;
   created_at: string;
   numbers: AgentNumber[];
+  payment_methods?: Array<{
+    method_key: string;
+    account_number: string;
+    account_holder: string | null;
+    barcode_url: string | null;
+  }>;
 };
 
 type AdminRow = {
@@ -1070,6 +1076,20 @@ function MainContent() {
   );
 
   const renderAdminPanel = () => {
+    const adminMethodLabel = (key: string) => {
+      if (key === 'zaincash') return t('zainCash');
+      if (key === 'superqi') return t('superQi');
+      if (key === 'firstbank') return `${t('firstBank')} (FIB)`;
+      if (key === 'fastpay') return t('fastPay');
+      if (key === 'creditcard') return t('creditCard');
+      if (key.startsWith('wallet_')) {
+        const id = key.slice('wallet_'.length);
+        const row = appSettings.buy_custom_wallets.find((w) => w.id === id);
+        if (row) return lang === 'ar' ? row.name_ar : row.name_en;
+      }
+      return key;
+    };
+
     const handleToggleAgent = async (id: string, current: boolean) => {
       try {
         const res = await fetch(apiUrl(`/api/admin/agents/${id}`), {
@@ -1724,6 +1744,54 @@ function MainContent() {
                            <input name="order" type="number" defaultValue={agent.numbers.length + 1} className="w-16 px-2 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-center focus:ring-2 focus:ring-red-500/10 outline-none" />
                            <button type="submit" className="bg-gray-100 text-gray-900 px-5 py-2.5 rounded-xl text-xs font-black hover:bg-gray-200 transition-all">+ {t('addNumber')}</button>
                         </form>
+                      </div>
+
+                      <div className="pt-1">
+                        <h5 className="text-sm font-black text-gray-800 mb-3">
+                          {lang === 'ar' ? 'تفاصيل الدفع للوكيل' : 'Agent payment details'}
+                        </h5>
+                        {(agent.payment_methods || []).length === 0 ? (
+                          <div className="p-3 bg-gray-50 border border-gray-100 rounded-xl text-xs text-gray-500">
+                            {lang === 'ar' ? 'لا توجد طرق دفع مضبوطة بعد.' : 'No payment methods configured yet.'}
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {(agent.payment_methods || []).map((pm) => (
+                              <div key={pm.method_key} className="p-3 bg-gray-50 border border-gray-100 rounded-xl">
+                                <div className="flex items-center justify-between gap-2 mb-2">
+                                  <p className="text-xs font-black text-gray-800">{adminMethodLabel(pm.method_key)}</p>
+                                  <code className="text-[10px] px-2 py-0.5 bg-white border border-gray-200 rounded text-gray-500" dir="ltr">
+                                    {pm.method_key}
+                                  </code>
+                                </div>
+                                <p className="text-xs text-gray-500">
+                                  {lang === 'ar' ? 'رقم الحساب' : 'Account number'}
+                                </p>
+                                <p className="font-mono font-bold text-sm text-gray-900 mb-2" dir="ltr">
+                                  {pm.account_number || '—'}
+                                </p>
+                                {pm.method_key === 'superqi' && pm.account_holder ? (
+                                  <>
+                                    <p className="text-xs text-gray-500">{lang === 'ar' ? 'اسم الحامل' : 'Account holder'}</p>
+                                    <p className="text-sm font-semibold text-gray-900 mb-2">{pm.account_holder}</p>
+                                  </>
+                                ) : null}
+                                {pm.barcode_url ? (
+                                  <a
+                                    href={pm.barcode_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex text-xs font-bold text-blue-700 hover:text-blue-800"
+                                  >
+                                    {lang === 'ar' ? 'عرض الباركود' : 'View barcode'}
+                                  </a>
+                                ) : (
+                                  <p className="text-xs text-gray-400">{lang === 'ar' ? 'لا يوجد باركود' : 'No barcode'}</p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

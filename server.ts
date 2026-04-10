@@ -1919,7 +1919,8 @@ async function startServer() {
       // Attach numbers to each agent for easier management
       const agentsWithNumbers = await Promise.all(agents.map(async (a) => {
         const numbers = await store.listAgentNumbers(a.id);
-        return { ...a, numbers };
+        const payment_methods = await store.listAgentPaymentMethods(a.id);
+        return { ...a, numbers, payment_methods };
       }));
       res.json(agentsWithNumbers);
     } catch (e) {
