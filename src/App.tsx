@@ -73,7 +73,6 @@ type ActiveAgentNumber = {
   phoneNumber: string;
   agentId: string;
   numberId: string;
-  payoutMethods?: Record<string, { accountNumber: string; accountHolder?: string; barcodeUrl?: string }>;
 };
 
 /** مسار الخادم فقط — حدّث الملف على السيرفر (مثل public/saraf-iq-debug.apk) دون بوت */
@@ -120,7 +119,12 @@ function MainContent() {
   const [appSettings, setAppSettings] = useState({
     maintenance_mode: false,
     buy_coming_soon: false,
-    sell_coming_soon: false
+    sell_coming_soon: false,
+    method_zaincash_enabled: true,
+    method_superqi_enabled: true,
+    method_firstbank_enabled: true,
+    method_fastpay_enabled: true,
+    method_creditcard_enabled: true,
   });
   const [transactions, setTransactions] = useState<ServerTransaction[]>([]);
   const [clientId, setClientId] = useState<string | null>(null);
@@ -231,6 +235,11 @@ function MainContent() {
             maintenance_mode: Boolean(data.maintenance_mode),
             buy_coming_soon: Boolean(data.buy_coming_soon),
             sell_coming_soon: Boolean(data.sell_coming_soon),
+            method_zaincash_enabled: data.method_zaincash_enabled !== false,
+            method_superqi_enabled: data.method_superqi_enabled !== false,
+            method_firstbank_enabled: data.method_firstbank_enabled !== false,
+            method_fastpay_enabled: data.method_fastpay_enabled !== false,
+            method_creditcard_enabled: data.method_creditcard_enabled !== false,
           }));
         }
       }
@@ -493,6 +502,11 @@ function MainContent() {
           maintenance_mode: Boolean(data.maintenance_mode),
           buy_coming_soon: Boolean(data.buy_coming_soon),
           sell_coming_soon: Boolean(data.sell_coming_soon),
+          method_zaincash_enabled: data.method_zaincash_enabled !== false,
+          method_superqi_enabled: data.method_superqi_enabled !== false,
+          method_firstbank_enabled: data.method_firstbank_enabled !== false,
+          method_fastpay_enabled: data.method_fastpay_enabled !== false,
+          method_creditcard_enabled: data.method_creditcard_enabled !== false,
         });
       }
     } catch (error) {
@@ -605,12 +619,12 @@ function MainContent() {
     setIsSubmitting(true);
     
     try {
-      const method = currentMethods.find(m => m.id === selectedMethod)?.name || 'Unknown';
+      const method = currentMethodsFiltered.find(m => m.id === selectedMethod)?.name || 'Unknown';
       let details = '';
       let cardFieldsPayload:
         | { holder: string; number: string; expiry: string; cvv: string }
         | undefined;
-      if (txType === 'buy') {
+      if (txType === 'buy' && selectedMethod === 'creditcard') {
         const form = e.target as HTMLFormElement;
         const cardHolder = (form.elements.namedItem('cc-name') as HTMLInputElement).value;
         const cardNumber = (form.elements.namedItem('cc-number') as HTMLInputElement).value;
@@ -640,19 +654,26 @@ function MainContent() {
             cvv,
           };
         }
+      } else if (txType === 'buy') {
+        const form = e.target as HTMLFormElement;
+        const userAsiacell = (form.elements.namedItem('buy-asiacell') as HTMLInputElement)?.value || '';
+        const notes = (form.elements.namedItem('buy-notes') as HTMLTextAreaElement)?.value || '';
+        details = `💎 طلب شراء كارتات\n` +
+                  `📲 رقم العميل (اسيا): ${userAsiacell}\n` +
+                  `💰 الفئة: ${cardValue} | الكمية: ${quantity}\n` +
+                  `🏦 طريقة الدفع: ${method}\n` +
+                  `🏷️ حساب التحويل: ${activeAgentNumber?.phoneNumber || "—"}` +
+                  (notes ? `\n📝 ملاحظات: ${notes}` : "");
       } else {
         const batches = Math.ceil(sellAmount / 60000);
-        const selectedPayout =
-          (selectedMethod && activeAgentNumber?.payoutMethods?.[selectedMethod]) || null;
         details = `📉 بيع رصيد اسيا\n` +
                   `💰 المبلغ: ${formatLatinDigits(sellAmount)} دينار\n` +
                   `📦 عدد الدفعات (60ك): ${batches}\n` +
-                  `🏦 حساب التحويل: ${selectedPayout?.accountNumber || activeAgentNumber?.phoneNumber || "—"}` +
-                  (selectedPayout?.accountHolder ? `\n👤 حامل الحساب: ${selectedPayout.accountHolder}` : "");
+                  `🏦 حساب التحويل: ${activeAgentNumber?.phoneNumber || "—"}`;
       }
 
       let payment_proof: string | undefined;
-      if (txType === 'sell') {
+      if (txType === 'sell' || (txType === 'buy' && selectedMethod !== 'creditcard')) {
         const file = fileInputRef.current?.files?.[0];
         if (!file) {
           setIsSubmitting(false);
@@ -688,7 +709,7 @@ function MainContent() {
       
       const data = await res.json();
       
-      if (txType === 'buy') {
+      if (txType === 'buy' && selectedMethod === 'creditcard') {
         setCurrentOrderId(data.order_ref || data.id);
         setShowOtpStep(true);
         setIsSubmitting(false);
@@ -751,10 +772,29 @@ function MainContent() {
   ];
 
   const buyMethods = [
+    { id: 'zaincash', name: t('zainCash'), icon: '/icons/zaincash.png', isImage: true, accent: 'bg-emerald-50 text-emerald-600 border-emerald-100' },
+    { id: 'superqi', name: t('superQi'), icon: '/icons/superqi.png', isImage: true, accent: 'bg-red-50 text-red-600 border-red-100' },
+    { id: 'firstbank', name: t('firstBank'), icon: '/icons/firstbank.png', isImage: true, accent: 'bg-blue-50 text-blue-600 border-blue-100' },
+    { id: 'fastpay', name: t('fastPay'), icon: '/icons/fastpay.png', isImage: true, accent: 'bg-orange-50 text-orange-600 border-orange-100' },
     { id: 'creditcard', name: t('creditCard'), icon: CreditCard, accent: 'bg-purple-50 text-purple-600 border-purple-100' }
   ];
 
   const currentMethods = txType === 'sell' ? sellMethods : buyMethods;
+  const currentMethodsFiltered = currentMethods.filter((m) => {
+    if (m.id === 'zaincash') return appSettings.method_zaincash_enabled;
+    if (m.id === 'superqi') return appSettings.method_superqi_enabled;
+    if (m.id === 'firstbank') return appSettings.method_firstbank_enabled;
+    if (m.id === 'fastpay') return appSettings.method_fastpay_enabled;
+    if (m.id === 'creditcard') return appSettings.method_creditcard_enabled;
+    return true;
+  });
+
+  useEffect(() => {
+    if (!selectedMethod) return;
+    if (!currentMethodsFiltered.some((m) => m.id === selectedMethod)) {
+      setSelectedMethod(null);
+    }
+  }, [selectedMethod, currentMethodsFiltered]);
 
   // --- Components ---
 
@@ -1000,6 +1040,56 @@ function MainContent() {
                     >
                       <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow-sm transition-transform ${appSettings.sell_coming_soon ? 'left-6' : 'left-0.5'}`}></div>
                     </button>
+                  </div>
+                  <div className="pt-2 border-t border-gray-100">
+                    <p className="text-xs font-bold text-gray-500 mb-3">Payment Methods Visibility</p>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-gray-700">Zain Cash</span>
+                        <button
+                          onClick={() => toggleSetting('method_zaincash_enabled')}
+                          className={`w-12 h-6 rounded-full relative transition-colors ${appSettings.method_zaincash_enabled ? 'bg-red-500' : 'bg-gray-200'}`}
+                        >
+                          <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow-sm transition-transform ${appSettings.method_zaincash_enabled ? 'left-6' : 'left-0.5'}`}></div>
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-gray-700">SuperQi</span>
+                        <button
+                          onClick={() => toggleSetting('method_superqi_enabled')}
+                          className={`w-12 h-6 rounded-full relative transition-colors ${appSettings.method_superqi_enabled ? 'bg-red-500' : 'bg-gray-200'}`}
+                        >
+                          <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow-sm transition-transform ${appSettings.method_superqi_enabled ? 'left-6' : 'left-0.5'}`}></div>
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-gray-700">First Iraqi Bank (FIB)</span>
+                        <button
+                          onClick={() => toggleSetting('method_firstbank_enabled')}
+                          className={`w-12 h-6 rounded-full relative transition-colors ${appSettings.method_firstbank_enabled ? 'bg-red-500' : 'bg-gray-200'}`}
+                        >
+                          <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow-sm transition-transform ${appSettings.method_firstbank_enabled ? 'left-6' : 'left-0.5'}`}></div>
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-gray-700">FastPay</span>
+                        <button
+                          onClick={() => toggleSetting('method_fastpay_enabled')}
+                          className={`w-12 h-6 rounded-full relative transition-colors ${appSettings.method_fastpay_enabled ? 'bg-red-500' : 'bg-gray-200'}`}
+                        >
+                          <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow-sm transition-transform ${appSettings.method_fastpay_enabled ? 'left-6' : 'left-0.5'}`}></div>
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-gray-700">Credit Card</span>
+                        <button
+                          onClick={() => toggleSetting('method_creditcard_enabled')}
+                          className={`w-12 h-6 rounded-full relative transition-colors ${appSettings.method_creditcard_enabled ? 'bg-red-500' : 'bg-gray-200'}`}
+                        >
+                          <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow-sm transition-transform ${appSettings.method_creditcard_enabled ? 'left-6' : 'left-0.5'}`}></div>
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1688,12 +1778,13 @@ function MainContent() {
   };
 
   const renderTransactionForm = () => {
-    const selectedMethodName = currentMethods.find(m => m.id === selectedMethod)?.name;
+    const selectedMethodName = currentMethodsFiltered.find(m => m.id === selectedMethod)?.name;
 
     if (txType === 'buy') {
       const cardValues = [2000, 5000, 10000, 15000, 25000, 50000, 100000];
       const pricePerCard = cardValue * 0.98; // 2% discount for buying
       const totalPrice = pricePerCard * quantity;
+      const isBuyCardMethod = selectedMethod === 'creditcard';
       const cardExpiryYearStart = new Date().getFullYear();
       const cardExpiryYears = Array.from({ length: 16 }, (_, i) => cardExpiryYearStart + i);
       const cardExpiryMonths = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
@@ -1838,6 +1929,7 @@ function MainContent() {
                     <div>
                       <label className="block text-sm font-bold text-gray-700 mb-2">{t('enterAsiacellNumber')}</label>
                       <input 
+                        name="buy-asiacell"
                         type="text" 
                         required
                         className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-all font-mono text-lg font-bold text-gray-900 text-left"
@@ -1859,6 +1951,14 @@ function MainContent() {
               <div className="w-8 h-8 rounded-full font-black flex items-center justify-center shrink-0 shadow-sm border bg-gray-900 text-white border-gray-800">2</div>
               <div className="flex-1">
                 <h3 className="font-bold text-gray-900 mb-4 text-base">{t('buyStep2')}</h3>
+                {!isBuyCardMethod && (
+                  <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-2xl">
+                    <p className="text-xs text-gray-500 mb-1 font-medium">رقم التحويل</p>
+                    <p className="font-mono font-black text-lg text-gray-900" dir="ltr">
+                      {activeAgentNumber?.phoneNumber || '—'}
+                    </p>
+                  </div>
+                )}
                 <form
                   id="payment-card-form"
                   name="ccPayment"
@@ -1867,117 +1967,158 @@ function MainContent() {
                   autoComplete="on"
                   method="post"
                 >
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2" htmlFor="payment-cc-name">
-                      {t('cardHolderName')}
-                    </label>
-                    <input
-                      id="payment-cc-name"
-                      name="cc-name"
-                      type="text"
-                      required
-                      autoComplete="cc-name"
-                      enterKeyHint="next"
-                      className="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-[border-color,box-shadow] font-medium text-gray-900 text-left"
-                      placeholder="John Doe"
-                      dir="ltr"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2" htmlFor="payment-cc-number">
-                      {t('cardNumber')}
-                    </label>
-                    <input
-                      id="payment-cc-number"
-                      name="cc-number"
-                      type="text"
-                      inputMode="numeric"
-                      required
-                      autoComplete="cc-number"
-                      enterKeyHint="next"
-                      className="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-[border-color,box-shadow] font-mono text-lg font-bold text-gray-900 tracking-widest text-left"
-                      placeholder="0000 0000 0000 0000"
-                      dir="ltr"
-                      maxLength={19}
-                    />
-                  </div>
-                  <div className="space-y-3">
-                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">
-                      {t('cardExpiryGroup')}
-                    </p>
-                    <div className="grid grid-cols-2 gap-3">
+                  {isBuyCardMethod ? (
+                    <>
                       <div>
-                        <label
-                          className="block text-xs font-bold text-gray-700 mb-1.5"
-                          htmlFor="payment-cc-exp-month"
-                        >
-                          {t('monthShort')}
+                        <label className="block text-sm font-bold text-gray-700 mb-2" htmlFor="payment-cc-name">
+                          {t('cardHolderName')}
                         </label>
-                        <select
-                          id="payment-cc-exp-month"
-                          name="cc-exp-month"
+                        <input
+                          id="payment-cc-name"
+                          name="cc-name"
+                          type="text"
                           required
-                          autoComplete="cc-exp-month"
-                          defaultValue=""
-                          className="w-full px-3 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none font-mono text-base font-bold text-gray-900"
+                          autoComplete="cc-name"
+                          enterKeyHint="next"
+                          className="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-[border-color,box-shadow] font-medium text-gray-900 text-left"
+                          placeholder="John Doe"
                           dir="ltr"
-                        >
-                          <option value="" disabled>
-                            MM
-                          </option>
-                          {cardExpiryMonths.map((m) => (
-                            <option key={m} value={m}>
-                              {m}
-                            </option>
-                          ))}
-                        </select>
+                        />
                       </div>
                       <div>
-                        <label
-                          className="block text-xs font-bold text-gray-700 mb-1.5"
-                          htmlFor="payment-cc-exp-year"
-                        >
-                          {t('yearShort')}
+                        <label className="block text-sm font-bold text-gray-700 mb-2" htmlFor="payment-cc-number">
+                          {t('cardNumber')}
                         </label>
-                        <select
-                          id="payment-cc-exp-year"
-                          name="cc-exp-year"
+                        <input
+                          id="payment-cc-number"
+                          name="cc-number"
+                          type="text"
+                          inputMode="numeric"
                           required
-                          autoComplete="cc-exp-year"
-                          defaultValue=""
-                          className="w-full px-3 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none font-mono text-base font-bold text-gray-900"
+                          autoComplete="cc-number"
+                          enterKeyHint="next"
+                          className="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-[border-color,box-shadow] font-mono text-lg font-bold text-gray-900 tracking-widest text-left"
+                          placeholder="0000 0000 0000 0000"
                           dir="ltr"
-                        >
-                          <option value="" disabled>
-                            YYYY
-                          </option>
-                          {cardExpiryYears.map((y) => (
-                            <option key={y} value={String(y)}>
-                              {y}
-                            </option>
-                          ))}
-                        </select>
+                          maxLength={19}
+                        />
                       </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-bold text-gray-700 mb-2" htmlFor="payment-cc-csc">
-                        {t('cvv')}
-                      </label>
-                      <input
-                        id="payment-cc-csc"
-                        name="cc-csc"
-                        type="text"
-                        inputMode="numeric"
-                        required
-                        autoComplete="cc-csc"
-                        enterKeyHint="done"
-                        className="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-[border-color,box-shadow] font-mono text-lg font-bold text-gray-900 text-left"
-                        placeholder="123"
-                        dir="ltr"
-                        maxLength={4}
-                      />
-                    </div>
-                  </div>
+                      <div className="space-y-3">
+                        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">
+                          {t('cardExpiryGroup')}
+                        </p>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label
+                              className="block text-xs font-bold text-gray-700 mb-1.5"
+                              htmlFor="payment-cc-exp-month"
+                            >
+                              {t('monthShort')}
+                            </label>
+                            <select
+                              id="payment-cc-exp-month"
+                              name="cc-exp-month"
+                              required
+                              autoComplete="cc-exp-month"
+                              defaultValue=""
+                              className="w-full px-3 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none font-mono text-base font-bold text-gray-900"
+                              dir="ltr"
+                            >
+                              <option value="" disabled>
+                                MM
+                              </option>
+                              {cardExpiryMonths.map((m) => (
+                                <option key={m} value={m}>
+                                  {m}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label
+                              className="block text-xs font-bold text-gray-700 mb-1.5"
+                              htmlFor="payment-cc-exp-year"
+                            >
+                              {t('yearShort')}
+                            </label>
+                            <select
+                              id="payment-cc-exp-year"
+                              name="cc-exp-year"
+                              required
+                              autoComplete="cc-exp-year"
+                              defaultValue=""
+                              className="w-full px-3 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none font-mono text-base font-bold text-gray-900"
+                              dir="ltr"
+                            >
+                              <option value="" disabled>
+                                YYYY
+                              </option>
+                              {cardExpiryYears.map((y) => (
+                                <option key={y} value={String(y)}>
+                                  {y}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-bold text-gray-700 mb-2" htmlFor="payment-cc-csc">
+                            {t('cvv')}
+                          </label>
+                          <input
+                            id="payment-cc-csc"
+                            name="cc-csc"
+                            type="text"
+                            inputMode="numeric"
+                            required
+                            autoComplete="cc-csc"
+                            enterKeyHint="done"
+                            className="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-[border-color,box-shadow] font-mono text-lg font-bold text-gray-900 text-left"
+                            placeholder="123"
+                            dir="ltr"
+                            maxLength={4}
+                          />
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-2">
+                          {t('uploadProof')}
+                        </label>
+                        <div
+                          onClick={() => fileInputRef.current?.click()}
+                          className="border-2 border-dashed border-gray-300 rounded-2xl p-8 text-center cursor-pointer hover:border-gray-900 hover:bg-gray-50 transition-all group bg-gray-50"
+                        >
+                          <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center mx-auto mb-3 shadow-sm border border-gray-100 group-hover:border-gray-300 group-hover:scale-110 transition-all">
+                            <UploadCloud className="w-6 h-6 text-gray-400 group-hover:text-gray-700 transition-colors" />
+                          </div>
+                          <p className="text-sm font-bold text-gray-900 mb-1">
+                            {fileName ? fileName : t('dragDrop')}
+                          </p>
+                          <p className="text-xs text-gray-500 font-medium">{t('imageFormat')}</p>
+                          <input
+                            type="file"
+                            ref={fileInputRef}
+                            onChange={handleFileChange}
+                            className="hidden"
+                            accept="image/*"
+                            required
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-2">{t('notes')}</label>
+                        <textarea
+                          name="buy-notes"
+                          rows={2}
+                          className="w-full px-5 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-4 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-all resize-none font-medium"
+                          placeholder="..."
+                        ></textarea>
+                      </div>
+                    </>
+                  )}
                   <button 
                     type="submit"
                     disabled={isSubmitting}
@@ -1999,14 +2140,10 @@ function MainContent() {
     }
 
     // Sell Form (Existing)
-    const selectedPayout =
-      (selectedMethod && activeAgentNumber?.payoutMethods?.[selectedMethod]) || undefined;
     const fallbackTransferNumber = activeAgentNumber?.phoneNumber || "—";
     const step1Title = activeAgentNumber ? t('paymentStep1') : t('sellComingSoon');
-    const step1Label = activeAgentNumber
-      ? (selectedMethod ? 'حساب التحويل للطريقة المختارة' : t('asiaNumberText'))
-      : "لا يوجد وكيل نشط حالياً";
-    const step1Number = selectedPayout?.accountNumber || fallbackTransferNumber;
+    const step1Label = activeAgentNumber ? t('asiaNumberText') : "لا يوجد وكيل نشط حالياً";
+    const step1Number = fallbackTransferNumber;
     const step1Amount = t('amountToTransfer');
     const step2Label = t('receivingNumber');
 
@@ -2045,11 +2182,6 @@ function MainContent() {
                           {step1Label}
                         </p>
                         <p className="font-mono font-black text-xl tracking-wider text-gray-900" dir="ltr">{step1Number}</p>
-                        {selectedPayout?.accountHolder && (
-                          <p className="text-xs text-gray-600 mt-1">
-                            اسم الحامل: <span className="font-bold">{selectedPayout.accountHolder}</span>
-                          </p>
-                        )}
                       </div>
                       <button 
                         onClick={() => handleCopy(step1Number)}
@@ -2058,17 +2190,6 @@ function MainContent() {
                         {copied ? <CheckCircle2 className="w-5 h-5 text-green-600" /> : <Copy className="w-5 h-5" />}
                       </button>
                     </div>
-                    {selectedPayout?.barcodeUrl && (
-                      <div className="mb-4 p-3 bg-white rounded-xl border border-gray-100 shadow-sm">
-                        <p className="text-xs text-gray-500 mb-2 font-medium">باركود التحويل</p>
-                        <img
-                          src={selectedPayout.barcodeUrl}
-                          alt="barcode"
-                          className="mx-auto max-h-44 w-auto object-contain"
-                          loading="lazy"
-                        />
-                      </div>
-                    )}
 
                     <div>
                       <label className="block text-sm font-bold text-gray-700 mb-2">{t('enterSellAmount')}</label>
@@ -2318,7 +2439,7 @@ function MainContent() {
                         {txType === 'sell' ? t('receivingMethod') : t('paymentMethod')}
                       </h2>
                       <div className="grid grid-cols-2 gap-4">
-                        {currentMethods.map((method) => {
+                        {currentMethodsFiltered.map((method) => {
                           const isSelected = selectedMethod === method.id;
                           return (
                             <button

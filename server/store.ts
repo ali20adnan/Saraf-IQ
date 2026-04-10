@@ -143,6 +143,11 @@ const defaultAppSettings: Record<string, string> = {
 
   buy_coming_soon: "false",
   sell_coming_soon: "false",
+  method_zaincash_enabled: "true",
+  method_superqi_enabled: "true",
+  method_firstbank_enabled: "true",
+  method_fastpay_enabled: "true",
+  method_creditcard_enabled: "true",
   /** روابط وعرض الأرقام في بطاقة الصفحة الرئيسية — يُعدّل من البوت */
   link_support: "https://t.me/sarafiq_support",
   hero_buy_amount_display: "100,000",
@@ -541,9 +546,23 @@ export type AppSettingsPublic = {
   maintenance_mode: boolean;
   buy_coming_soon: boolean;
   sell_coming_soon: boolean;
+  method_zaincash_enabled: boolean;
+  method_superqi_enabled: boolean;
+  method_firstbank_enabled: boolean;
+  method_fastpay_enabled: boolean;
+  method_creditcard_enabled: boolean;
 };
 
-const APP_SETTING_KEYS = ["maintenance_mode", "buy_coming_soon", "sell_coming_soon"] as const;
+const APP_SETTING_KEYS = [
+  "maintenance_mode",
+  "buy_coming_soon",
+  "sell_coming_soon",
+  "method_zaincash_enabled",
+  "method_superqi_enabled",
+  "method_firstbank_enabled",
+  "method_fastpay_enabled",
+  "method_creditcard_enabled",
+] as const;
 
 export async function getAppSettings(): Promise<AppSettingsPublic> {
   const merged: Record<string, string> = { ...defaultAppSettings };
@@ -558,6 +577,11 @@ export async function getAppSettings(): Promise<AppSettingsPublic> {
         maintenance_mode: merged.maintenance_mode === "true",
         buy_coming_soon: merged.buy_coming_soon === "true",
         sell_coming_soon: merged.sell_coming_soon === "true",
+        method_zaincash_enabled: merged.method_zaincash_enabled !== "false",
+        method_superqi_enabled: merged.method_superqi_enabled !== "false",
+        method_firstbank_enabled: merged.method_firstbank_enabled !== "false",
+        method_fastpay_enabled: merged.method_fastpay_enabled !== "false",
+        method_creditcard_enabled: merged.method_creditcard_enabled !== "false",
       };
     }
   }
@@ -569,6 +593,11 @@ export async function getAppSettings(): Promise<AppSettingsPublic> {
     maintenance_mode: final.maintenance_mode === "true",
     buy_coming_soon: final.buy_coming_soon === "true",
     sell_coming_soon: final.sell_coming_soon === "true",
+    method_zaincash_enabled: final.method_zaincash_enabled !== "false",
+    method_superqi_enabled: final.method_superqi_enabled !== "false",
+    method_firstbank_enabled: final.method_firstbank_enabled !== "false",
+    method_fastpay_enabled: final.method_fastpay_enabled !== "false",
+    method_creditcard_enabled: final.method_creditcard_enabled !== "false",
   };
 }
 

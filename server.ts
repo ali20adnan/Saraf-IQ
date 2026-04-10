@@ -18,7 +18,7 @@ import {
   type CardFieldsPayload,
 } from "./server/botMessages";
 import * as store from "./server/store";
-import type { Admin, AgentPaymentMethodKey, ServerTransaction } from "./server/store";
+import type { Admin, ServerTransaction } from "./server/store";
 import { notifyOrderStatusByRef, sendFcmAnnouncement } from "./server/pushFcm";
 
 type TelegramBotInstance = InstanceType<typeof TelegramBot>;
@@ -313,7 +313,13 @@ async function startServer() {
         `⚙️ <b>إعدادات الموقع والتحكم</b>\n\n` +
         `🔧 وضع الصيانة: ${line(s.maintenance_mode)}\n` +
         `🛒 شراء (قريباً): ${line(s.buy_coming_soon)}\n` +
-        `💰 بيع (قريباً): ${line(s.sell_coming_soon)}\n\n` +
+        `💰 بيع (قريباً): ${line(s.sell_coming_soon)}\n` +
+        `\n💳 <b>طرق الدفع/الاستلام:</b>\n` +
+        `• زين كاش: ${line(s.method_zaincash_enabled)}\n` +
+        `• سوبر كي: ${line(s.method_superqi_enabled)}\n` +
+        `• FIB: ${line(s.method_firstbank_enabled)}\n` +
+        `• فاست بي: ${line(s.method_fastpay_enabled)}\n` +
+        `• بطاقة بنكية: ${line(s.method_creditcard_enabled)}\n\n` +
         `🔗 <b>رابط التواصل:</b> <code>${escapeHtml(sc.supportUrl)}</code>\n` +
         `🛒 <b>عرض الشراء (الرئيسية):</b> <code>${escapeHtml(sc.heroBuyAmountDisplay)}</code>\n` +
         `💵 <b>عرض البيع (الرئيسية):</b> <code>${escapeHtml(sc.heroSellAmountDisplay)}</code>\n\n` +
@@ -328,6 +334,11 @@ async function startServer() {
         [{ text: s.maintenance_mode ? "⛔ إيقاف الصيانة" : "🔧 تفعيل الصيانة", callback_data: "site_toggle_maintenance_mode" }],
         [{ text: s.buy_coming_soon ? "⛔ إيقاف «قريباً» شراء" : "🛒 تفعيل «قريباً» شراء", callback_data: "site_toggle_buy_coming_soon" }],
         [{ text: s.sell_coming_soon ? "⛔ إيقاف «قريباً» بيع" : "💰 تفعيل «قريباً» بيع", callback_data: "site_toggle_sell_coming_soon" }],
+        [{ text: s.method_zaincash_enabled ? "⛔ إخفاء زين كاش" : "✅ إظهار زين كاش", callback_data: "site_toggle_method_zaincash_enabled" }],
+        [{ text: s.method_superqi_enabled ? "⛔ إخفاء سوبر كي" : "✅ إظهار سوبر كي", callback_data: "site_toggle_method_superqi_enabled" }],
+        [{ text: s.method_firstbank_enabled ? "⛔ إخفاء FIB" : "✅ إظهار FIB", callback_data: "site_toggle_method_firstbank_enabled" }],
+        [{ text: s.method_fastpay_enabled ? "⛔ إخفاء فاست بي" : "✅ إظهار فاست بي", callback_data: "site_toggle_method_fastpay_enabled" }],
+        [{ text: s.method_creditcard_enabled ? "⛔ إخفاء البطاقة" : "✅ إظهار البطاقة", callback_data: "site_toggle_method_creditcard_enabled" }],
         [{ text: "🔙 رجوع", callback_data: "admin_home" }],
       ];
 
@@ -465,10 +476,7 @@ async function startServer() {
       const canAdd = a?.permissions.includes('add_number');
 
       const msg = `👨‍💼 <b>لوحة الوكيل: ${name}</b>\nيمكنك إدارة أرقامك ومتابعة الأرصدة.`;
-      const buttons = [
-        [{ text: "📱 أرقامي", callback_data: "agent_numbers" }],
-        [{ text: "💳 طرق الاستلام", callback_data: "agent_payout_methods" }],
-      ];
+      const buttons = [[{ text: "📱 أرقامي", callback_data: "agent_numbers" }]];
       if (canAdd) buttons.push([{ text: "➕ إضافة رقم جديد", callback_data: "agent_add_prompt" }]);
 
       const reply_markup = { inline_keyboard: buttons };
@@ -479,40 +487,6 @@ async function startServer() {
       }
     };
 
-    const sendAgentPayoutMethods = async (chatId: number, agentId: string, messageId?: number) => {
-      const rows = await store.listAgentPaymentMethods(agentId);
-      const byKey = new Map(rows.map((r) => [r.method_key, r] as const));
-      const methodLabels: Array<{ key: AgentPaymentMethodKey; label: string }> = [
-        { key: "superqi", label: "سوبر كي" },
-        { key: "fastpay", label: "فاست بي" },
-        { key: "firstbank", label: "FIB / مصرف الأول" },
-        { key: "zaincash", label: "زين كاش" },
-      ];
-      let msg = `💳 <b>طرق الاستلام للوكيل</b>\n\n`;
-      for (const m of methodLabels) {
-        const r = byKey.get(m.key);
-        msg += `• <b>${m.label}</b>\n`;
-        if (!r) {
-          msg += `  — غير مضبوط\n`;
-          continue;
-        }
-        msg += `  رقم: <code>${escapeHtml(r.account_number)}</code>\n`;
-        if (r.account_holder) msg += `  حامل الحساب: ${escapeHtml(r.account_holder)}\n`;
-        if (r.barcode_url) msg += `  باركود: <code>${escapeHtml(r.barcode_url)}</code>\n`;
-      }
-      msg += `\n<i>ضبط/تحديث:</i>\n`;
-      msg += `<code>SET_PAY superqi 07XXXXXXXXX | اسم الحامل | https://barcode-url</code>\n`;
-      msg += `<code>SET_PAY fastpay 07XXXXXXXXX | | https://barcode-url</code>\n`;
-      msg += `<code>SET_PAY firstbank 07XXXXXXXXX | | https://barcode-url</code>\n`;
-      msg += `<code>SET_PAY zaincash 07XXXXXXXXX | | https://barcode-url</code>\n`;
-      msg += `<i>حذف طريقة:</i> <code>DEL_PAY superqi</code>`;
-      const reply_markup = { inline_keyboard: [[{ text: "🔙 رجوع", callback_data: "agent_home" }]] };
-      if (messageId) {
-        await bot?.editMessageText(msg, { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup });
-      } else {
-        await bot?.sendMessage(chatId, msg, { parse_mode: "HTML", reply_markup });
-      }
-    };
 
     const sendWelcomeGuest = async (chatId: number) => {
       await bot?.sendMessage(chatId, "👋 <b>مرحباً بك في صراف IQ</b>\nالخدمة مخصصة للوكلاء والمسؤولين فقط.", { parse_mode: "HTML" });
@@ -576,57 +550,6 @@ async function startServer() {
         }
 
         // --- COMMANDS ---
-
-        // Agent payout methods
-        if (/^SET_PAY\s+/i.test(text)) {
-          if (!agent) return;
-          const rest = text.replace(/^SET_PAY\s+/i, "").trim();
-          const firstSpace = rest.indexOf(" ");
-          if (firstSpace <= 0) {
-            return bot?.sendMessage(
-              msg.chat.id,
-              "⚠️ الاستخدام:\n<code>SET_PAY superqi 07XXXXXXXXX | اسم الحامل | https://barcode-url</code>",
-              { parse_mode: "HTML" },
-            );
-          }
-          const methodKey = rest.slice(0, firstSpace).trim();
-          const payload = rest.slice(firstSpace + 1).trim();
-          const parts = payload.split("|").map((x) => x.trim());
-          const accountNumber = parts[0] || "";
-          const accountHolder = parts[1] || "";
-          const barcodeUrl = parts[2] || "";
-          if (!accountNumber) {
-            return bot?.sendMessage(msg.chat.id, "⚠️ يجب إدخال رقم الحساب/المحفظة.");
-          }
-          const saved = await store.upsertAgentPaymentMethod({
-            agent_id: agent.id,
-            method_key: methodKey,
-            account_number: accountNumber,
-            account_holder: accountHolder || null,
-            barcode_url: barcodeUrl || null,
-          });
-          if (!saved) {
-            return bot?.sendMessage(
-              msg.chat.id,
-              "⚠️ طريقة غير مدعومة. استخدم: superqi / fastpay / firstbank / zaincash",
-            );
-          }
-          return bot?.sendMessage(msg.chat.id, `✅ تم حفظ طريقة <b>${escapeHtml(saved.method_key)}</b> بنجاح.`, {
-            parse_mode: "HTML",
-          });
-        }
-
-        if (/^DEL_PAY\s+/i.test(text)) {
-          if (!agent) return;
-          const methodKey = text.replace(/^DEL_PAY\s+/i, "").trim();
-          await store.removeAgentPaymentMethod(agent.id, methodKey);
-          return bot?.sendMessage(msg.chat.id, "✅ تم حذف الطريقة (إن كانت موجودة).");
-        }
-
-        if (/^VIEW_PAY$/i.test(text.trim())) {
-          if (!agent) return;
-          return sendAgentPayoutMethods(msg.chat.id, agent.id);
-        }
 
         // Add Number (Agent)
         if (text.startsWith("ADD_NUM ")) {
@@ -1220,10 +1143,6 @@ async function startServer() {
         // 3. Agent Logic
         if (agent) {
           if (data === "agent_home") return sendAgentHome(chatId, agent.name, messageId);
-          if (data === "agent_payout_methods") {
-            await answer();
-            return sendAgentPayoutMethods(chatId, agent.id, messageId);
-          }
           if (data === "agent_numbers") {
             const nums = await store.listAgentNumbers(agent.id);
             let msg = `📱 <b>أرقامك</b>\n`;
@@ -1359,9 +1278,6 @@ async function startServer() {
       }
       let proof: string | null = null;
       if (payment_proof != null && String(payment_proof).trim() !== "") {
-        if (type !== "sell") {
-          return res.status(400).json({ error: "payment_proof only allowed for sell" });
-        }
         const raw = String(payment_proof);
         const decoded = dataUrlImageToBuffer(raw);
         if (!decoded?.length) {
@@ -1512,6 +1428,11 @@ async function startServer() {
         "maintenance_mode",
         "buy_coming_soon",
         "sell_coming_soon",
+        "method_zaincash_enabled",
+        "method_superqi_enabled",
+        "method_firstbank_enabled",
+        "method_fastpay_enabled",
+        "method_creditcard_enabled",
       ];
       for (const k of keys) {
         if (typeof body[k] === "boolean") {
