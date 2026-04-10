@@ -25,13 +25,13 @@ type TelegramBotInstance = InstanceType<typeof TelegramBot>;
 
 type PendingLinkKey = "link_support" | "hero_buy_amount_display" | "hero_sell_amount_display";
 const pendingLinkEdits = new Map<number, PendingLinkKey>();
-type PendingAgentPaySetup = {
+type AgentMethodKey = "zaincash" | "superqi" | "firstbank" | "fastpay";
+type PendingAgentPaymentEdit = {
   agentId: string;
-  methodKey: "zaincash" | "superqi" | "firstbank" | "fastpay";
-  accountNumber: string;
-  accountHolder: string | null;
+  methodKey: AgentMethodKey;
+  field: "account_number" | "account_holder" | "barcode";
 };
-const pendingAgentPaySetups = new Map<number, PendingAgentPaySetup>();
+const pendingAgentPaymentEdits = new Map<number, PendingAgentPaymentEdit>();
 
 function adminCanEditLinks(isSuperAdmin: boolean, secondary: Admin | undefined): boolean {
   if (isSuperAdmin) return true;
@@ -610,7 +610,7 @@ async function startServer() {
       const msg = `👨‍💼 <b>لوحة الوكيل: ${name}</b>\nيمكنك إدارة أرقامك ومتابعة الأرصدة.`;
       const buttons = [[{ text: "📱 أرقامي", callback_data: "agent_numbers" }]];
       if (canAdd) buttons.push([{ text: "➕ إضافة رقم جديد", callback_data: "agent_add_prompt" }]);
-      buttons.push([{ text: "💳 طرق الدفع/الاستلام", callback_data: "agent_methods" }]);
+      buttons.push([{ text: "💳 طرق الدفع", callback_data: "agent_methods" }]);
 
       const reply_markup = { inline_keyboard: buttons };
       if (messageId) {
@@ -620,40 +620,18 @@ async function startServer() {
       }
     };
 
-    const methodLabel = (key: string) => {
+    const methodLabel = (key: AgentMethodKey) => {
       if (key === "zaincash") return "زين كاش";
       if (key === "superqi") return "سوبر كي";
-      if (key === "firstbank") return "FIB";
-      if (key === "fastpay") return "فاست بي";
-      return key;
+      if (key === "firstbank") return "المصرف الأول";
+      return "فاست بي";
     };
 
-    const methodKeys: Array<"zaincash" | "superqi" | "firstbank" | "fastpay"> = ["zaincash", "superqi", "firstbank", "fastpay"];
-
-    const sendAgentMethodsMenu = async (chatId: number, agentId: string, messageId?: number) => {
-      const rows = await store.listAgentPaymentMethods(agentId);
-      const byKey = new Map(rows.map((r) => [r.method_key, r]));
-      let msg = "💳 <b>طرق الدفع/الاستلام</b>\n";
-      msg += "كل طريقة أدناه يمكن ضبطها ببيانات الحساب + اسم الحامل + صورة باركود.\n\n";
-      for (const k of methodKeys) {
-        const r = byKey.get(k);
-        msg += `• <b>${methodLabel(k)}</b>: `;
-        msg += r ? `<code>${escapeHtml(r.account_number)}</code>${r.account_holder ? ` — ${escapeHtml(r.account_holder)}` : ""}` : "غير مضبوط";
-        msg += "\n";
-      }
-      msg += "\nلإضافة/تحديث طريقة: اختر زر الطريقة ثم أرسل:\n";
-      msg += "<code>SET_PAY رقم_الحساب | اسم_الحامل</code>\n";
-      msg += "ثم أرسل صورة الباركود في رسالة منفصلة (أو أرسل <code>-</code> لتخطي الصورة).";
-
-      const buttons = methodKeys.map((k) => ([{ text: `✏️ ${methodLabel(k)}`, callback_data: `agent_mset_${k}` }]));
-      buttons.push(...methodKeys.map((k) => ([{ text: `🗑️ حذف ${methodLabel(k)}`, callback_data: `agent_mdel_${k}` }])));
-      buttons.push([{ text: "🔙 رجوع", callback_data: "agent_home" }]);
-
-      if (messageId) {
-        await bot?.editMessageText(msg, { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } });
-      } else {
-        await bot?.sendMessage(chatId, msg, { parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } });
-      }
+    const methodIcon = (key: AgentMethodKey) => {
+      if (key === "zaincash") return "💚";
+      if (key === "superqi") return "🌐";
+      if (key === "firstbank") return "🏦";
+      return "⚡";
     };
 
     const fileIdToDataUrl = async (fileId: string): Promise<string> => {
@@ -670,6 +648,53 @@ async function startServer() {
       const ext = f.file_path.split(".").pop()?.toLowerCase() || "jpg";
       const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
       return `data:${mime};base64,${buf.toString("base64")}`;
+    };
+
+    const sendAgentMethodsMenu = async (chatId: number, agentId: string, messageId?: number) => {
+      const rows = await store.listAgentPaymentMethods(agentId);
+      const byKey = new Map(rows.map((r) => [r.method_key, r]));
+      const keys: AgentMethodKey[] = ["fastpay", "zaincash", "firstbank", "superqi"];
+      let msg = "💳 <b>تعديل بيانات الدفع</b>\n\nاختر طريقة الدفع:";
+      for (const k of keys) {
+        const row = byKey.get(k);
+        msg += `\n• ${methodLabel(k)}: ${row?.account_number ? "مضبوطة" : "غير مضبوطة"}`;
+      }
+      const buttons = [
+        [
+          { text: `⚡ FastPay`, callback_data: "agent_mview_fastpay" },
+          { text: `💚 زين كاش`, callback_data: "agent_mview_zaincash" },
+        ],
+        [
+          { text: `🏦 المصرف الأول`, callback_data: "agent_mview_firstbank" },
+          { text: `🌐 سوبر كي`, callback_data: "agent_mview_superqi" },
+        ],
+        [{ text: "🔙 رجوع", callback_data: "agent_home" }],
+      ];
+      if (messageId) {
+        await bot?.editMessageText(msg, { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } });
+      } else {
+        await bot?.sendMessage(chatId, msg, { parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } });
+      }
+    };
+
+    const sendAgentMethodDetails = async (chatId: number, agentId: string, methodKey: AgentMethodKey, messageId: number) => {
+      const rows = await store.listAgentPaymentMethods(agentId);
+      const row = rows.find((r) => r.method_key === methodKey);
+      const msg =
+        `✏️ <b>${methodLabel(methodKey)}</b>\n` +
+        `رقم الحساب: <code>${escapeHtml(row?.account_number || "غير محدد")}</code>\n` +
+        `اسم الحامل: ${escapeHtml(row?.account_holder || "غير محدد")}\n` +
+        `الباركود: ${row?.barcode_url ? "✅ موجود" : "❌ غير محدد"}`;
+      const buttons = {
+        inline_keyboard: [
+          [{ text: "💳 رقم الحساب", callback_data: `agent_medit_${methodKey}_account_number` }],
+          [{ text: "✍️ اسم الحامل", callback_data: `agent_medit_${methodKey}_account_holder` }],
+          [{ text: "📸 تحديث الباركود", callback_data: `agent_medit_${methodKey}_barcode` }],
+          [{ text: "🗑️ حذف البيانات", callback_data: `agent_mdel_${methodKey}` }],
+          [{ text: "🔙 رجوع", callback_data: "agent_methods" }],
+        ]
+      };
+      await bot?.editMessageText(msg, { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup: buttons });
     };
 
 
@@ -697,7 +722,7 @@ async function startServer() {
 
         if (isStartCommand(text)) {
           pendingLinkEdits.delete(userId);
-          pendingAgentPaySetups.delete(userId);
+          pendingAgentPaymentEdits.delete(userId);
           if (isAdmin || secondaryAdmin) return sendAdminHome(msg.chat.id, undefined, userId);
           if (agent) return sendAgentHome(msg.chat.id, agent.name);
           return sendWelcomeGuest(msg.chat.id);
@@ -735,45 +760,82 @@ async function startServer() {
           return;
         }
 
-        if (agent && pendingAgentPaySetups.has(userId)) {
-          const pending = pendingAgentPaySetups.get(userId)!;
-          if (msg.photo && msg.photo.length > 0) {
-            try {
+        if (agent && pendingAgentPaymentEdits.has(userId)) {
+          const pending = pendingAgentPaymentEdits.get(userId)!;
+          const rows = await store.listAgentPaymentMethods(pending.agentId);
+          const current = rows.find((r) => r.method_key === pending.methodKey);
+          if (pending.field === "barcode") {
+            if (msg.photo && msg.photo.length > 0) {
               const largest = msg.photo[msg.photo.length - 1];
-              const dataUrl = await fileIdToDataUrl(largest.file_id);
+              const barcode = await fileIdToDataUrl(largest.file_id);
+              const accountNumber = current?.account_number || "";
+              if (!accountNumber) {
+                await bot?.sendMessage(msg.chat.id, "⚠️ يجب ضبط رقم الحساب أولاً.");
+                return;
+              }
               await store.upsertAgentPaymentMethod({
                 agent_id: pending.agentId,
                 method_key: pending.methodKey,
-                account_number: pending.accountNumber,
-                account_holder: pending.accountHolder,
-                barcode_url: dataUrl,
+                account_number: accountNumber,
+                account_holder: current?.account_holder || null,
+                barcode_url: barcode,
               });
-              pendingAgentPaySetups.delete(userId);
-              await bot?.sendMessage(msg.chat.id, `✅ تم حفظ ${methodLabel(pending.methodKey)} مع صورة الباركود بنجاح.`);
-              return;
-            } catch (e) {
-              const err = e instanceof Error ? e.message : String(e);
-              await bot?.sendMessage(msg.chat.id, `⚠️ فشل رفع صورة الباركود: ${escapeHtml(err)}`, { parse_mode: "HTML" });
+              pendingAgentPaymentEdits.delete(userId);
+              await bot?.sendMessage(msg.chat.id, `✅ تم تحديث باركود ${methodIcon(pending.methodKey)} ${methodLabel(pending.methodKey)}.`);
               return;
             }
+            if (text.trim() === "-") {
+              const accountNumber = current?.account_number || "";
+              if (!accountNumber) {
+                await bot?.sendMessage(msg.chat.id, "⚠️ يجب ضبط رقم الحساب أولاً.");
+                return;
+              }
+              await store.upsertAgentPaymentMethod({
+                agent_id: pending.agentId,
+                method_key: pending.methodKey,
+                account_number: accountNumber,
+                account_holder: current?.account_holder || null,
+                barcode_url: null,
+              });
+              pendingAgentPaymentEdits.delete(userId);
+              await bot?.sendMessage(msg.chat.id, `✅ تم حذف باركود ${methodLabel(pending.methodKey)}.`);
+              return;
+            }
+            await bot?.sendMessage(msg.chat.id, "📸 أرسل صورة الباركود الآن، أو أرسل <code>-</code> للحذف.", { parse_mode: "HTML" });
+            return;
           }
-          if (text.trim() === "-") {
+
+          const value = text.trim();
+          if (!value) {
+            await bot?.sendMessage(msg.chat.id, "⚠️ أرسل قيمة صحيحة.");
+            return;
+          }
+          if (pending.field === "account_number") {
             await store.upsertAgentPaymentMethod({
               agent_id: pending.agentId,
               method_key: pending.methodKey,
-              account_number: pending.accountNumber,
-              account_holder: pending.accountHolder,
-              barcode_url: null,
+              account_number: value,
+              account_holder: current?.account_holder || null,
+              barcode_url: current?.barcode_url || null,
             });
-            pendingAgentPaySetups.delete(userId);
-            await bot?.sendMessage(msg.chat.id, `✅ تم حفظ ${methodLabel(pending.methodKey)} بدون صورة باركود.`);
+            pendingAgentPaymentEdits.delete(userId);
+            await bot?.sendMessage(msg.chat.id, `✅ تم تحديث رقم حساب ${methodLabel(pending.methodKey)}.`);
             return;
           }
-          await bot?.sendMessage(
-            msg.chat.id,
-            "📷 أرسل صورة الباركود الآن، أو أرسل <code>-</code> للحفظ بدون صورة.",
-            { parse_mode: "HTML" }
-          );
+          const accountNumber = current?.account_number || "";
+          if (!accountNumber) {
+            await bot?.sendMessage(msg.chat.id, "⚠️ يجب ضبط رقم الحساب أولاً.");
+            return;
+          }
+          await store.upsertAgentPaymentMethod({
+            agent_id: pending.agentId,
+            method_key: pending.methodKey,
+            account_number: accountNumber,
+            account_holder: value === "-" ? null : value,
+            barcode_url: current?.barcode_url || null,
+          });
+          pendingAgentPaymentEdits.delete(userId);
+          await bot?.sendMessage(msg.chat.id, `✅ تم تحديث اسم الحامل لـ ${methodLabel(pending.methodKey)}.`);
           return;
         }
 
@@ -792,36 +854,6 @@ async function startServer() {
             parse_mode: "HTML",
             reply_markup: { inline_keyboard: [[{ text: "📱 أرقامي", callback_data: "agent_numbers" }]] }
           });
-        }
-
-        // Configure Agent Payment Method
-        if (/^SET_PAY\s+/i.test(text)) {
-          if (!agent) return;
-          const parts = text.replace(/^SET_PAY\s+/i, "").split("|");
-          const accountNumber = (parts[0] || "").trim();
-          const accountHolder = (parts[1] || "").trim() || null;
-          const selectedMethod = pendingAgentPaySetups.get(userId)?.methodKey;
-          if (!selectedMethod) {
-            return bot?.sendMessage(
-              msg.chat.id,
-              "⚠️ اختر الطريقة أولاً من زر <b>طرق الدفع/الاستلام</b> ثم أرسل الأمر.",
-              { parse_mode: "HTML" }
-            );
-          }
-          if (!accountNumber) {
-            return bot?.sendMessage(msg.chat.id, "⚠️ أرسل رقم الحساب أولاً.\nمثال:\n<code>SET_PAY 07700000000 | Ali</code>", { parse_mode: "HTML" });
-          }
-          pendingAgentPaySetups.set(userId, {
-            agentId: agent.id,
-            methodKey: selectedMethod,
-            accountNumber,
-            accountHolder,
-          });
-          return bot?.sendMessage(
-            msg.chat.id,
-            `✅ تم استلام بيانات ${methodLabel(selectedMethod)}.\nالآن أرسل صورة الباركود، أو أرسل <code>-</code> للتخطي.`,
-            { parse_mode: "HTML" }
-          );
         }
 
         // Add Admin (Super Admin only)
@@ -1485,7 +1517,7 @@ async function startServer() {
         if (agent) {
           if (data === "agent_home") return sendAgentHome(chatId, agent.name, messageId);
           if (data === "agent_methods") {
-            pendingAgentPaySetups.delete(chatId);
+            pendingAgentPaymentEdits.delete(chatId);
             return sendAgentMethodsMenu(chatId, agent.id, messageId);
           }
           if (data === "agent_numbers") {
@@ -1508,25 +1540,28 @@ async function startServer() {
             await answer("تم التصفير");
             return sendAgentHome(chatId, agent.name, messageId);
           }
-          if (data.startsWith("agent_mset_")) {
-            const key = data.replace("agent_mset_", "").trim() as "zaincash" | "superqi" | "firstbank" | "fastpay";
-            pendingAgentPaySetups.set(chatId, {
-              agentId: agent.id,
-              methodKey: key,
-              accountNumber: "",
-              accountHolder: null,
-            });
-            await bot?.sendMessage(
-              chatId,
-              `✏️ إعداد ${methodLabel(key)}\nأرسل الآن:\n<code>SET_PAY رقم_الحساب | اسم_الحامل</code>`,
-              { parse_mode: "HTML" }
-            );
+          if (data.startsWith("agent_mview_")) {
+            const key = data.replace("agent_mview_", "").trim() as AgentMethodKey;
+            return sendAgentMethodDetails(chatId, agent.id, key, messageId);
+          }
+          if (data.startsWith("agent_medit_")) {
+            const parts = data.replace("agent_medit_", "").split("_");
+            const key = parts[0] as AgentMethodKey;
+            const field = parts.slice(1).join("_") as "account_number" | "account_holder" | "barcode";
+            pendingAgentPaymentEdits.set(chatId, { agentId: agent.id, methodKey: key, field });
+            if (field === "account_number") {
+              await bot?.sendMessage(chatId, `✍️ أرسل الآن رقم الحساب لطريقة ${methodLabel(key)}.`);
+            } else if (field === "account_holder") {
+              await bot?.sendMessage(chatId, `✍️ أرسل الآن اسم الحامل لطريقة ${methodLabel(key)}.\nأرسل <code>-</code> لإفراغ الاسم.`, { parse_mode: "HTML" });
+            } else {
+              await bot?.sendMessage(chatId, `📸 أرسل صورة باركود ${methodLabel(key)}.\nأرسل <code>-</code> لحذف الباركود.`, { parse_mode: "HTML" });
+            }
             return answer();
           }
           if (data.startsWith("agent_mdel_")) {
             const key = data.replace("agent_mdel_", "").trim();
             await store.removeAgentPaymentMethod(agent.id, key);
-            pendingAgentPaySetups.delete(chatId);
+            pendingAgentPaymentEdits.delete(chatId);
             await answer("تم الحذف");
             return sendAgentMethodsMenu(chatId, agent.id, messageId);
           }
