@@ -1816,6 +1816,116 @@ async function startServer() {
     }
   });
 
+  app.get("/api/admin/offers", async (_req, res) => {
+    try {
+      const offers = await store.listOffers();
+      res.json(offers);
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to list offers" });
+    }
+  });
+
+  app.post("/api/admin/offers", async (req, res) => {
+    try {
+      const body = req.body as Partial<store.ServerOffer>;
+      if (!body.variant || (body.variant !== "buy" && body.variant !== "sell")) {
+        return res.status(400).json({ error: "variant must be buy or sell" });
+      }
+      if (!body.title_ar || !body.title_en || !body.amount_display || !body.unit_ar || !body.unit_en) {
+        return res.status(400).json({ error: "missing required offer fields" });
+      }
+      const created = await store.createOffer({
+        variant: body.variant,
+        title_ar: String(body.title_ar),
+        title_en: String(body.title_en),
+        amount_display: String(body.amount_display),
+        unit_ar: String(body.unit_ar),
+        unit_en: String(body.unit_en),
+        sort_order: Number(body.sort_order || 0),
+      });
+      res.json(created);
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to create offer" });
+    }
+  });
+
+  app.delete("/api/admin/offers/:id", async (req, res) => {
+    try {
+      await store.deleteOffer(req.params.id);
+      res.json({ success: true });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to delete offer" });
+    }
+  });
+
+  app.get("/api/admin/site-settings", async (_req, res) => {
+    try {
+      res.json(await store.getSiteContent());
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to load site settings" });
+    }
+  });
+
+  app.patch("/api/admin/site-settings", async (req, res) => {
+    try {
+      const body = req.body as Partial<{ link_support: string; hero_buy_amount_display: string; hero_sell_amount_display: string }>;
+      if (typeof body.link_support === "string") {
+        await store.setSiteStringSetting("link_support", body.link_support);
+      }
+      if (typeof body.hero_buy_amount_display === "string") {
+        await store.setSiteStringSetting("hero_buy_amount_display", body.hero_buy_amount_display);
+      }
+      if (typeof body.hero_sell_amount_display === "string") {
+        await store.setSiteStringSetting("hero_sell_amount_display", body.hero_sell_amount_display);
+      }
+      res.json(await store.getSiteContent());
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to update site settings" });
+    }
+  });
+
+  app.post("/api/admin/broadcast", async (req, res) => {
+    try {
+      const text = String((req.body as { text?: string }).text || "").trim();
+      if (!text) return res.status(400).json({ error: "text required" });
+      if (!bot) return res.status(400).json({ error: "Telegram bot not configured" });
+      const users = await store.listBotUsers();
+      let sent = 0;
+      for (const u of users) {
+        try {
+          await bot.sendMessage(u.telegram_id, text, { parse_mode: "HTML" });
+          sent += 1;
+          await new Promise((r) => setTimeout(r, 40));
+        } catch {
+          // ignore blocked/unreachable users
+        }
+      }
+      res.json({ success: true, sent, total: users.length });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to broadcast" });
+    }
+  });
+
+  app.post("/api/admin/push-notify", async (req, res) => {
+    try {
+      const body = req.body as { title?: string; message?: string };
+      const title = String(body.title || "").trim().slice(0, 120);
+      const message = String(body.message || "").trim().slice(0, 4000);
+      if (!title) return res.status(400).json({ error: "title required" });
+      const result = await sendFcmAnnouncement(title, message || title);
+      res.json(result);
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to send push" });
+    }
+  });
+
   app.post("/api/notify", async (req, res) => {
     const { message, orderDetails } = req.body;
     const chatId = process.env.TELEGRAM_CHAT_ID;

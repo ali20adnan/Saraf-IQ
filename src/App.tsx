@@ -43,6 +43,7 @@ type ApiOffer = {
   amount_display: string;
   unit_ar: string;
   unit_en: string;
+  sort_order?: number;
 };
 
 type SiteProfileData = {
@@ -157,6 +158,18 @@ function MainContent() {
   const [isAdminAgentsLoading, setIsAdminAgentsLoading] = useState(false);
   const [adminTab, setAdminTab] = useState<'overview' | 'agents' | 'admins'>('overview');
   const [adminAdmins, setAdminAdmins] = useState<AdminRow[]>([]);
+  const [adminBroadcastText, setAdminBroadcastText] = useState('');
+  const [adminPushTitle, setAdminPushTitle] = useState('');
+  const [adminPushBody, setAdminPushBody] = useState('');
+  const [adminOfferForm, setAdminOfferForm] = useState({
+    variant: 'buy' as 'buy' | 'sell',
+    title_ar: '',
+    title_en: '',
+    amount_display: '',
+    unit_ar: '',
+    unit_en: '',
+    sort_order: 0,
+  });
 
   const statusUi = useCallback((status: string) => {
     switch (status) {
@@ -1107,6 +1120,96 @@ function MainContent() {
       }
     };
 
+    const handleSaveSiteSettings = async () => {
+      try {
+        const res = await fetch(apiUrl('/api/admin/site-settings'), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            link_support: siteContent.supportUrl,
+            hero_buy_amount_display: siteContent.heroBuyAmountDisplay,
+            hero_sell_amount_display: siteContent.heroSellAmountDisplay,
+          }),
+        });
+        if (res.ok) alert(lang === 'ar' ? 'تم حفظ الإعدادات' : 'Settings saved');
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    const handleCreateOffer = async (e: React.FormEvent) => {
+      e.preventDefault();
+      try {
+        const res = await fetch(apiUrl('/api/admin/offers'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(adminOfferForm),
+        });
+        if (res.ok) {
+          await fetchOffers();
+          setAdminOfferForm({
+            variant: 'buy',
+            title_ar: '',
+            title_en: '',
+            amount_display: '',
+            unit_ar: '',
+            unit_en: '',
+            sort_order: 0,
+          });
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    const handleDeleteOffer = async (id: string) => {
+      if (!window.confirm(lang === 'ar' ? 'حذف هذا العرض؟' : 'Delete this offer?')) return;
+      try {
+        const res = await fetch(apiUrl(`/api/admin/offers/${id}`), { method: 'DELETE' });
+        if (res.ok) fetchOffers();
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    const handleBroadcast = async () => {
+      const text = adminBroadcastText.trim();
+      if (!text) return;
+      try {
+        const res = await fetch(apiUrl('/api/admin/broadcast'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          alert(lang === 'ar' ? `تم الإرسال: ${data.sent}/${data.total}` : `Sent: ${data.sent}/${data.total}`);
+          setAdminBroadcastText('');
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    const handlePushNotify = async () => {
+      const title = adminPushTitle.trim();
+      if (!title) return;
+      try {
+        const res = await fetch(apiUrl('/api/admin/push-notify'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, message: adminPushBody }),
+        });
+        if (res.ok) {
+          alert(lang === 'ar' ? 'تم إرسال إشعار التطبيق' : 'Push notification sent');
+          setAdminPushTitle('');
+          setAdminPushBody('');
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
     return (
       <div className="flex-1 p-4 lg:p-8 overflow-y-auto">
         <div className="max-w-5xl mx-auto">
@@ -1135,6 +1238,7 @@ function MainContent() {
           </div>
           
           {adminTab === 'overview' ? (
+            <>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
               <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
                 <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><Settings className="w-5 h-5 text-gray-500" /> {t('systemSettings')}</h3>
@@ -1237,6 +1341,103 @@ function MainContent() {
                 </div>
               </div>
             </div>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-4">
+                <h3 className="font-bold text-gray-900">{lang === 'ar' ? 'روابط ومحتوى الواجهة' : 'Links & Hero Content'}</h3>
+                <input
+                  value={siteContent.supportUrl}
+                  onChange={(e) => setSiteContent((prev) => ({ ...prev, supportUrl: e.target.value }))}
+                  placeholder={lang === 'ar' ? 'رابط الدعم (https://...)' : 'Support link (https://...)'}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl"
+                  dir="ltr"
+                />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <input
+                    value={siteContent.heroBuyAmountDisplay}
+                    onChange={(e) => setSiteContent((prev) => ({ ...prev, heroBuyAmountDisplay: e.target.value }))}
+                    placeholder={lang === 'ar' ? 'رقم الشراء الرئيسي' : 'Hero buy amount'}
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl"
+                  />
+                  <input
+                    value={siteContent.heroSellAmountDisplay}
+                    onChange={(e) => setSiteContent((prev) => ({ ...prev, heroSellAmountDisplay: e.target.value }))}
+                    placeholder={lang === 'ar' ? 'رقم البيع الرئيسي' : 'Hero sell amount'}
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl"
+                  />
+                </div>
+                <button onClick={handleSaveSiteSettings} className="bg-gray-900 text-white px-5 py-2.5 rounded-xl text-sm font-bold">
+                  {lang === 'ar' ? 'حفظ المحتوى' : 'Save Content'}
+                </button>
+              </div>
+
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-4">
+                <h3 className="font-bold text-gray-900">{lang === 'ar' ? 'الإشعارات والبث' : 'Notifications & Broadcast'}</h3>
+                <div className="space-y-2">
+                  <input
+                    value={adminPushTitle}
+                    onChange={(e) => setAdminPushTitle(e.target.value)}
+                    placeholder={lang === 'ar' ? 'عنوان إشعار التطبيق' : 'Push title'}
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl"
+                  />
+                  <textarea
+                    value={adminPushBody}
+                    onChange={(e) => setAdminPushBody(e.target.value)}
+                    placeholder={lang === 'ar' ? 'نص إشعار التطبيق' : 'Push message'}
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl min-h-20"
+                  />
+                  <button onClick={handlePushNotify} className="bg-gray-900 text-white px-5 py-2 rounded-xl text-sm font-bold">
+                    {lang === 'ar' ? 'إرسال Push للتطبيق' : 'Send App Push'}
+                  </button>
+                </div>
+                <div className="border-t border-gray-100 pt-3 space-y-2">
+                  <textarea
+                    value={adminBroadcastText}
+                    onChange={(e) => setAdminBroadcastText(e.target.value)}
+                    placeholder={lang === 'ar' ? 'رسالة البث لمستخدمي البوت' : 'Broadcast text for bot users'}
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl min-h-20"
+                  />
+                  <button onClick={handleBroadcast} className="bg-gray-100 text-gray-900 px-5 py-2 rounded-xl text-sm font-bold">
+                    {lang === 'ar' ? 'إرسال Broadcast للبوت' : 'Send Telegram Broadcast'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-8">
+              <h3 className="font-bold text-gray-900 mb-4">{lang === 'ar' ? 'إدارة العروض' : 'Offers Management'}</h3>
+              <form onSubmit={handleCreateOffer} className="grid grid-cols-1 md:grid-cols-7 gap-2 mb-4">
+                <select
+                  value={adminOfferForm.variant}
+                  onChange={(e) => setAdminOfferForm((p) => ({ ...p, variant: e.target.value as 'buy' | 'sell' }))}
+                  className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl"
+                >
+                  <option value="buy">{lang === 'ar' ? 'شراء' : 'Buy'}</option>
+                  <option value="sell">{lang === 'ar' ? 'بيع' : 'Sell'}</option>
+                </select>
+                <input value={adminOfferForm.title_ar} onChange={(e) => setAdminOfferForm((p) => ({ ...p, title_ar: e.target.value }))} placeholder="العنوان عربي" className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl" />
+                <input value={adminOfferForm.title_en} onChange={(e) => setAdminOfferForm((p) => ({ ...p, title_en: e.target.value }))} placeholder="English title" className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl" />
+                <input value={adminOfferForm.amount_display} onChange={(e) => setAdminOfferForm((p) => ({ ...p, amount_display: e.target.value }))} placeholder={lang === 'ar' ? 'المبلغ' : 'Amount'} className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl" />
+                <input value={adminOfferForm.unit_ar} onChange={(e) => setAdminOfferForm((p) => ({ ...p, unit_ar: e.target.value }))} placeholder="الوحدة عربي" className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl" />
+                <input value={adminOfferForm.unit_en} onChange={(e) => setAdminOfferForm((p) => ({ ...p, unit_en: e.target.value }))} placeholder="Unit EN" className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl" />
+                <button type="submit" className="bg-gray-900 text-white px-4 py-2.5 rounded-xl text-sm font-bold">{lang === 'ar' ? 'إضافة عرض' : 'Add Offer'}</button>
+              </form>
+
+              <div className="space-y-2">
+                {offersList.map((o) => (
+                  <div key={o.id} className="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-xl px-4 py-3">
+                    <div>
+                      <p className="font-semibold text-gray-900">{lang === 'ar' ? o.title_ar : o.title_en}</p>
+                      <p className="text-xs text-gray-500">{o.variant.toUpperCase()} • {o.amount_display}</p>
+                    </div>
+                    <button onClick={() => handleDeleteOffer(o.id)} className="text-xs font-bold text-red-600 hover:text-red-700">
+                      {t('delete')}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+            </>
           ) : adminTab === 'agents' ? (
             <div className="space-y-6">
               {/* Add Agent Form */}
@@ -1347,7 +1548,7 @@ function MainContent() {
                 </form>
                 <p className="text-xs text-gray-500 mt-3">
                   {t('firstAdminBotHint')}
-                  <code className="ml-1">ADD_ADMIN [ID] [NAME] | [EMAIL]</code>
+                  <code className="ml-1">ADD_ADMIN [ID] [NAME] | [EMAIL] | [PASSWORD]</code>
                 </p>
               </div>
 
