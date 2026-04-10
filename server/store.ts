@@ -49,6 +49,17 @@ export type AgentNumber = {
   sort_order: number;
 };
 
+export type AgentPaymentMethodKey = "zaincash" | "superqi" | "firstbank" | "fastpay";
+export type AgentPaymentMethod = {
+  id: string;
+  agent_id: string;
+  method_key: AgentPaymentMethodKey;
+  account_number: string;
+  account_holder: string | null;
+  barcode_url: string | null;
+  updated_at: string;
+};
+
 export type BotUser = {
   id: string; // uuid
   telegram_id: number;
@@ -69,6 +80,7 @@ type FileStore = {
   app_settings: Record<string, string>;
   agents: Agent[];
   agent_numbers: AgentNumber[];
+  agent_payment_methods: AgentPaymentMethod[];
   admins: Admin[];
   bot_users: BotUser[];
   push_tokens: PushTokenRecord[];
@@ -232,6 +244,7 @@ function loadFileStore(): FileStore {
         app_settings: { ...defaultAppSettings },
         agents: [],
         agent_numbers: [],
+        agent_payment_methods: [],
         admins: [],
         bot_users: [],
         push_tokens: [],
@@ -251,6 +264,7 @@ function loadFileStore(): FileStore {
           : { ...defaultAppSettings },
       agents: Array.isArray(parsed.agents) ? parsed.agents.map(a => ({ ...a, permissions: Array.isArray(a.permissions) ? a.permissions : ['add_number', 'reset_balance'] })) : [],
       agent_numbers: Array.isArray(parsed.agent_numbers) ? parsed.agent_numbers : [],
+      agent_payment_methods: Array.isArray(parsed.agent_payment_methods) ? parsed.agent_payment_methods : [],
       admins: Array.isArray(parsed.admins) ? parsed.admins : [],
       bot_users: Array.isArray(parsed.bot_users) ? parsed.bot_users : [],
       push_tokens: Array.isArray(parsed.push_tokens) ? parsed.push_tokens : [],
@@ -263,6 +277,7 @@ function loadFileStore(): FileStore {
       app_settings: { ...defaultAppSettings },
       agents: [],
       agent_numbers: [],
+      agent_payment_methods: [],
       admins: [],
       bot_users: [],
       push_tokens: [],
@@ -617,10 +632,12 @@ export async function deleteAgent(id: string): Promise<void> {
   if (db) {
     await db.from("agents").delete().eq("id", id);
     await db.from("agent_numbers").delete().eq("agent_id", id);
+    await db.from("agent_payment_methods").delete().eq("agent_id", id);
   }
   const st = loadFileStore();
   st.agents = st.agents.filter(a => a.id !== id);
   st.agent_numbers = st.agent_numbers.filter(n => n.agent_id !== id);
+  st.agent_payment_methods = st.agent_payment_methods.filter((m) => m.agent_id !== id);
   saveFileStore(st);
 }
 
@@ -685,9 +702,110 @@ export async function deleteAgentNumber(id: string): Promise<void> {
   saveFileStore(st);
 }
 
+/** AGENT PAYMENT METHODS (per-agent receiving accounts) */
+const AGENT_METHOD_KEYS: AgentPaymentMethodKey[] = ["zaincash", "superqi", "firstbank", "fastpay"];
+
+function normalizeMethodKey(input: string): AgentPaymentMethodKey | null {
+  const s = input.trim().toLowerCase();
+  if (s === "fib" || s === "fip" || s === "firstbank") return "firstbank";
+  if (s === "zaincash") return "zaincash";
+  if (s === "superqi") return "superqi";
+  if (s === "fastpay") return "fastpay";
+  return null;
+}
+
+export async function upsertAgentPaymentMethod(input: {
+  agent_id: string;
+  method_key: string;
+  account_number: string;
+  account_holder?: string | null;
+  barcode_url?: string | null;
+}): Promise<AgentPaymentMethod | null> {
+  const key = normalizeMethodKey(input.method_key);
+  const agentId = input.agent_id.trim();
+  const number = input.account_number.trim();
+  if (!key || !agentId || !number) return null;
+  const row: AgentPaymentMethod = {
+    id: globalThis.crypto?.randomUUID?.() ?? `apm-${Date.now()}`,
+    agent_id: agentId,
+    method_key: key,
+    account_number: number,
+    account_holder: input.account_holder?.trim() ? input.account_holder.trim() : null,
+    barcode_url: input.barcode_url?.trim() ? input.barcode_url.trim() : null,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (db) {
+    const { error } = await db.from("agent_payment_methods").upsert(
+      {
+        agent_id: row.agent_id,
+        method_key: row.method_key,
+        account_number: row.account_number,
+        account_holder: row.account_holder,
+        barcode_url: row.barcode_url,
+        updated_at: row.updated_at,
+      },
+      { onConflict: "agent_id,method_key" },
+    );
+    if (error) console.error("upsertAgentPaymentMethod:", error);
+  }
+
+  const st = loadFileStore();
+  const ix = st.agent_payment_methods.findIndex(
+    (m) => m.agent_id === row.agent_id && m.method_key === row.method_key,
+  );
+  if (ix === -1) st.agent_payment_methods.push(row);
+  else st.agent_payment_methods[ix] = { ...st.agent_payment_methods[ix], ...row };
+  saveFileStore(st);
+  return row;
+}
+
+export async function listAgentPaymentMethods(agentId: string): Promise<AgentPaymentMethod[]> {
+  const id = agentId.trim();
+  if (!id) return [];
+  if (db) {
+    const { data, error } = await db
+      .from("agent_payment_methods")
+      .select("*")
+      .eq("agent_id", id);
+    if (!error && data?.length) {
+      return (data as AgentPaymentMethod[]).sort(
+        (a, b) => AGENT_METHOD_KEYS.indexOf(a.method_key) - AGENT_METHOD_KEYS.indexOf(b.method_key),
+      );
+    }
+  }
+  return loadFileStore().agent_payment_methods
+    .filter((m) => m.agent_id === id)
+    .sort((a, b) => AGENT_METHOD_KEYS.indexOf(a.method_key) - AGENT_METHOD_KEYS.indexOf(b.method_key));
+}
+
+export async function removeAgentPaymentMethod(agentId: string, methodKey: string): Promise<void> {
+  const id = agentId.trim();
+  const key = normalizeMethodKey(methodKey);
+  if (!id || !key) return;
+  if (db) {
+    const { error } = await db
+      .from("agent_payment_methods")
+      .delete()
+      .eq("agent_id", id)
+      .eq("method_key", key);
+    if (error) console.error("removeAgentPaymentMethod:", error);
+  }
+  const st = loadFileStore();
+  st.agent_payment_methods = st.agent_payment_methods.filter(
+    (m) => !(m.agent_id === id && m.method_key === key),
+  );
+  saveFileStore(st);
+}
+
 /** ACTIVE NUMBER LOGIC */
 
-export async function getActiveSellNumber(): Promise<{ phoneNumber: string; agentId: string; numberId: string } | null> {
+export async function getActiveSellNumber(): Promise<{
+  phoneNumber: string;
+  agentId: string;
+  numberId: string;
+  payoutMethods: Record<string, { accountNumber: string; accountHolder?: string; barcodeUrl?: string }>;
+} | null> {
   const agents = await listAgents();
   const activeAgent = agents.find(a => a.is_active);
   if (!activeAgent) return null;
@@ -697,10 +815,21 @@ export async function getActiveSellNumber(): Promise<{ phoneNumber: string; agen
   
   if (!activeNum) return null;
   
-  return { 
+  const configured = await listAgentPaymentMethods(activeAgent.id);
+  const payoutMethods: Record<string, { accountNumber: string; accountHolder?: string; barcodeUrl?: string }> = {};
+  for (const m of configured) {
+    payoutMethods[m.method_key] = {
+      accountNumber: m.account_number,
+      ...(m.account_holder ? { accountHolder: m.account_holder } : {}),
+      ...(m.barcode_url ? { barcodeUrl: m.barcode_url } : {}),
+    };
+  }
+
+  return {
     phoneNumber: activeNum.phone_number,
     agentId: activeAgent.id,
-    numberId: activeNum.id
+    numberId: activeNum.id,
+    payoutMethods,
   };
 }
 

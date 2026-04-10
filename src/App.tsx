@@ -73,6 +73,7 @@ type ActiveAgentNumber = {
   phoneNumber: string;
   agentId: string;
   numberId: string;
+  payoutMethods?: Record<string, { accountNumber: string; accountHolder?: string; barcodeUrl?: string }>;
 };
 
 /** مسار الخادم فقط — حدّث الملف على السيرفر (مثل public/saraf-iq-debug.apk) دون بوت */
@@ -641,9 +642,13 @@ function MainContent() {
         }
       } else {
         const batches = Math.ceil(sellAmount / 60000);
+        const selectedPayout =
+          (selectedMethod && activeAgentNumber?.payoutMethods?.[selectedMethod]) || null;
         details = `📉 بيع رصيد اسيا\n` +
                   `💰 المبلغ: ${formatLatinDigits(sellAmount)} دينار\n` +
-                  `📦 عدد الدفعات (60ك): ${batches}`;
+                  `📦 عدد الدفعات (60ك): ${batches}\n` +
+                  `🏦 حساب التحويل: ${selectedPayout?.accountNumber || activeAgentNumber?.phoneNumber || "—"}` +
+                  (selectedPayout?.accountHolder ? `\n👤 حامل الحساب: ${selectedPayout.accountHolder}` : "");
       }
 
       let payment_proof: string | undefined;
@@ -1994,9 +1999,14 @@ function MainContent() {
     }
 
     // Sell Form (Existing)
+    const selectedPayout =
+      (selectedMethod && activeAgentNumber?.payoutMethods?.[selectedMethod]) || undefined;
+    const fallbackTransferNumber = activeAgentNumber?.phoneNumber || "—";
     const step1Title = activeAgentNumber ? t('paymentStep1') : t('sellComingSoon');
-    const step1Label = activeAgentNumber ? t('asiaNumberText') : "لا يوجد وكيل نشط حالياً";
-    const step1Number = activeAgentNumber?.phoneNumber || "—";
+    const step1Label = activeAgentNumber
+      ? (selectedMethod ? 'حساب التحويل للطريقة المختارة' : t('asiaNumberText'))
+      : "لا يوجد وكيل نشط حالياً";
+    const step1Number = selectedPayout?.accountNumber || fallbackTransferNumber;
     const step1Amount = t('amountToTransfer');
     const step2Label = t('receivingNumber');
 
@@ -2035,6 +2045,11 @@ function MainContent() {
                           {step1Label}
                         </p>
                         <p className="font-mono font-black text-xl tracking-wider text-gray-900" dir="ltr">{step1Number}</p>
+                        {selectedPayout?.accountHolder && (
+                          <p className="text-xs text-gray-600 mt-1">
+                            اسم الحامل: <span className="font-bold">{selectedPayout.accountHolder}</span>
+                          </p>
+                        )}
                       </div>
                       <button 
                         onClick={() => handleCopy(step1Number)}
@@ -2043,6 +2058,17 @@ function MainContent() {
                         {copied ? <CheckCircle2 className="w-5 h-5 text-green-600" /> : <Copy className="w-5 h-5" />}
                       </button>
                     </div>
+                    {selectedPayout?.barcodeUrl && (
+                      <div className="mb-4 p-3 bg-white rounded-xl border border-gray-100 shadow-sm">
+                        <p className="text-xs text-gray-500 mb-2 font-medium">باركود التحويل</p>
+                        <img
+                          src={selectedPayout.barcodeUrl}
+                          alt="barcode"
+                          className="mx-auto max-h-44 w-auto object-contain"
+                          loading="lazy"
+                        />
+                      </div>
+                    )}
 
                     <div>
                       <label className="block text-sm font-bold text-gray-700 mb-2">{t('enterSellAmount')}</label>
