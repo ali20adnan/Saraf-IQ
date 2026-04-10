@@ -2535,11 +2535,16 @@ function MainContent() {
                     dir={dir}
                     className="mb-4 p-4 sm:p-5 bg-white border border-gray-200 rounded-2xl space-y-4 shadow-sm"
                   >
-                    <div className="flex flex-row-reverse items-start justify-between gap-3">
-                      <span className="text-xs text-gray-500 font-medium shrink-0 pt-0.5">
+                    <div className={dir === 'rtl' ? 'text-right' : 'text-left'}>
+                      <p className="text-xs text-gray-500 font-medium mb-1">
                         {lang === 'ar' ? 'رقم التحويل' : 'Transfer number'}
-                      </span>
-                      <p className="font-mono font-black text-lg text-gray-900 text-left min-w-0 break-all" dir="ltr">
+                      </p>
+                      <p
+                        dir="ltr"
+                        className={`font-mono font-black text-lg text-gray-900 min-w-0 break-all ${
+                          dir === 'rtl' ? 'text-right' : 'text-left'
+                        }`}
+                      >
                         {selectedBuyPaymentDetails?.account_number || activeAgentNumber?.phoneNumber || '—'}
                       </p>
                     </div>
