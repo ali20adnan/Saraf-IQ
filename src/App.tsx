@@ -756,7 +756,9 @@ function MainContent() {
         const userAsiacell = (form.elements.namedItem('buy-asiacell') as HTMLInputElement)?.value || '';
         const notes = (form.elements.namedItem('buy-notes') as HTMLTextAreaElement)?.value || '';
         const selectedMethodDetails = (activeAgentNumber?.paymentMethods || []).find((m) => m.method_key === selectedMethod);
-        const transferNumber = selectedMethodDetails?.account_number || activeAgentNumber?.phoneNumber || "—";
+        const transferNumber =
+          selectedMethodDetails?.account_number ||
+          (lang === 'ar' ? 'لا يوجد وكيل متاح حالياً (قريباً)' : 'No active agent currently (coming soon)');
         const holderLine = selectedMethod === 'superqi' && selectedMethodDetails?.account_holder
           ? `\n👤 اسم الحامل: ${selectedMethodDetails.account_holder}`
           : '';
@@ -2608,12 +2610,14 @@ function MainContent() {
                         {lang === 'ar' ? 'رقم التحويل' : 'Transfer number'}
                       </p>
                       <p
-                        dir="ltr"
-                        className={`font-mono font-black text-lg text-gray-900 min-w-0 break-all ${
-                          dir === 'rtl' ? 'text-right' : 'text-left'
-                        }`}
+                        dir={selectedBuyPaymentDetails?.account_number ? 'ltr' : dir}
+                        className={`font-mono font-black text-lg min-w-0 break-all ${
+                          selectedBuyPaymentDetails?.account_number ? 'text-gray-900' : 'text-gray-500'
+                        } ${dir === 'rtl' ? 'text-right' : 'text-left'}`}
                       >
-                        {selectedBuyPaymentDetails?.account_number || activeAgentNumber?.phoneNumber || '—'}
+                        {selectedBuyPaymentDetails?.account_number || (lang === 'ar'
+                          ? 'لا يوجد وكيل متاح حالياً (قريباً)'
+                          : 'No active agent currently (coming soon)')}
                       </p>
                     </div>
                     {selectedMethod === 'superqi' && selectedBuyPaymentDetails?.account_holder ? (
