@@ -859,9 +859,9 @@ function MainContent() {
                   name="email"
                   type="email"
                   required
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl hidden"
-                  value="admin@sarafiq.com"
-                  readOnly
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/20 focus:border-gray-900 outline-none transition-all"
+                  placeholder={t('adminEmailPlaceholder')}
+                  dir="ltr"
                 />
                 <input
                   name="password"
