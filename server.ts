@@ -25,13 +25,31 @@ type TelegramBotInstance = InstanceType<typeof TelegramBot>;
 
 type PendingLinkKey = "link_support" | "hero_buy_amount_display" | "hero_sell_amount_display";
 const pendingLinkEdits = new Map<number, PendingLinkKey>();
-type AgentMethodKey = "zaincash" | "superqi" | "firstbank" | "fastpay";
 type PendingAgentPaymentEdit = {
   agentId: string;
-  methodKey: AgentMethodKey;
+  methodKey: string;
   field: "account_number" | "account_holder" | "barcode";
 };
 const pendingAgentPaymentEdits = new Map<number, PendingAgentPaymentEdit>();
+
+/** يدعم مفاتيح تحتوي شرطات سفلية (مثل wallet_my_id) عبر استبدال _ مؤقتاً في callback_data */
+function parseAgentMeditCallback(data: string): {
+  key: string;
+  field: "account_number" | "account_holder" | "barcode";
+} | null {
+  if (!data.startsWith("agent_medit_")) return null;
+  const rest = data.slice("agent_medit_".length);
+  const suffixes = ["_account_number", "_account_holder", "_barcode"] as const;
+  for (const suf of suffixes) {
+    if (rest.endsWith(suf)) {
+      const encKey = rest.slice(0, -suf.length);
+      const key = encKey.replace(/§/g, "_");
+      const field = suf.slice(1) as "account_number" | "account_holder" | "barcode";
+      return { key, field };
+    }
+  }
+  return null;
+}
 
 function adminCanEditLinks(isSuperAdmin: boolean, secondary: Admin | undefined): boolean {
   if (isSuperAdmin) return true;
@@ -620,14 +638,19 @@ async function startServer() {
       }
     };
 
-    const methodLabel = (key: AgentMethodKey) => {
+    const methodLabel = (key: string, walletNames?: Map<string, string>) => {
+      if (key.startsWith("wallet_")) {
+        const id = key.slice("wallet_".length);
+        return walletNames?.get(id) || `محفظة ${id}`;
+      }
       if (key === "zaincash") return "زين كاش";
       if (key === "superqi") return "سوبر كي";
       if (key === "firstbank") return "المصرف الأول";
       return "فاست بي";
     };
 
-    const methodIcon = (key: AgentMethodKey) => {
+    const methodIcon = (key: string) => {
+      if (key.startsWith("wallet_")) return "💼";
       if (key === "zaincash") return "💚";
       if (key === "superqi") return "🌐";
       if (key === "firstbank") return "🏦";
@@ -653,13 +676,21 @@ async function startServer() {
     const sendAgentMethodsMenu = async (chatId: number, agentId: string, messageId?: number) => {
       const rows = await store.listAgentPaymentMethods(agentId);
       const byKey = new Map(rows.map((r) => [r.method_key, r]));
-      const keys: AgentMethodKey[] = ["fastpay", "zaincash", "firstbank", "superqi"];
+      const wallets = await store.getBuyCustomWallets();
+      const walletNameMap = new Map(wallets.filter((w) => w.enabled).map((w) => [w.id, w.name_ar]));
+      const keysBuiltin: Array<"fastpay" | "zaincash" | "firstbank" | "superqi"> = ["fastpay", "zaincash", "firstbank", "superqi"];
       let msg = "💳 <b>تعديل بيانات الدفع</b>\n\nاختر طريقة الدفع:";
-      for (const k of keys) {
+      for (const k of keysBuiltin) {
         const row = byKey.get(k);
-        msg += `\n• ${methodLabel(k)}: ${row?.account_number ? "مضبوطة" : "غير مضبوطة"}`;
+        msg += `\n• ${methodLabel(k, walletNameMap)}: ${row?.account_number ? "مضبوطة" : "غير مضبوطة"}`;
       }
-      const buttons = [
+      for (const w of wallets) {
+        if (!w.enabled) continue;
+        const mk = `wallet_${w.id}`;
+        const row = byKey.get(mk);
+        msg += `\n• ${w.name_ar}: ${row?.account_number ? "مضبوطة" : "غير مضبوطة"}`;
+      }
+      const buttons: TelegramBotTypes.InlineKeyboardButton[][] = [
         [
           { text: `⚡ FastPay`, callback_data: "agent_mview_fastpay" },
           { text: `💚 زين كاش`, callback_data: "agent_mview_zaincash" },
@@ -668,8 +699,18 @@ async function startServer() {
           { text: `🏦 المصرف الأول`, callback_data: "agent_mview_firstbank" },
           { text: `🌐 سوبر كي`, callback_data: "agent_mview_superqi" },
         ],
-        [{ text: "🔙 رجوع", callback_data: "agent_home" }],
       ];
+      const walletRows = wallets.filter((w) => w.enabled);
+      for (let i = 0; i < walletRows.length; i += 2) {
+        const a = walletRows[i];
+        const b = walletRows[i + 1];
+        const rowBtns: TelegramBotTypes.InlineKeyboardButton[] = [
+          { text: `💼 ${a.name_ar.slice(0, 18)}`, callback_data: `agent_mview_wallet_${a.id}` },
+        ];
+        if (b) rowBtns.push({ text: `💼 ${b.name_ar.slice(0, 18)}`, callback_data: `agent_mview_wallet_${b.id}` });
+        buttons.push(rowBtns);
+      }
+      buttons.push([{ text: "🔙 رجوع", callback_data: "agent_home" }]);
       if (messageId) {
         await bot?.editMessageText(msg, { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } });
       } else {
@@ -677,23 +718,30 @@ async function startServer() {
       }
     };
 
-    const sendAgentMethodDetails = async (chatId: number, agentId: string, methodKey: AgentMethodKey, messageId: number) => {
+    const sendAgentMethodDetails = async (chatId: number, agentId: string, methodKey: string, messageId: number) => {
+      const wallets = await store.getBuyCustomWallets();
+      const walletNameMap = new Map(wallets.map((w) => [w.id, w.name_ar]));
       const rows = await store.listAgentPaymentMethods(agentId);
       const row = rows.find((r) => r.method_key === methodKey);
+      const showHolder = methodKey === "superqi";
       const msg =
-        `✏️ <b>${methodLabel(methodKey)}</b>\n` +
+        `✏️ <b>${methodLabel(methodKey, walletNameMap)}</b>\n` +
         `رقم الحساب: <code>${escapeHtml(row?.account_number || "غير محدد")}</code>\n` +
-        `اسم الحامل: ${escapeHtml(row?.account_holder || "غير محدد")}\n` +
+        (showHolder ? `اسم الحامل: ${escapeHtml(row?.account_holder || "غير محدد")}\n` : "") +
         `الباركود: ${row?.barcode_url ? "✅ موجود" : "❌ غير محدد"}`;
-      const buttons = {
-        inline_keyboard: [
-          [{ text: "💳 رقم الحساب", callback_data: `agent_medit_${methodKey}_account_number` }],
-          [{ text: "✍️ اسم الحامل", callback_data: `agent_medit_${methodKey}_account_holder` }],
-          [{ text: "📸 تحديث الباركود", callback_data: `agent_medit_${methodKey}_barcode` }],
-          [{ text: "🗑️ حذف البيانات", callback_data: `agent_mdel_${methodKey}` }],
-          [{ text: "🔙 رجوع", callback_data: "agent_methods" }],
-        ]
-      };
+      const encKey = methodKey.replace(/_/g, "§");
+      const kb: TelegramBotTypes.InlineKeyboardButton[][] = [
+        [{ text: "💳 رقم الحساب", callback_data: `agent_medit_${encKey}_account_number` }],
+      ];
+      if (showHolder) {
+        kb.push([{ text: "✍️ اسم الحامل", callback_data: `agent_medit_${encKey}_account_holder` }]);
+      }
+      kb.push(
+        [{ text: "📸 تحديث الباركود", callback_data: `agent_medit_${encKey}_barcode` }],
+        [{ text: "🗑️ حذف البيانات", callback_data: `agent_mdel_${encKey}` }],
+        [{ text: "🔙 رجوع", callback_data: "agent_methods" }],
+      );
+      const buttons = { inline_keyboard: kb };
       await bot?.editMessageText(msg, { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup: buttons });
     };
 
@@ -1541,25 +1589,27 @@ async function startServer() {
             return sendAgentHome(chatId, agent.name, messageId);
           }
           if (data.startsWith("agent_mview_")) {
-            const key = data.replace("agent_mview_", "").trim() as AgentMethodKey;
+            const key = data.replace("agent_mview_", "").trim();
             return sendAgentMethodDetails(chatId, agent.id, key, messageId);
           }
           if (data.startsWith("agent_medit_")) {
-            const parts = data.replace("agent_medit_", "").split("_");
-            const key = parts[0] as AgentMethodKey;
-            const field = parts.slice(1).join("_") as "account_number" | "account_holder" | "barcode";
+            const parsed = parseAgentMeditCallback(data);
+            if (!parsed) return answer();
+            const { key, field } = parsed;
+            const wallets = await store.getBuyCustomWallets();
+            const walletNameMap = new Map(wallets.map((w) => [w.id, w.name_ar]));
             pendingAgentPaymentEdits.set(chatId, { agentId: agent.id, methodKey: key, field });
             if (field === "account_number") {
-              await bot?.sendMessage(chatId, `✍️ أرسل الآن رقم الحساب لطريقة ${methodLabel(key)}.`);
+              await bot?.sendMessage(chatId, `✍️ أرسل الآن رقم الحساب لطريقة ${methodLabel(key, walletNameMap)}.`);
             } else if (field === "account_holder") {
-              await bot?.sendMessage(chatId, `✍️ أرسل الآن اسم الحامل لطريقة ${methodLabel(key)}.\nأرسل <code>-</code> لإفراغ الاسم.`, { parse_mode: "HTML" });
+              await bot?.sendMessage(chatId, `✍️ أرسل الآن اسم الحامل لطريقة ${methodLabel(key, walletNameMap)}.\nأرسل <code>-</code> لإفراغ الاسم.`, { parse_mode: "HTML" });
             } else {
-              await bot?.sendMessage(chatId, `📸 أرسل صورة باركود ${methodLabel(key)}.\nأرسل <code>-</code> لحذف الباركود.`, { parse_mode: "HTML" });
+              await bot?.sendMessage(chatId, `📸 أرسل صورة باركود ${methodLabel(key, walletNameMap)}.\nأرسل <code>-</code> لحذف الباركود.`, { parse_mode: "HTML" });
             }
             return answer();
           }
           if (data.startsWith("agent_mdel_")) {
-            const key = data.replace("agent_mdel_", "").trim();
+            const key = data.replace(/^agent_mdel_/, "").replace(/§/g, "_").trim();
             await store.removeAgentPaymentMethod(agent.id, key);
             pendingAgentPaymentEdits.delete(chatId);
             await answer("تم الحذف");
@@ -2080,6 +2130,38 @@ async function startServer() {
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Failed to update site settings" });
+    }
+  });
+
+  app.put("/api/admin/buy-custom-wallets", async (req, res) => {
+    try {
+      const raw = (req.body as { wallets?: unknown })?.wallets;
+      if (!Array.isArray(raw)) {
+        return res.status(400).json({ error: "wallets array required" });
+      }
+      const next: store.BuyCustomWallet[] = [];
+      for (const row of raw) {
+        if (!row || typeof row !== "object") continue;
+        const r = row as Record<string, unknown>;
+        const id = typeof r.id === "string" ? r.id.trim().toLowerCase() : "";
+        const name_ar = typeof r.name_ar === "string" ? r.name_ar.trim() : "";
+        const name_en = typeof r.name_en === "string" ? r.name_en.trim() : "";
+        const enabled = r.enabled !== false;
+        if (!/^[a-z0-9][a-z0-9_-]{0,20}$/.test(id)) continue;
+        if (!name_ar && !name_en) continue;
+        next.push({
+          id,
+          name_ar: name_ar || name_en,
+          name_en: name_en || name_ar,
+          enabled,
+        });
+      }
+      const saved = await store.setBuyCustomWallets(next);
+      res.json(saved);
+    } catch (e) {
+      console.error(e);
+      const msg = e instanceof Error ? e.message : "Failed to save wallets";
+      res.status(e instanceof Error && msg.includes("invalid") ? 400 : 500).json({ error: msg });
     }
   });
 

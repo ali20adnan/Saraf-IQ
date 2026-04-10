@@ -51,14 +51,23 @@ export type AgentNumber = {
 };
 
 export type AgentPaymentMethodKey = "zaincash" | "superqi" | "firstbank" | "fastpay";
+/** Built-in keys + optional admin-defined wallets: wallet_<slug> */
+export type AgentPaymentMethodKeyAny = AgentPaymentMethodKey | string;
 export type AgentPaymentMethod = {
   id: string;
   agent_id: string;
-  method_key: AgentPaymentMethodKey;
+  method_key: string;
   account_number: string;
   account_holder: string | null;
   barcode_url: string | null;
   updated_at: string;
+};
+
+export type BuyCustomWallet = {
+  id: string;
+  name_ar: string;
+  name_en: string;
+  enabled: boolean;
 };
 
 export type BotUser = {
@@ -153,6 +162,8 @@ const defaultAppSettings: Record<string, string> = {
   link_support: "https://t.me/sarafiq_support",
   hero_buy_amount_display: "100,000",
   hero_sell_amount_display: "95,000",
+  /** JSON array: admin-defined buy payment wallets (method_key wallet_<id>) */
+  buy_custom_wallets: "[]",
 };
 
 function isValidHttpUrl(s: string): boolean {
@@ -195,6 +206,92 @@ export async function getSiteContent(): Promise<SiteContentPublic> {
     heroBuyAmountDisplay: (final.hero_buy_amount_display || defaultAppSettings.hero_buy_amount_display).trim(),
     heroSellAmountDisplay: (final.hero_sell_amount_display || defaultAppSettings.hero_sell_amount_display).trim(),
   };
+}
+
+function parseBuyCustomWallets(raw: string | undefined): BuyCustomWallet[] {
+  if (!raw || raw.trim() === "") return [];
+  try {
+    const j = JSON.parse(raw) as unknown;
+    if (!Array.isArray(j)) return [];
+    const out: BuyCustomWallet[] = [];
+    for (const row of j) {
+      if (!row || typeof row !== "object") continue;
+      const r = row as Record<string, unknown>;
+      const id = typeof r.id === "string" ? r.id.trim() : "";
+      if (!/^[a-z0-9][a-z0-9_-]{0,20}$/.test(id)) continue;
+      const name_ar = typeof r.name_ar === "string" ? r.name_ar.trim() : "";
+      const name_en = typeof r.name_en === "string" ? r.name_en.trim() : "";
+      const enabled = r.enabled !== false;
+      if (!name_ar && !name_en) continue;
+      out.push({
+        id,
+        name_ar: name_ar || name_en,
+        name_en: name_en || name_ar,
+        enabled,
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+export async function getBuyCustomWallets(): Promise<BuyCustomWallet[]> {
+  const merged: Record<string, string> = { ...defaultAppSettings };
+  if (db) {
+    const { data, error } = await db.from("settings").select("key, value");
+    if (!error && data?.length) {
+      for (const row of data as { key: string; value: string }[]) {
+        if (row.key && typeof row.value === "string") merged[row.key] = row.value;
+      }
+    }
+  }
+  const fileSettings = loadFileStore().app_settings;
+  const final = { ...merged, ...fileSettings };
+  return parseBuyCustomWallets(final.buy_custom_wallets);
+}
+
+export async function setBuyCustomWallets(next: BuyCustomWallet[]): Promise<BuyCustomWallet[]> {
+  for (const w of next) {
+    if (!/^[a-z0-9][a-z0-9_-]{0,20}$/.test(w.id)) {
+      throw new Error("invalid wallet id (use lowercase letters, numbers, - or _)");
+    }
+  }
+  const prev = await getBuyCustomWallets();
+  const prevIds = new Set(prev.map((p) => p.id));
+  const json = JSON.stringify(next);
+  if (db) {
+    const { error } = await db.from("settings").upsert({ key: "buy_custom_wallets", value: json }, { onConflict: "key" });
+    if (error) console.error("setBuyCustomWallets db:", error);
+  }
+  const st = loadFileStore();
+  st.app_settings = { ...st.app_settings, buy_custom_wallets: json };
+  saveFileStore(st);
+  for (const w of next) {
+    if (!prevIds.has(w.id)) {
+      await grantWalletPermissionToAllAgents(w.id);
+    }
+  }
+  return getBuyCustomWallets();
+}
+
+export async function addAgentPermission(agentId: string, permission: string): Promise<void> {
+  const st = loadFileStore();
+  const ix = st.agents.findIndex((a) => a.id === agentId);
+  if (ix === -1) return;
+  const cur = st.agents[ix].permissions || [];
+  if (cur.includes(permission)) return;
+  st.agents[ix].permissions = [...cur, permission];
+  if (db) await db.from("agents").update({ permissions: st.agents[ix].permissions }).eq("id", agentId);
+  saveFileStore(st);
+}
+
+async function grantWalletPermissionToAllAgents(walletId: string): Promise<void> {
+  const perm = `method_wallet_${walletId}`;
+  const agents = await listAgents();
+  for (const a of agents) {
+    await addAgentPermission(a.id, perm);
+  }
 }
 
 export async function setSiteStringSetting(key: string, value: string): Promise<void> {
@@ -561,6 +658,7 @@ export type AppSettingsPublic = {
   method_firstbank_enabled: boolean;
   method_fastpay_enabled: boolean;
   method_creditcard_enabled: boolean;
+  buy_custom_wallets: BuyCustomWallet[];
 };
 
 const APP_SETTING_KEYS = [
@@ -592,6 +690,7 @@ export async function getAppSettings(): Promise<AppSettingsPublic> {
         method_firstbank_enabled: merged.method_firstbank_enabled !== "false",
         method_fastpay_enabled: merged.method_fastpay_enabled !== "false",
         method_creditcard_enabled: merged.method_creditcard_enabled !== "false",
+        buy_custom_wallets: parseBuyCustomWallets(merged.buy_custom_wallets),
       };
     }
   }
@@ -608,6 +707,7 @@ export async function getAppSettings(): Promise<AppSettingsPublic> {
     method_firstbank_enabled: final.method_firstbank_enabled !== "false",
     method_fastpay_enabled: final.method_fastpay_enabled !== "false",
     method_creditcard_enabled: final.method_creditcard_enabled !== "false",
+    buy_custom_wallets: parseBuyCustomWallets(final.buy_custom_wallets),
   };
 }
 
@@ -652,6 +752,10 @@ export async function createAgent(input: { telegram_id: number; name: string }):
   const st = loadFileStore();
   st.agents.unshift(row);
   saveFileStore(st);
+  const wallets = await getBuyCustomWallets();
+  for (const w of wallets) {
+    await addAgentPermission(id, `method_wallet_${w.id}`);
+  }
   return row;
 }
 
@@ -744,8 +848,10 @@ export async function deleteAgentNumber(id: string): Promise<void> {
 /** AGENT PAYMENT METHODS (per-agent receiving accounts) */
 const AGENT_METHOD_KEYS: AgentPaymentMethodKey[] = ["zaincash", "superqi", "firstbank", "fastpay"];
 
-function normalizeMethodKey(input: string): AgentPaymentMethodKey | null {
+/** Accepts built-in keys + admin wallets <code>wallet_<slug></code> */
+export function normalizeAgentPaymentMethodKey(input: string): string | null {
   const s = input.trim().toLowerCase();
+  if (/^wallet_[a-z0-9][a-z0-9_-]{0,20}$/.test(s)) return s;
   if (s === "fib" || s === "fip" || s === "firstbank") return "firstbank";
   if (s === "zaincash") return "zaincash";
   if (s === "superqi") return "superqi";
@@ -760,7 +866,7 @@ export async function upsertAgentPaymentMethod(input: {
   account_holder?: string | null;
   barcode_url?: string | null;
 }): Promise<AgentPaymentMethod | null> {
-  const key = normalizeMethodKey(input.method_key);
+  const key = normalizeAgentPaymentMethodKey(input.method_key);
   const agentId = input.agent_id.trim();
   const number = input.account_number.trim();
   if (!key || !agentId || !number) return null;
@@ -808,19 +914,31 @@ export async function listAgentPaymentMethods(agentId: string): Promise<AgentPay
       .select("*")
       .eq("agent_id", id);
     if (!error && data?.length) {
-      return (data as AgentPaymentMethod[]).sort(
-        (a, b) => AGENT_METHOD_KEYS.indexOf(a.method_key) - AGENT_METHOD_KEYS.indexOf(b.method_key),
-      );
+      return (data as AgentPaymentMethod[]).sort((a, b) => {
+        const ai = AGENT_METHOD_KEYS.indexOf(a.method_key as AgentPaymentMethodKey);
+        const bi = AGENT_METHOD_KEYS.indexOf(b.method_key as AgentPaymentMethodKey);
+        if (ai !== -1 && bi !== -1) return ai - bi;
+        if (ai !== -1) return -1;
+        if (bi !== -1) return 1;
+        return a.method_key.localeCompare(b.method_key);
+      });
     }
   }
   return loadFileStore().agent_payment_methods
     .filter((m) => m.agent_id === id)
-    .sort((a, b) => AGENT_METHOD_KEYS.indexOf(a.method_key) - AGENT_METHOD_KEYS.indexOf(b.method_key));
+    .sort((a, b) => {
+      const ai = AGENT_METHOD_KEYS.indexOf(a.method_key as AgentPaymentMethodKey);
+      const bi = AGENT_METHOD_KEYS.indexOf(b.method_key as AgentPaymentMethodKey);
+      if (ai !== -1 && bi !== -1) return ai - bi;
+      if (ai !== -1) return -1;
+      if (bi !== -1) return 1;
+      return a.method_key.localeCompare(b.method_key);
+    });
 }
 
 export async function removeAgentPaymentMethod(agentId: string, methodKey: string): Promise<void> {
   const id = agentId.trim();
-  const key = normalizeMethodKey(methodKey);
+  const key = normalizeAgentPaymentMethodKey(methodKey);
   if (!id || !key) return;
   if (db) {
     const { error } = await db
@@ -845,7 +963,7 @@ export async function getActiveSellNumber(): Promise<{
   numberId: string;
   allowedMethods: Record<string, boolean>;
   paymentMethods: Array<{
-    method_key: AgentPaymentMethodKey;
+    method_key: string;
     account_number: string;
     account_holder: string | null;
     barcode_url: string | null;
@@ -869,6 +987,13 @@ export async function getActiveSellNumber(): Promise<{
     fastpay: hasMethodPerms ? perms.has("method_fastpay") : true,
     creditcard: hasMethodPerms ? perms.has("method_creditcard") : true,
   };
+  const customWallets = await getBuyCustomWallets();
+  for (const w of customWallets) {
+    if (!w.enabled) continue;
+    const mid = `wallet_${w.id}`;
+    const pkey = `method_wallet_${w.id}`;
+    allowedMethods[mid] = hasMethodPerms ? perms.has(pkey) : true;
+  }
   const paymentMethodsRaw = await listAgentPaymentMethods(activeAgent.id);
   const paymentMethods = paymentMethodsRaw
     .filter((m) => !!m.account_number)
