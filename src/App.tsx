@@ -844,8 +844,8 @@ function MainContent() {
                 </div>
               </div>
 
-              <h2 className="text-2xl font-black text-center text-gray-900 mb-2">Admin Access</h2>
-              <p className="text-center text-gray-500 mb-8 font-medium">تسجيل دخول المسؤول فقط</p>
+              <h2 className="text-2xl font-black text-center text-gray-900 mb-2">{t('adminAccess')}</h2>
+              <p className="text-center text-gray-500 mb-8 font-medium">{t('adminOnlyLogin')}</p>
 
               {authError && (
                 <div className="mb-6 p-4 bg-red-50 text-red-600 rounded-xl text-sm font-bold border border-red-100 flex items-center gap-2">
@@ -868,7 +868,7 @@ function MainContent() {
                   type="password"
                   required
                   className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/20 focus:border-gray-900 outline-none transition-all"
-                  placeholder="Admin Password"
+                  placeholder={t('adminPassword')}
                   dir="ltr"
                 />
                 <button
@@ -876,7 +876,7 @@ function MainContent() {
                   disabled={isAuthLoading}
                   className="w-full bg-gray-900 text-white py-3.5 rounded-xl font-bold hover:bg-gray-800 transition-colors shadow-lg shadow-gray-900/20"
                 >
-                  {isAuthLoading ? '...' : 'Login as Admin'}
+                  {isAuthLoading ? '...' : t('loginAsAdmin')}
                 </button>
               </form>
             </>
@@ -1111,25 +1111,25 @@ function MainContent() {
       <div className="flex-1 p-4 lg:p-8 overflow-y-auto">
         <div className="max-w-5xl mx-auto">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-            <h2 className="text-2xl font-black text-gray-900">Admin Dashboard</h2>
+            <h2 className="text-2xl font-black text-gray-900">{t('adminDashboard')}</h2>
             <div className="flex bg-gray-100 p-1.5 rounded-2xl w-fit">
               <button 
                 onClick={() => setAdminTab('overview')}
                 className={`px-6 py-2 rounded-xl text-sm font-black transition-all ${adminTab === 'overview' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
               >
-                Overview
+                {t('overview')}
               </button>
               <button 
                 onClick={() => setAdminTab('agents')}
                 className={`px-6 py-2 rounded-xl text-sm font-black transition-all ${adminTab === 'agents' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
               >
-                Agents (الوكلاء)
+                {t('agentsTab')}
               </button>
               <button 
                 onClick={() => setAdminTab('admins')}
                 className={`px-6 py-2 rounded-xl text-sm font-black transition-all ${adminTab === 'admins' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
               >
-                Admins (المسؤولين)
+                {t('adminsTab')}
               </button>
             </div>
           </div>
@@ -1137,10 +1137,10 @@ function MainContent() {
           {adminTab === 'overview' ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
               <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-                <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><Settings className="w-5 h-5 text-gray-500" /> System Settings</h3>
+                <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><Settings className="w-5 h-5 text-gray-500" /> {t('systemSettings')}</h3>
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <span className="font-medium text-gray-700">Maintenance Mode</span>
+                    <span className="font-medium text-gray-700">{t('maintenanceMode')}</span>
                     <button 
                       onClick={() => toggleSetting('maintenance_mode')}
                       className={`w-12 h-6 rounded-full relative transition-colors ${appSettings.maintenance_mode ? 'bg-red-500' : 'bg-gray-200'}`}
@@ -1149,7 +1149,7 @@ function MainContent() {
                     </button>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="font-medium text-gray-700">Buy Section (Coming Soon)</span>
+                    <span className="font-medium text-gray-700">{t('buyComingSoon')}</span>
                     <button 
                       onClick={() => toggleSetting('buy_coming_soon')}
                       className={`w-12 h-6 rounded-full relative transition-colors ${appSettings.buy_coming_soon ? 'bg-red-500' : 'bg-gray-200'}`}
@@ -1158,7 +1158,7 @@ function MainContent() {
                     </button>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="font-medium text-gray-700">Sell Section (Coming Soon)</span>
+                    <span className="font-medium text-gray-700">{t('sellComingSoon')}</span>
                     <button 
                       onClick={() => toggleSetting('sell_coming_soon')}
                       className={`w-12 h-6 rounded-full relative transition-colors ${appSettings.sell_coming_soon ? 'bg-red-500' : 'bg-gray-200'}`}
@@ -1167,10 +1167,10 @@ function MainContent() {
                     </button>
                   </div>
                   <div className="pt-2 border-t border-gray-100">
-                    <p className="text-xs font-bold text-gray-500 mb-3">Payment Methods Visibility</p>
+                    <p className="text-xs font-bold text-gray-500 mb-3">{t('paymentMethodsVisibility')}</p>
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="font-medium text-gray-700">Zain Cash</span>
+                        <span className="font-medium text-gray-700">{t('zainCash')}</span>
                         <button
                           onClick={() => toggleSetting('method_zaincash_enabled')}
                           className={`w-12 h-6 rounded-full relative transition-colors ${appSettings.method_zaincash_enabled ? 'bg-red-500' : 'bg-gray-200'}`}
@@ -1179,7 +1179,7 @@ function MainContent() {
                         </button>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="font-medium text-gray-700">SuperQi</span>
+                        <span className="font-medium text-gray-700">{t('superQi')}</span>
                         <button
                           onClick={() => toggleSetting('method_superqi_enabled')}
                           className={`w-12 h-6 rounded-full relative transition-colors ${appSettings.method_superqi_enabled ? 'bg-red-500' : 'bg-gray-200'}`}
@@ -1188,7 +1188,7 @@ function MainContent() {
                         </button>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="font-medium text-gray-700">First Iraqi Bank (FIB)</span>
+                        <span className="font-medium text-gray-700">{t('firstBank')} (FIB)</span>
                         <button
                           onClick={() => toggleSetting('method_firstbank_enabled')}
                           className={`w-12 h-6 rounded-full relative transition-colors ${appSettings.method_firstbank_enabled ? 'bg-red-500' : 'bg-gray-200'}`}
@@ -1197,7 +1197,7 @@ function MainContent() {
                         </button>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="font-medium text-gray-700">FastPay</span>
+                        <span className="font-medium text-gray-700">{t('fastPay')}</span>
                         <button
                           onClick={() => toggleSetting('method_fastpay_enabled')}
                           className={`w-12 h-6 rounded-full relative transition-colors ${appSettings.method_fastpay_enabled ? 'bg-red-500' : 'bg-gray-200'}`}
@@ -1206,7 +1206,7 @@ function MainContent() {
                         </button>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="font-medium text-gray-700">Credit Card</span>
+                        <span className="font-medium text-gray-700">{t('creditCard')}</span>
                         <button
                           onClick={() => toggleSetting('method_creditcard_enabled')}
                           className={`w-12 h-6 rounded-full relative transition-colors ${appSettings.method_creditcard_enabled ? 'bg-red-500' : 'bg-gray-200'}`}
@@ -1220,7 +1220,7 @@ function MainContent() {
               </div>
               
               <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-                <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><Activity className="w-5 h-5 text-gray-500" /> CRM Overview</h3>
+                <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><Activity className="w-5 h-5 text-gray-500" /> {t('crmOverview')}</h3>
                 <div className="space-y-4">
                   <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
                     <span className="text-gray-600 font-medium">Total Users</span>
@@ -1241,11 +1241,11 @@ function MainContent() {
             <div className="space-y-6">
               {/* Add Agent Form */}
               <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-                <h3 className="font-bold text-gray-900 mb-4">Add New Agent (وكيل)</h3>
+                <h3 className="font-bold text-gray-900 mb-4">{t('addNewAgent')}</h3>
                 <form onSubmit={handleAddAgent} className="flex flex-col sm:flex-row gap-3">
-                  <input name="agent_name" required placeholder="Agent Name" className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/10 outline-none transition-all" />
-                  <input name="telegram_id" required placeholder="Telegram ID" className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/10 outline-none transition-all" />
-                  <button type="submit" className="bg-gray-900 text-white px-8 py-2.5 rounded-xl font-bold hover:bg-black transition-all">Add Agent</button>
+                  <input name="agent_name" required placeholder={t('agentName')} className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/10 outline-none transition-all" />
+                  <input name="telegram_id" required placeholder={t('telegramId')} className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/10 outline-none transition-all" />
+                  <button type="submit" className="bg-gray-900 text-white px-8 py-2.5 rounded-xl font-bold hover:bg-black transition-all">{t('addAgent')}</button>
                 </form>
               </div>
 
@@ -1268,7 +1268,7 @@ function MainContent() {
                             onClick={() => handleToggleAgent(agent.id, agent.is_active)}
                             className={`px-4 py-1.5 rounded-xl text-xs font-black transition-all ${agent.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
                           >
-                            {agent.is_active ? 'Active' : 'Activate'}
+                            {agent.is_active ? t('active') : t('activate')}
                           </button>
                           <button onClick={() => handleDeleteAgent(agent.id)} className="p-2 text-gray-300 hover:text-red-600 transition-colors">
                             <XCircle className="w-5 h-5" />
@@ -1278,7 +1278,7 @@ function MainContent() {
                     
                     <div className="p-6 space-y-5">
                       <div className="flex items-center justify-between">
-                        <h5 className="text-sm font-black text-gray-800">Phone Numbers (أرقام الجوال)</h5>
+                        <h5 className="text-sm font-black text-gray-800">{t('phoneNumbers')}</h5>
                       </div>
                       
                       <div className="space-y-4">
@@ -1289,11 +1289,11 @@ function MainContent() {
                                   <span className="w-6 h-6 rounded-lg bg-white border border-gray-200 flex items-center justify-center text-[10px] font-black text-gray-400">{idx + 1}</span>
                                   <span className="font-mono font-black text-gray-900">{num.phone_number}</span>
                                   {num.is_exhausted && (
-                                    <span className="bg-red-100 text-red-600 px-2 py-0.5 rounded-full text-[10px] font-black uppercase">Exhausted</span>
+                                    <span className="bg-red-100 text-red-600 px-2 py-0.5 rounded-full text-[10px] font-black uppercase">{t('exhausted')}</span>
                                   )}
                                 </div>
                                 <div className="flex items-center gap-3">
-                                   <button onClick={() => handleResetNumber(num.id)} className="text-[10px] font-black text-red-600 hover:underline">Reset Balance</button>
+                                   <button onClick={() => handleResetNumber(num.id)} className="text-[10px] font-black text-red-600 hover:underline">{t('resetBalance')}</button>
                                    <button onClick={() => handleDeleteNumber(num.id)} className="p-1.5 text-gray-300 hover:text-red-500 transition-colors"><XCircle className="w-4 h-4" /></button>
                                 </div>
                              </div>
@@ -1301,7 +1301,7 @@ function MainContent() {
                              {/* Progress Bar */}
                              <div className="space-y-2">
                                 <div className="flex justify-between text-[10px] font-black">
-                                   <span className="text-gray-500 uppercase tracking-tighter">Usage Progress</span>
+                                   <span className="text-gray-500 uppercase tracking-tighter">{t('usageProgress')}</span>
                                    <span className={num.balance >= 300000 ? 'text-red-600' : 'text-gray-900'}>{formatLatinDigits(num.balance)} / 300,000 IQD</span>
                                 </div>
                                 <div className="w-full h-2.5 bg-gray-200 rounded-full overflow-hidden border border-gray-100">
@@ -1316,9 +1316,9 @@ function MainContent() {
                         
                         {/* Add Number Row */}
                         <form onSubmit={(e) => handleAddNumber(agent.id, e)} className="flex gap-2 pt-4 border-t border-gray-100">
-                           <input name="phone" required placeholder="Phone Number (077...)" className="flex-1 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-red-500/10 outline-none" />
+                           <input name="phone" required placeholder={t('phoneNumberWithHint')} className="flex-1 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-red-500/10 outline-none" />
                            <input name="order" type="number" defaultValue={agent.numbers.length + 1} className="w-16 px-2 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-center focus:ring-2 focus:ring-red-500/10 outline-none" />
-                           <button type="submit" className="bg-gray-100 text-gray-900 px-5 py-2.5 rounded-xl text-xs font-black hover:bg-gray-200 transition-all">+ Add Number</button>
+                           <button type="submit" className="bg-gray-100 text-gray-900 px-5 py-2.5 rounded-xl text-xs font-black hover:bg-gray-200 transition-all">+ {t('addNumber')}</button>
                         </form>
                       </div>
                     </div>
@@ -1330,7 +1330,7 @@ function MainContent() {
                     <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
                        <User className="w-8 h-8 text-gray-300" />
                     </div>
-                    <p className="text-gray-400 font-bold">No agents added yet.</p>
+                    <p className="text-gray-400 font-bold">{t('noAgentsYet')}</p>
                   </div>
                 )}
               </div>
@@ -1338,15 +1338,15 @@ function MainContent() {
           ) : (
             <div className="space-y-6 pb-12">
               <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-                <h3 className="font-bold text-gray-900 mb-4">Add New Admin (مسؤول)</h3>
+                <h3 className="font-bold text-gray-900 mb-4">{t('addNewAdmin')}</h3>
                 <form onSubmit={handleAddAdmin} className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                  <input name="admin_name" required placeholder="Admin Name" className="px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/10 outline-none transition-all" />
-                  <input name="admin_telegram_id" required placeholder="Telegram ID" className="px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/10 outline-none transition-all" />
-                  <input name="admin_email" type="email" placeholder="Email (optional)" className="px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/10 outline-none transition-all" />
-                  <button type="submit" className="bg-gray-900 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-black transition-all">Add Admin</button>
+                  <input name="admin_name" required placeholder={t('adminName')} className="px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/10 outline-none transition-all" />
+                  <input name="admin_telegram_id" required placeholder={t('telegramId')} className="px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/10 outline-none transition-all" />
+                  <input name="admin_email" type="email" placeholder={t('emailOptional')} className="px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/10 outline-none transition-all" />
+                  <button type="submit" className="bg-gray-900 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-black transition-all">{t('addAdmin')}</button>
                 </form>
                 <p className="text-xs text-gray-500 mt-3">
-                  أول مسؤول يمكن إضافته من البوت بالأمر:
+                  {t('firstAdminBotHint')}
                   <code className="ml-1">ADD_ADMIN [ID] [NAME] | [EMAIL]</code>
                 </p>
               </div>
@@ -1363,7 +1363,7 @@ function MainContent() {
                         onClick={() => handleDeleteAdmin(a.id)}
                         className="text-xs font-bold text-red-600 hover:text-red-700"
                       >
-                        Delete
+                        {t('delete')}
                       </button>
                     </div>
                     <div className="mt-4 flex flex-col sm:flex-row gap-2">
@@ -1373,13 +1373,13 @@ function MainContent() {
                         className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-red-500/10 outline-none"
                         onBlur={(e) => handleUpdateAdminEmail(a.id, e.target.value)}
                       />
-                      <span className="text-xs text-gray-500 self-center">Email (update on blur)</span>
+                      <span className="text-xs text-gray-500 self-center">{t('emailUpdateOnBlur')}</span>
                     </div>
                   </div>
                 ))}
                 {adminAdmins.length === 0 && (
                   <div className="py-14 text-center bg-white rounded-3xl border border-dashed border-gray-200">
-                    <p className="text-gray-400 font-bold">No admins yet.</p>
+                    <p className="text-gray-400 font-bold">{t('noAdminsYet')}</p>
                   </div>
                 )}
               </div>
