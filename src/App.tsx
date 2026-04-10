@@ -69,10 +69,20 @@ type Agent = {
   numbers: AgentNumber[];
 };
 
+type AdminRow = {
+  id: string;
+  telegram_id: number;
+  name: string;
+  email?: string | null;
+  permissions: string[];
+  created_at: string;
+};
+
 type ActiveAgentNumber = {
   phoneNumber: string;
   agentId: string;
   numberId: string;
+  allowedMethods?: Record<string, boolean>;
 };
 
 /** مسار الخادم فقط — حدّث الملف على السيرفر (مثل public/saraf-iq-debug.apk) دون بوت */
@@ -145,7 +155,8 @@ function MainContent() {
   const [activeAgentNumber, setActiveAgentNumber] = useState<ActiveAgentNumber | null>(null);
   const [adminAgents, setAdminAgents] = useState<Agent[]>([]);
   const [isAdminAgentsLoading, setIsAdminAgentsLoading] = useState(false);
-  const [adminTab, setAdminTab] = useState<'overview' | 'agents'>('overview');
+  const [adminTab, setAdminTab] = useState<'overview' | 'agents' | 'admins'>('overview');
+  const [adminAdmins, setAdminAdmins] = useState<AdminRow[]>([]);
 
   const statusUi = useCallback((status: string) => {
     switch (status) {
@@ -295,6 +306,19 @@ function MainContent() {
     }
   }, [isAdmin]);
 
+  const fetchAdminAdmins = useCallback(async () => {
+    if (!isAdmin) return;
+    try {
+      const res = await fetch(apiUrl('/api/admin/admins'));
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) setAdminAdmins(data);
+      }
+    } catch (e) {
+      console.error('fetchAdminAdmins:', e);
+    }
+  }, [isAdmin]);
+
   const fetchTransactions = useCallback(async () => {
     if (!clientId) return;
     try {
@@ -385,6 +409,7 @@ function MainContent() {
     ];
     if (isAdmin && (currentView === 'admin' || currentView === 'login')) {
       initial.push(fetchAdminAgents());
+      initial.push(fetchAdminAdmins());
     }
     void Promise.all(initial);
 
@@ -393,7 +418,7 @@ function MainContent() {
       void Promise.all([fetchTransactions(), fetchSettings(), fetchActiveNumber()]);
     }, pollMs);
     return () => window.clearInterval(tmr);
-  }, [clientId, isAdmin, currentView, fetchSettings, fetchTransactions, fetchOffers, fetchSiteProfile, fetchActiveNumber, fetchAdminAgents]);
+  }, [clientId, isAdmin, currentView, fetchSettings, fetchTransactions, fetchOffers, fetchSiteProfile, fetchActiveNumber, fetchAdminAgents, fetchAdminAdmins]);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
@@ -787,6 +812,11 @@ function MainContent() {
     if (m.id === 'fastpay') return appSettings.method_fastpay_enabled;
     if (m.id === 'creditcard') return appSettings.method_creditcard_enabled;
     return true;
+  }).filter((m) => {
+    const allowed = activeAgentNumber?.allowedMethods;
+    if (!allowed) return true;
+    if (typeof allowed[m.id] === 'boolean') return allowed[m.id];
+    return true;
   });
 
   useEffect(() => {
@@ -988,6 +1018,55 @@ function MainContent() {
       }
     };
 
+    const handleAddAdmin = async (e: React.FormEvent) => {
+      e.preventDefault();
+      const form = e.target as HTMLFormElement;
+      const nameElement = form.elements.namedItem('admin_name') as HTMLInputElement;
+      const tidElement = form.elements.namedItem('admin_telegram_id') as HTMLInputElement;
+      const emailElement = form.elements.namedItem('admin_email') as HTMLInputElement;
+      if (!nameElement || !tidElement) return;
+      try {
+        const res = await fetch(apiUrl('/api/admin/admins'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: nameElement.value,
+            telegram_id: tidElement.value,
+            email: emailElement?.value || null,
+          }),
+        });
+        if (res.ok) {
+          fetchAdminAdmins();
+          form.reset();
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    const handleUpdateAdminEmail = async (id: string, email: string) => {
+      try {
+        await fetch(apiUrl(`/api/admin/admins/${id}`), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        });
+        fetchAdminAdmins();
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    const handleDeleteAdmin = async (id: string) => {
+      if (!window.confirm('Delete this admin?')) return;
+      try {
+        await fetch(apiUrl(`/api/admin/admins/${id}`), { method: 'DELETE' });
+        fetchAdminAdmins();
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
     return (
       <div className="flex-1 p-4 lg:p-8 overflow-y-auto">
         <div className="max-w-5xl mx-auto">
@@ -1005,6 +1084,12 @@ function MainContent() {
                 className={`px-6 py-2 rounded-xl text-sm font-black transition-all ${adminTab === 'agents' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
               >
                 Agents (الوكلاء)
+              </button>
+              <button 
+                onClick={() => setAdminTab('admins')}
+                className={`px-6 py-2 rounded-xl text-sm font-black transition-all ${adminTab === 'admins' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                Admins (المسؤولين)
               </button>
             </div>
           </div>
@@ -1112,7 +1197,7 @@ function MainContent() {
                 </div>
               </div>
             </div>
-          ) : (
+          ) : adminTab === 'agents' ? (
             <div className="space-y-6">
               {/* Add Agent Form */}
               <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
@@ -1206,6 +1291,55 @@ function MainContent() {
                        <User className="w-8 h-8 text-gray-300" />
                     </div>
                     <p className="text-gray-400 font-bold">No agents added yet.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-6 pb-12">
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+                <h3 className="font-bold text-gray-900 mb-4">Add New Admin (مسؤول)</h3>
+                <form onSubmit={handleAddAdmin} className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                  <input name="admin_name" required placeholder="Admin Name" className="px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/10 outline-none transition-all" />
+                  <input name="admin_telegram_id" required placeholder="Telegram ID" className="px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/10 outline-none transition-all" />
+                  <input name="admin_email" type="email" placeholder="Email (optional)" className="px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/10 outline-none transition-all" />
+                  <button type="submit" className="bg-gray-900 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-black transition-all">Add Admin</button>
+                </form>
+                <p className="text-xs text-gray-500 mt-3">
+                  أول مسؤول يمكن إضافته من البوت بالأمر:
+                  <code className="ml-1">ADD_ADMIN [ID] [NAME] | [EMAIL]</code>
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4">
+                {adminAdmins.map((a) => (
+                  <div key={a.id} className="bg-white rounded-2xl border border-gray-100 p-5">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="font-black text-gray-900">{a.name}</p>
+                        <p className="text-xs text-gray-500">Telegram ID: {a.telegram_id}</p>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteAdmin(a.id)}
+                        className="text-xs font-bold text-red-600 hover:text-red-700"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                    <div className="mt-4 flex flex-col sm:flex-row gap-2">
+                      <input
+                        defaultValue={a.email || ''}
+                        placeholder="admin@email.com"
+                        className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-red-500/10 outline-none"
+                        onBlur={(e) => handleUpdateAdminEmail(a.id, e.target.value)}
+                      />
+                      <span className="text-xs text-gray-500 self-center">Email (update on blur)</span>
+                    </div>
+                  </div>
+                ))}
+                {adminAdmins.length === 0 && (
+                  <div className="py-14 text-center bg-white rounded-3xl border border-dashed border-gray-200">
+                    <p className="text-gray-400 font-bold">No admins yet.</p>
                   </div>
                 )}
               </div>

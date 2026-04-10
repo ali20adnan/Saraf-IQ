@@ -28,7 +28,7 @@ export type Agent = {
   telegram_id: number;
   name: string;
   is_active: boolean;
-  permissions: string[]; // ['add_number', 'reset_balance']
+  permissions: string[]; // ['add_number', 'reset_balance', 'method_zaincash', ...]
   created_at: string;
 };
 
@@ -36,6 +36,7 @@ export type Admin = {
   id: string;
   telegram_id: number;
   name: string;
+  email?: string | null;
   permissions: string[]; // ['manage_agents', 'site_settings', 'edit_links', 'manage_admins', 'view_stats']
   created_at: string;
 };
@@ -267,10 +268,19 @@ function loadFileStore(): FileStore {
         parsed.app_settings && typeof parsed.app_settings === "object"
           ? { ...defaultAppSettings, ...parsed.app_settings }
           : { ...defaultAppSettings },
-      agents: Array.isArray(parsed.agents) ? parsed.agents.map(a => ({ ...a, permissions: Array.isArray(a.permissions) ? a.permissions : ['add_number', 'reset_balance'] })) : [],
+      agents: Array.isArray(parsed.agents)
+        ? parsed.agents.map(a => ({
+            ...a,
+            permissions: Array.isArray(a.permissions)
+              ? a.permissions
+              : ['add_number', 'reset_balance', 'method_zaincash', 'method_superqi', 'method_firstbank', 'method_fastpay', 'method_creditcard'],
+          }))
+        : [],
       agent_numbers: Array.isArray(parsed.agent_numbers) ? parsed.agent_numbers : [],
       agent_payment_methods: Array.isArray(parsed.agent_payment_methods) ? parsed.agent_payment_methods : [],
-      admins: Array.isArray(parsed.admins) ? parsed.admins : [],
+      admins: Array.isArray(parsed.admins)
+        ? parsed.admins.map((a) => ({ ...a, email: typeof a.email === "string" ? a.email : null }))
+        : [],
       bot_users: Array.isArray(parsed.bot_users) ? parsed.bot_users : [],
       push_tokens: Array.isArray(parsed.push_tokens) ? parsed.push_tokens : [],
     };
@@ -633,7 +643,7 @@ export async function createAgent(input: { telegram_id: number; name: string }):
     telegram_id: input.telegram_id,
     name: input.name,
     is_active: false,
-    permissions: ['add_number', 'reset_balance'],
+    permissions: ['add_number', 'reset_balance', 'method_zaincash', 'method_superqi', 'method_firstbank', 'method_fastpay', 'method_creditcard'],
     created_at: new Date().toISOString(),
   };
   if (db) {
@@ -833,7 +843,7 @@ export async function getActiveSellNumber(): Promise<{
   phoneNumber: string;
   agentId: string;
   numberId: string;
-  payoutMethods: Record<string, { accountNumber: string; accountHolder?: string; barcodeUrl?: string }>;
+  allowedMethods: Record<string, boolean>;
 } | null> {
   const agents = await listAgents();
   const activeAgent = agents.find(a => a.is_active);
@@ -844,21 +854,21 @@ export async function getActiveSellNumber(): Promise<{
   
   if (!activeNum) return null;
   
-  const configured = await listAgentPaymentMethods(activeAgent.id);
-  const payoutMethods: Record<string, { accountNumber: string; accountHolder?: string; barcodeUrl?: string }> = {};
-  for (const m of configured) {
-    payoutMethods[m.method_key] = {
-      accountNumber: m.account_number,
-      ...(m.account_holder ? { accountHolder: m.account_holder } : {}),
-      ...(m.barcode_url ? { barcodeUrl: m.barcode_url } : {}),
-    };
-  }
+  const perms = new Set(activeAgent.permissions || []);
+  const hasMethodPerms = [...perms].some((p) => p.startsWith("method_"));
+  const allowedMethods: Record<string, boolean> = {
+    zaincash: hasMethodPerms ? perms.has("method_zaincash") : true,
+    superqi: hasMethodPerms ? perms.has("method_superqi") : true,
+    firstbank: hasMethodPerms ? perms.has("method_firstbank") : true,
+    fastpay: hasMethodPerms ? perms.has("method_fastpay") : true,
+    creditcard: hasMethodPerms ? perms.has("method_creditcard") : true,
+  };
 
   return {
     phoneNumber: activeNum.phone_number,
     agentId: activeAgent.id,
     numberId: activeNum.id,
-    payoutMethods,
+    allowedMethods,
   };
 }
 
@@ -901,25 +911,62 @@ export async function toggleAgentPermission(agentId: string, permission: string)
 export async function listAdmins(): Promise<Admin[]> {
   if (db) {
     const { data, error } = await db.from("admins").select("*").order("created_at", { ascending: false });
-    if (!error && data?.length) return data as Admin[];
+    if (!error && data?.length) {
+      return (data as Admin[]).map((a) => ({ ...a, email: typeof a.email === "string" ? a.email : null }));
+    }
   }
   return loadFileStore().admins;
 }
 
-export async function createAdmin(input: { telegram_id: number; name: string }): Promise<Admin> {
+export async function createAdmin(input: { telegram_id: number; name: string; email?: string | null }): Promise<Admin> {
   const id = globalThis.crypto?.randomUUID?.() ?? `admin-${Date.now()}`;
   const row: Admin = {
     id,
     telegram_id: input.telegram_id,
     name: input.name,
+    email: input.email?.trim() || null,
     permissions: ['manage_agents', 'site_settings', 'edit_links', 'view_stats'], // Default
     created_at: new Date().toISOString(),
   };
-  if (db) await db.from("admins").insert([row]);
+  if (db) {
+    const { error } = await db.from("admins").insert([row]);
+    if (error) {
+      // توافق مع مخطط قديم لا يحتوي عمود email
+      const { error: e2 } = await db.from("admins").insert([
+        {
+          id: row.id,
+          telegram_id: row.telegram_id,
+          name: row.name,
+          permissions: row.permissions,
+          created_at: row.created_at,
+        },
+      ]);
+      if (e2) console.error("createAdmin:", e2);
+    }
+  }
   const st = loadFileStore();
   st.admins.unshift(row);
   saveFileStore(st);
   return row;
+}
+
+export async function updateAdmin(adminId: string, patch: Partial<Pick<Admin, "name" | "email">>): Promise<void> {
+  const next: Record<string, string | null> = {};
+  if (typeof patch.name === "string") next.name = patch.name.trim();
+  if (typeof patch.email === "string") next.email = patch.email.trim() || null;
+  else if (patch.email === null) next.email = null;
+  if (Object.keys(next).length === 0) return;
+
+  if (db) {
+    const { error } = await db.from("admins").update(next).eq("id", adminId);
+    if (error) console.error("updateAdmin:", error);
+  }
+  const st = loadFileStore();
+  const ix = st.admins.findIndex((a) => a.id === adminId);
+  if (ix !== -1) {
+    st.admins[ix] = { ...st.admins[ix], ...next } as Admin;
+    saveFileStore(st);
+  }
 }
 
 export async function toggleAdminPermission(adminId: string, permission: string): Promise<void> {

@@ -423,7 +423,7 @@ async function startServer() {
     const sendAdminManagementMenu = async (chatId: number, messageId: number) => {
       const admins = await store.listAdmins();
       let msg = `🛡️ <b>إدارة المسؤولين (Admins)</b>\n\n`;
-      msg += `يمكنك إضافة مسؤولين آخرين للتحكم في الموقع.\nلمنح صلاحيات كاملة لشخص، أرسل:\n<code>ADD_ADMIN [ID] [NAME]</code>\n\n`;
+      msg += `يمكنك إضافة مسؤولين آخرين للتحكم في الموقع.\nلمنح صلاحيات كاملة لشخص، أرسل:\n<code>ADD_ADMIN [ID] [NAME] | [EMAIL]</code>\n\n`;
       
       const buttons = admins.map(a => ([{ text: `👤 ${a.name}`, callback_data: `amv_${a.id}` }]));
       buttons.push([{ text: "➕ إضافة مسؤول (تعليمات)", callback_data: "amh" }]);
@@ -438,7 +438,11 @@ async function startServer() {
       if (!a) return;
 
       const p = (key: string) => a.permissions.includes(key) ? "✅" : "⚪️";
-      const msg = `🛡️ <b>صلاحيات المسؤول: ${a.name}</b>\nالمعرف: <code>${a.telegram_id}</code>\n\nاختر الصلاحية للتبديل:`;
+      const msg =
+        `🛡️ <b>صلاحيات المسؤول: ${a.name}</b>\n` +
+        `المعرف: <code>${a.telegram_id}</code>\n` +
+        `البريد: <code>${escapeHtml(a.email || "—")}</code>\n\n` +
+        `اختر الصلاحية للتبديل:`;
       const reply_markup = {
         inline_keyboard: [
           [{ text: `${p('manage_agents')} إدارة الوكلاء`, callback_data: `adp_${a.id}_manage_agents` }],
@@ -464,6 +468,11 @@ async function startServer() {
         inline_keyboard: [
           [{ text: `${p('add_number')} إضافة أرقام جديدة`, callback_data: `agp_${a.id}_add_number` }],
           [{ text: `${p('reset_balance')} تصفير رصيد الأرقام`, callback_data: `agp_${a.id}_reset_balance` }],
+          [{ text: `${p('method_zaincash')} طريقة زين كاش`, callback_data: `agp_${a.id}_method_zaincash` }],
+          [{ text: `${p('method_superqi')} طريقة سوبر كي`, callback_data: `agp_${a.id}_method_superqi` }],
+          [{ text: `${p('method_firstbank')} طريقة FIB`, callback_data: `agp_${a.id}_method_firstbank` }],
+          [{ text: `${p('method_fastpay')} طريقة فاست بي`, callback_data: `agp_${a.id}_method_fastpay` }],
+          [{ text: `${p('method_creditcard')} طريقة البطاقة`, callback_data: `agp_${a.id}_method_creditcard` }],
           [{ text: "🔙 رجوع", callback_data: `ava_${a.id}` }],
         ]
       };
@@ -569,13 +578,22 @@ async function startServer() {
         // Add Admin (Super Admin only)
         if (text.startsWith("ADD_ADMIN ")) {
           if (!isAdmin) return;
-          const parts = text.split(" ");
-          if (parts.length < 3) return bot?.sendMessage(msg.chat.id, "⚠️ استخدام خاطئ. أرسل:\n<code>ADD_ADMIN [ID] [NAME]</code>", { parse_mode: "HTML" });
-          const targetId = parseInt(parts[1]);
-          const name = parts.slice(2).join(" ");
+          const raw = text.replace("ADD_ADMIN ", "").trim();
+          const [left, emailRaw] = raw.split("|").map((x) => x.trim());
+          const leftParts = left.split(/\s+/);
+          if (leftParts.length < 2) {
+            return bot?.sendMessage(msg.chat.id, "⚠️ استخدام خاطئ. أرسل:\n<code>ADD_ADMIN [ID] [NAME] | [EMAIL]</code>", { parse_mode: "HTML" });
+          }
+          const targetId = parseInt(leftParts[0]);
+          const name = leftParts.slice(1).join(" ");
+          const email = emailRaw || null;
           if (isNaN(targetId)) return bot?.sendMessage(msg.chat.id, "⚠️ معرف (ID) غير صالح.");
-          await store.createAdmin({ telegram_id: targetId, name });
-          return bot?.sendMessage(msg.chat.id, `✅ تم إضافة المسؤول <b>${name}</b> بنجاح.`, { parse_mode: "HTML" });
+          await store.createAdmin({ telegram_id: targetId, name, email });
+          return bot?.sendMessage(
+            msg.chat.id,
+            `✅ تم إضافة المسؤول <b>${name}</b> بنجاح.\nالبريد: <code>${escapeHtml(email || "—")}</code>`,
+            { parse_mode: "HTML" },
+          );
         }
 
         // Add Agent (Admins only)
@@ -1033,7 +1051,7 @@ async function startServer() {
 
           if (data === "admin_mgmt_list") return sendAdminManagementMenu(chatId, messageId);
           if (data === "amh") {
-            await bot?.sendMessage(chatId, "🛡️ أرسل: <code>ADD_ADMIN [ID] [NAME]</code>", { parse_mode: "HTML" });
+            await bot?.sendMessage(chatId, "🛡️ أرسل: <code>ADD_ADMIN [ID] [NAME] | [EMAIL]</code>", { parse_mode: "HTML" });
             return answer();
           }
           if (data.startsWith("amv_")) {
@@ -1471,6 +1489,63 @@ async function startServer() {
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Failed to list agents" });
+    }
+  });
+
+  app.get("/api/admin/admins", async (_req, res) => {
+    try {
+      const admins = await store.listAdmins();
+      res.json(admins);
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to list admins" });
+    }
+  });
+
+  app.post("/api/admin/admins", async (req, res) => {
+    try {
+      const { telegram_id, name, email } = req.body as {
+        telegram_id?: number | string;
+        name?: string;
+        email?: string;
+      };
+      if (!telegram_id || !name) {
+        return res.status(400).json({ error: "telegram_id and name required" });
+      }
+      const row = await store.createAdmin({
+        telegram_id: Number(telegram_id),
+        name: String(name),
+        email: typeof email === "string" ? email : null,
+      });
+      res.json(row);
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to create admin" });
+    }
+  });
+
+  app.patch("/api/admin/admins/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, email } = req.body as { name?: string; email?: string | null };
+      await store.updateAdmin(id, {
+        ...(typeof name === "string" ? { name } : {}),
+        ...(typeof email === "string" || email === null ? { email } : {}),
+      });
+      res.json({ success: true });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to update admin" });
+    }
+  });
+
+  app.delete("/api/admin/admins/:id", async (req, res) => {
+    try {
+      await store.deleteAdmin(req.params.id);
+      res.json({ success: true });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to delete admin" });
     }
   });
 
