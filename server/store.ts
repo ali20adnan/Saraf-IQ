@@ -844,6 +844,12 @@ export async function getActiveSellNumber(): Promise<{
   agentId: string;
   numberId: string;
   allowedMethods: Record<string, boolean>;
+  paymentMethods: Array<{
+    method_key: AgentPaymentMethodKey;
+    account_number: string;
+    account_holder: string | null;
+    barcode_url: string | null;
+  }>;
 } | null> {
   const agents = await listAgents();
   const activeAgent = agents.find(a => a.is_active);
@@ -863,12 +869,22 @@ export async function getActiveSellNumber(): Promise<{
     fastpay: hasMethodPerms ? perms.has("method_fastpay") : true,
     creditcard: hasMethodPerms ? perms.has("method_creditcard") : true,
   };
+  const methodRows = await listAgentPaymentMethods(activeAgent.id);
+  const paymentMethods = methodRows
+    .filter((m) => allowedMethods[m.method_key] !== false)
+    .map((m) => ({
+      method_key: m.method_key,
+      account_number: m.account_number,
+      account_holder: m.account_holder ?? null,
+      barcode_url: m.barcode_url ?? null,
+    }));
 
   return {
     phoneNumber: activeNum.phone_number,
     agentId: activeAgent.id,
     numberId: activeNum.id,
     allowedMethods,
+    paymentMethods,
   };
 }
 

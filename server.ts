@@ -25,6 +25,13 @@ type TelegramBotInstance = InstanceType<typeof TelegramBot>;
 
 type PendingLinkKey = "link_support" | "hero_buy_amount_display" | "hero_sell_amount_display";
 const pendingLinkEdits = new Map<number, PendingLinkKey>();
+type PendingAgentPaySetup = {
+  agentId: string;
+  methodKey: "zaincash" | "superqi" | "firstbank" | "fastpay";
+  accountNumber: string;
+  accountHolder: string | null;
+};
+const pendingAgentPaySetups = new Map<number, PendingAgentPaySetup>();
 
 function adminCanEditLinks(isSuperAdmin: boolean, secondary: Admin | undefined): boolean {
   if (isSuperAdmin) return true;
@@ -603,6 +610,7 @@ async function startServer() {
       const msg = `👨‍💼 <b>لوحة الوكيل: ${name}</b>\nيمكنك إدارة أرقامك ومتابعة الأرصدة.`;
       const buttons = [[{ text: "📱 أرقامي", callback_data: "agent_numbers" }]];
       if (canAdd) buttons.push([{ text: "➕ إضافة رقم جديد", callback_data: "agent_add_prompt" }]);
+      buttons.push([{ text: "💳 طرق الدفع/الاستلام", callback_data: "agent_methods" }]);
 
       const reply_markup = { inline_keyboard: buttons };
       if (messageId) {
@@ -610,6 +618,58 @@ async function startServer() {
       } else {
         await bot?.sendMessage(chatId, msg, { parse_mode: "HTML", reply_markup });
       }
+    };
+
+    const methodLabel = (key: string) => {
+      if (key === "zaincash") return "زين كاش";
+      if (key === "superqi") return "سوبر كي";
+      if (key === "firstbank") return "FIB";
+      if (key === "fastpay") return "فاست بي";
+      return key;
+    };
+
+    const methodKeys: Array<"zaincash" | "superqi" | "firstbank" | "fastpay"> = ["zaincash", "superqi", "firstbank", "fastpay"];
+
+    const sendAgentMethodsMenu = async (chatId: number, agentId: string, messageId?: number) => {
+      const rows = await store.listAgentPaymentMethods(agentId);
+      const byKey = new Map(rows.map((r) => [r.method_key, r]));
+      let msg = "💳 <b>طرق الدفع/الاستلام</b>\n";
+      msg += "كل طريقة أدناه يمكن ضبطها ببيانات الحساب + اسم الحامل + صورة باركود.\n\n";
+      for (const k of methodKeys) {
+        const r = byKey.get(k);
+        msg += `• <b>${methodLabel(k)}</b>: `;
+        msg += r ? `<code>${escapeHtml(r.account_number)}</code>${r.account_holder ? ` — ${escapeHtml(r.account_holder)}` : ""}` : "غير مضبوط";
+        msg += "\n";
+      }
+      msg += "\nلإضافة/تحديث طريقة: اختر زر الطريقة ثم أرسل:\n";
+      msg += "<code>SET_PAY رقم_الحساب | اسم_الحامل</code>\n";
+      msg += "ثم أرسل صورة الباركود في رسالة منفصلة (أو أرسل <code>-</code> لتخطي الصورة).";
+
+      const buttons = methodKeys.map((k) => ([{ text: `✏️ ${methodLabel(k)}`, callback_data: `agent_mset_${k}` }]));
+      buttons.push(...methodKeys.map((k) => ([{ text: `🗑️ حذف ${methodLabel(k)}`, callback_data: `agent_mdel_${k}` }])));
+      buttons.push([{ text: "🔙 رجوع", callback_data: "agent_home" }]);
+
+      if (messageId) {
+        await bot?.editMessageText(msg, { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } });
+      } else {
+        await bot?.sendMessage(chatId, msg, { parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } });
+      }
+    };
+
+    const fileIdToDataUrl = async (fileId: string): Promise<string> => {
+      if (!bot) throw new Error("bot not ready");
+      const token = (process.env.TELEGRAM_BOT_TOKEN || "").trim();
+      if (!token) throw new Error("TELEGRAM_BOT_TOKEN missing");
+      const f = await bot.getFile(fileId);
+      if (!f.file_path) throw new Error("file_path missing");
+      const url = `https://api.telegram.org/file/bot${token}/${f.file_path}`;
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`download failed: ${r.status}`);
+      const ab = await r.arrayBuffer();
+      const buf = Buffer.from(ab);
+      const ext = f.file_path.split(".").pop()?.toLowerCase() || "jpg";
+      const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+      return `data:${mime};base64,${buf.toString("base64")}`;
     };
 
 
@@ -637,6 +697,7 @@ async function startServer() {
 
         if (isStartCommand(text)) {
           pendingLinkEdits.delete(userId);
+          pendingAgentPaySetups.delete(userId);
           if (isAdmin || secondaryAdmin) return sendAdminHome(msg.chat.id, undefined, userId);
           if (agent) return sendAgentHome(msg.chat.id, agent.name);
           return sendWelcomeGuest(msg.chat.id);
@@ -674,6 +735,48 @@ async function startServer() {
           return;
         }
 
+        if (agent && pendingAgentPaySetups.has(userId)) {
+          const pending = pendingAgentPaySetups.get(userId)!;
+          if (msg.photo && msg.photo.length > 0) {
+            try {
+              const largest = msg.photo[msg.photo.length - 1];
+              const dataUrl = await fileIdToDataUrl(largest.file_id);
+              await store.upsertAgentPaymentMethod({
+                agent_id: pending.agentId,
+                method_key: pending.methodKey,
+                account_number: pending.accountNumber,
+                account_holder: pending.accountHolder,
+                barcode_url: dataUrl,
+              });
+              pendingAgentPaySetups.delete(userId);
+              await bot?.sendMessage(msg.chat.id, `✅ تم حفظ ${methodLabel(pending.methodKey)} مع صورة الباركود بنجاح.`);
+              return;
+            } catch (e) {
+              const err = e instanceof Error ? e.message : String(e);
+              await bot?.sendMessage(msg.chat.id, `⚠️ فشل رفع صورة الباركود: ${escapeHtml(err)}`, { parse_mode: "HTML" });
+              return;
+            }
+          }
+          if (text.trim() === "-") {
+            await store.upsertAgentPaymentMethod({
+              agent_id: pending.agentId,
+              method_key: pending.methodKey,
+              account_number: pending.accountNumber,
+              account_holder: pending.accountHolder,
+              barcode_url: null,
+            });
+            pendingAgentPaySetups.delete(userId);
+            await bot?.sendMessage(msg.chat.id, `✅ تم حفظ ${methodLabel(pending.methodKey)} بدون صورة باركود.`);
+            return;
+          }
+          await bot?.sendMessage(
+            msg.chat.id,
+            "📷 أرسل صورة الباركود الآن، أو أرسل <code>-</code> للحفظ بدون صورة.",
+            { parse_mode: "HTML" }
+          );
+          return;
+        }
+
         // --- COMMANDS ---
 
         // Add Number (Agent)
@@ -689,6 +792,36 @@ async function startServer() {
             parse_mode: "HTML",
             reply_markup: { inline_keyboard: [[{ text: "📱 أرقامي", callback_data: "agent_numbers" }]] }
           });
+        }
+
+        // Configure Agent Payment Method
+        if (/^SET_PAY\s+/i.test(text)) {
+          if (!agent) return;
+          const parts = text.replace(/^SET_PAY\s+/i, "").split("|");
+          const accountNumber = (parts[0] || "").trim();
+          const accountHolder = (parts[1] || "").trim() || null;
+          const selectedMethod = pendingAgentPaySetups.get(userId)?.methodKey;
+          if (!selectedMethod) {
+            return bot?.sendMessage(
+              msg.chat.id,
+              "⚠️ اختر الطريقة أولاً من زر <b>طرق الدفع/الاستلام</b> ثم أرسل الأمر.",
+              { parse_mode: "HTML" }
+            );
+          }
+          if (!accountNumber) {
+            return bot?.sendMessage(msg.chat.id, "⚠️ أرسل رقم الحساب أولاً.\nمثال:\n<code>SET_PAY 07700000000 | Ali</code>", { parse_mode: "HTML" });
+          }
+          pendingAgentPaySetups.set(userId, {
+            agentId: agent.id,
+            methodKey: selectedMethod,
+            accountNumber,
+            accountHolder,
+          });
+          return bot?.sendMessage(
+            msg.chat.id,
+            `✅ تم استلام بيانات ${methodLabel(selectedMethod)}.\nالآن أرسل صورة الباركود، أو أرسل <code>-</code> للتخطي.`,
+            { parse_mode: "HTML" }
+          );
         }
 
         // Add Admin (Super Admin only)
@@ -1351,6 +1484,10 @@ async function startServer() {
         // 3. Agent Logic
         if (agent) {
           if (data === "agent_home") return sendAgentHome(chatId, agent.name, messageId);
+          if (data === "agent_methods") {
+            pendingAgentPaySetups.delete(chatId);
+            return sendAgentMethodsMenu(chatId, agent.id, messageId);
+          }
           if (data === "agent_numbers") {
             const nums = await store.listAgentNumbers(agent.id);
             let msg = `📱 <b>أرقامك</b>\n`;
@@ -1370,6 +1507,28 @@ async function startServer() {
             await store.updateAgentNumber(nid, { balance: 0, is_exhausted: false });
             await answer("تم التصفير");
             return sendAgentHome(chatId, agent.name, messageId);
+          }
+          if (data.startsWith("agent_mset_")) {
+            const key = data.replace("agent_mset_", "").trim() as "zaincash" | "superqi" | "firstbank" | "fastpay";
+            pendingAgentPaySetups.set(chatId, {
+              agentId: agent.id,
+              methodKey: key,
+              accountNumber: "",
+              accountHolder: null,
+            });
+            await bot?.sendMessage(
+              chatId,
+              `✏️ إعداد ${methodLabel(key)}\nأرسل الآن:\n<code>SET_PAY رقم_الحساب | اسم_الحامل</code>`,
+              { parse_mode: "HTML" }
+            );
+            return answer();
+          }
+          if (data.startsWith("agent_mdel_")) {
+            const key = data.replace("agent_mdel_", "").trim();
+            await store.removeAgentPaymentMethod(agent.id, key);
+            pendingAgentPaySetups.delete(chatId);
+            await answer("تم الحذف");
+            return sendAgentMethodsMenu(chatId, agent.id, messageId);
           }
         }
 
