@@ -578,7 +578,8 @@ async function startServer() {
       const a = admins.find(x => x.id === adminId);
       if (!a) return;
 
-      const p = (key: string) => a.permissions.includes(key) ? "✅" : "⚪️";
+      // Use neutral monochrome symbols (no green/red emoji states)
+      const p = (key: string) => (a.permissions.includes(key) ? "◉" : "○");
       const msg =
         `🛡️ <b>صلاحيات المسؤول: ${a.name}</b>\n` +
         `المعرف: <code>${a.telegram_id}</code>\n` +
@@ -603,7 +604,8 @@ async function startServer() {
       const a = agents.find(x => x.id === agentId);
       if (!a) return;
 
-      const p = (key: string) => a.permissions.includes(key) ? "✅" : "⚪️";
+      // Use neutral monochrome symbols (no green/red emoji states)
+      const p = (key: string) => (a.permissions.includes(key) ? "◉" : "○");
       const msg = `👥 <b>صلاحيات الوكيل: ${a.name}</b>\n\nتتحكم هذه الإعدادات فيما يمكن للوكيل القيام به عبر البوت الخاص به:`;
       const reply_markup = {
         inline_keyboard: [
