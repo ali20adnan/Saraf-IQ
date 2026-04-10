@@ -186,8 +186,14 @@ function MainContent() {
   const [activeAgentNumber, setActiveAgentNumber] = useState<ActiveAgentNumber | null>(null);
   const [adminAgents, setAdminAgents] = useState<Agent[]>([]);
   const [isAdminAgentsLoading, setIsAdminAgentsLoading] = useState(false);
-  const [adminTab, setAdminTab] = useState<'overview' | 'agents' | 'admins'>('overview');
+  const [adminTab, setAdminTab] = useState<'overview' | 'agents' | 'orders' | 'admins'>('overview');
   const [adminAdmins, setAdminAdmins] = useState<AdminRow[]>([]);
+  const [adminTransactions, setAdminTransactions] = useState<ServerTransaction[]>([]);
+  const [adminOrderRefQuery, setAdminOrderRefQuery] = useState('');
+  const [adminOrderTypeFilter, setAdminOrderTypeFilter] = useState<'all' | 'buy' | 'sell'>('all');
+  const [adminOrderMethodFilter, setAdminOrderMethodFilter] = useState('all');
+  const [adminOrderFromDate, setAdminOrderFromDate] = useState('');
+  const [adminOrderToDate, setAdminOrderToDate] = useState('');
   const [adminBroadcastText, setAdminBroadcastText] = useState('');
   const [adminPushTitle, setAdminPushTitle] = useState('');
   const [adminPushBody, setAdminPushBody] = useState('');
@@ -251,6 +257,28 @@ function MainContent() {
       .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
     return { activeOrders, totalCompletedIqd };
   }, [transactions]);
+
+  const adminFilteredTransactions = useMemo(() => {
+    let rows = [...adminTransactions];
+    const q = adminOrderRefQuery.trim().toLowerCase();
+    if (q) rows = rows.filter((tx) => String(tx.order_ref || '').toLowerCase().includes(q));
+    if (adminOrderTypeFilter !== 'all') rows = rows.filter((tx) => tx.type === adminOrderTypeFilter);
+    if (adminOrderMethodFilter !== 'all') {
+      rows = rows.filter((tx) => String(tx.method || '').toLowerCase() === adminOrderMethodFilter.toLowerCase());
+    }
+    if (adminOrderFromDate) {
+      const from = new Date(adminOrderFromDate);
+      if (!Number.isNaN(from.getTime())) rows = rows.filter((tx) => new Date(tx.created_at).getTime() >= from.getTime());
+    }
+    if (adminOrderToDate) {
+      const to = new Date(adminOrderToDate);
+      if (!Number.isNaN(to.getTime())) {
+        to.setHours(23, 59, 59, 999);
+        rows = rows.filter((tx) => new Date(tx.created_at).getTime() <= to.getTime());
+      }
+    }
+    return rows;
+  }, [adminTransactions, adminOrderRefQuery, adminOrderTypeFilter, adminOrderMethodFilter, adminOrderFromDate, adminOrderToDate]);
 
   useEffect(() => {
     const stored = localStorage.getItem('notifications_enabled');
@@ -366,6 +394,18 @@ function MainContent() {
     }
   }, [isAdmin]);
 
+  const fetchAdminTransactions = useCallback(async () => {
+    if (!isAdmin) return;
+    try {
+      const res = await fetch(apiUrl('/api/admin/transactions'));
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json();
+      if (Array.isArray(data)) setAdminTransactions(data as ServerTransaction[]);
+    } catch (e) {
+      console.error('fetchAdminTransactions:', e);
+    }
+  }, [isAdmin]);
+
   const fetchTransactions = useCallback(async () => {
     if (!clientId) return;
     try {
@@ -457,6 +497,7 @@ function MainContent() {
     if (isAdmin && (currentView === 'admin' || currentView === 'login')) {
       initial.push(fetchAdminAgents());
       initial.push(fetchAdminAdmins());
+      initial.push(fetchAdminTransactions());
     }
     void Promise.all(initial);
 
@@ -465,7 +506,7 @@ function MainContent() {
       void Promise.all([fetchTransactions(), fetchSettings(), fetchActiveNumber()]);
     }, pollMs);
     return () => window.clearInterval(tmr);
-  }, [clientId, isAdmin, currentView, fetchSettings, fetchTransactions, fetchOffers, fetchSiteProfile, fetchActiveNumber, fetchAdminAgents, fetchAdminAdmins]);
+  }, [clientId, isAdmin, currentView, fetchSettings, fetchTransactions, fetchOffers, fetchSiteProfile, fetchActiveNumber, fetchAdminAgents, fetchAdminAdmins, fetchAdminTransactions]);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
@@ -1078,6 +1119,19 @@ function MainContent() {
   );
 
   const renderAdminPanel = () => {
+    const agentMethodOptions = [
+      { key: 'zaincash', label: t('zainCash') },
+      { key: 'superqi', label: t('superQi') },
+      { key: 'firstbank', label: `${t('firstBank')} (FIB)` },
+      { key: 'fastpay', label: t('fastPay') },
+      ...appSettings.buy_custom_wallets
+        .filter((w) => w.enabled)
+        .map((w) => ({
+          key: `wallet_${w.id}`,
+          label: lang === 'ar' ? w.name_ar : w.name_en,
+        })),
+    ];
+
     const adminMethodLabel = (key: string) => {
       if (key === 'zaincash') return t('zainCash');
       if (key === 'superqi') return t('superQi');
@@ -1154,6 +1208,52 @@ function MainContent() {
           fetchAdminAgents();
           form.reset();
         }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    const handleSaveAgentPaymentMethod = async (agentId: string, e: React.FormEvent) => {
+      e.preventDefault();
+      const form = e.target as HTMLFormElement;
+      const methodElement = form.elements.namedItem('method_key') as HTMLSelectElement;
+      const accountElement = form.elements.namedItem('account_number') as HTMLInputElement;
+      const holderElement = form.elements.namedItem('account_holder') as HTMLInputElement;
+      const barcodeElement = form.elements.namedItem('barcode_url') as HTMLInputElement;
+      if (!methodElement || !accountElement) return;
+      const method_key = methodElement.value;
+      const account_number = accountElement.value.trim();
+      if (!method_key || !account_number) return;
+      const payload = {
+        agent_id: agentId,
+        method_key,
+        account_number,
+        account_holder: holderElement?.value?.trim() || null,
+        barcode_url: barcodeElement?.value?.trim() || null,
+      };
+      try {
+        const res = await fetch(apiUrl('/api/admin/agent-payment-methods'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error(String(res.status));
+        fetchAdminAgents();
+        form.reset();
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    const handleDeleteAgentPaymentMethod = async (agentId: string, methodKey: string) => {
+      try {
+        const res = await fetch(apiUrl('/api/admin/agent-payment-methods'), {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ agent_id: agentId, method_key: methodKey }),
+        });
+        if (!res.ok) throw new Error(String(res.status));
+        fetchAdminAgents();
       } catch (e) {
         console.error(e);
       }
@@ -1339,6 +1439,12 @@ function MainContent() {
                 className={`px-6 py-2 rounded-xl text-sm font-black transition-all ${adminTab === 'agents' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
               >
                 {t('agentsTab')}
+              </button>
+              <button 
+                onClick={() => setAdminTab('orders')}
+                className={`px-6 py-2 rounded-xl text-sm font-black transition-all ${adminTab === 'orders' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                {lang === 'ar' ? 'طلبات' : 'Orders'}
               </button>
               <button 
                 onClick={() => setAdminTab('admins')}
@@ -1752,6 +1858,50 @@ function MainContent() {
                         <h5 className="text-sm font-black text-gray-800 mb-3">
                           {lang === 'ar' ? 'تفاصيل الدفع للوكيل' : 'Agent payment details'}
                         </h5>
+                        <form
+                          onSubmit={(e) => handleSaveAgentPaymentMethod(agent.id, e)}
+                          className="grid grid-cols-1 md:grid-cols-5 gap-2 p-3 bg-white border border-gray-200 rounded-xl mb-3"
+                        >
+                          <select
+                            name="method_key"
+                            required
+                            defaultValue=""
+                            className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm"
+                          >
+                            <option value="" disabled>
+                              {lang === 'ar' ? 'اختر طريقة الدفع' : 'Select payment method'}
+                            </option>
+                            {agentMethodOptions.map((opt) => (
+                              <option key={opt.key} value={opt.key}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            name="account_number"
+                            required
+                            placeholder={lang === 'ar' ? 'رقم الحساب' : 'Account number'}
+                            className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-mono"
+                            dir="ltr"
+                          />
+                          <input
+                            name="account_holder"
+                            placeholder={lang === 'ar' ? 'اسم الحامل (سوبر كي فقط)' : 'Holder (SuperQi only)'}
+                            className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm"
+                          />
+                          <input
+                            name="barcode_url"
+                            placeholder={lang === 'ar' ? 'رابط الباركود (اختياري)' : 'Barcode URL (optional)'}
+                            className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm"
+                            dir="ltr"
+                          />
+                          <button
+                            type="submit"
+                            className="bg-gray-900 text-white px-4 py-2.5 rounded-xl text-xs font-black hover:bg-black transition-all"
+                          >
+                            {lang === 'ar' ? 'إضافة/تحديث طريقة الدفع' : 'Save payment method'}
+                          </button>
+                        </form>
                         {(agent.payment_methods || []).length === 0 ? (
                           <div className="p-3 bg-gray-50 border border-gray-100 rounded-xl text-xs text-gray-500">
                             {lang === 'ar' ? 'لا توجد طرق دفع مضبوطة بعد.' : 'No payment methods configured yet.'}
@@ -1790,6 +1940,15 @@ function MainContent() {
                                 ) : (
                                   <p className="text-xs text-gray-400">{lang === 'ar' ? 'لا يوجد باركود' : 'No barcode'}</p>
                                 )}
+                                <div className="mt-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteAgentPaymentMethod(agent.id, pm.method_key)}
+                                    className="text-[11px] font-bold text-red-600 hover:text-red-700"
+                                  >
+                                    {lang === 'ar' ? 'حذف طريقة الدفع' : 'Delete payment method'}
+                                  </button>
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -1805,6 +1964,127 @@ function MainContent() {
                        <User className="w-8 h-8 text-gray-300" />
                     </div>
                     <p className="text-gray-400 font-bold">{t('noAgentsYet')}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : adminTab === 'orders' ? (
+            <div className="space-y-6 pb-12">
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-4">
+                <h3 className="font-bold text-gray-900">{lang === 'ar' ? 'قائمة الطلبات' : 'Orders List'}</h3>
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                  <input
+                    value={adminOrderRefQuery}
+                    onChange={(e) => setAdminOrderRefQuery(e.target.value)}
+                    placeholder={lang === 'ar' ? 'بحث برقم الطلب (ORD-...)' : 'Search by order number (ORD-...)'}
+                    className="md:col-span-2 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl"
+                    dir="ltr"
+                  />
+                  <select
+                    value={adminOrderTypeFilter}
+                    onChange={(e) => setAdminOrderTypeFilter(e.target.value as 'all' | 'buy' | 'sell')}
+                    className="px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl"
+                  >
+                    <option value="all">{lang === 'ar' ? 'كل الأنواع' : 'All types'}</option>
+                    <option value="buy">{lang === 'ar' ? 'شراء' : 'Buy'}</option>
+                    <option value="sell">{lang === 'ar' ? 'بيع' : 'Sell'}</option>
+                  </select>
+                  <select
+                    value={adminOrderMethodFilter}
+                    onChange={(e) => setAdminOrderMethodFilter(e.target.value)}
+                    className="px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl"
+                  >
+                    <option value="all">{lang === 'ar' ? 'كل طرق الدفع' : 'All methods'}</option>
+                    {([...
+                      new Set(adminTransactions.map((tx) => String(tx.method || '')).filter((m) => m.length > 0))
+                    ] as string[]).map((m) => (
+                      <option key={m} value={m}>
+                        {adminMethodLabel(m)}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdminOrderRefQuery('');
+                      setAdminOrderTypeFilter('all');
+                      setAdminOrderMethodFilter('all');
+                      setAdminOrderFromDate('');
+                      setAdminOrderToDate('');
+                    }}
+                    className="px-4 py-2.5 bg-gray-100 text-gray-700 rounded-xl text-sm font-bold hover:bg-gray-200"
+                  >
+                    {lang === 'ar' ? 'تصفير الفلاتر' : 'Reset filters'}
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <input
+                    type="date"
+                    value={adminOrderFromDate}
+                    onChange={(e) => setAdminOrderFromDate(e.target.value)}
+                    className="px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl"
+                  />
+                  <input
+                    type="date"
+                    value={adminOrderToDate}
+                    onChange={(e) => setAdminOrderToDate(e.target.value)}
+                    className="px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl"
+                  />
+                </div>
+                <div className="text-xs text-gray-500 font-bold">
+                  {lang === 'ar'
+                    ? `عدد النتائج: ${adminFilteredTransactions.length}`
+                    : `Results: ${adminFilteredTransactions.length}`}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {adminFilteredTransactions.map((tx) => {
+                  const s = statusUi(tx.status);
+                  return (
+                    <div key={tx.id} className="bg-white rounded-2xl border border-gray-100 p-4 space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <code className="text-xs px-2 py-1 rounded bg-gray-50 border border-gray-200" dir="ltr">{tx.order_ref}</code>
+                          <span className={`text-[11px] font-bold px-2 py-1 rounded-full ${tx.type === 'buy' ? 'bg-blue-50 text-blue-700' : 'bg-red-50 text-red-700'}`}>
+                            {tx.type === 'buy' ? (lang === 'ar' ? 'شراء' : 'Buy') : (lang === 'ar' ? 'بيع' : 'Sell')}
+                          </span>
+                          <span className={`text-[11px] font-bold px-2 py-1 rounded-full ${s.badge}`}>{s.label}</span>
+                        </div>
+                        <span className="text-xs text-gray-500" dir="ltr">{new Date(tx.created_at).toLocaleString()}</span>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-sm">
+                        <div className="p-2 rounded bg-gray-50 border border-gray-100">
+                          <p className="text-[11px] text-gray-500">{lang === 'ar' ? 'طريقة الدفع' : 'Method'}</p>
+                          <p className="font-bold text-gray-900">{adminMethodLabel(tx.method)}</p>
+                        </div>
+                        <div className="p-2 rounded bg-gray-50 border border-gray-100">
+                          <p className="text-[11px] text-gray-500">{lang === 'ar' ? 'المبلغ' : 'Amount'}</p>
+                          <p className="font-bold text-gray-900" dir="ltr">{formatLatinDigits(Number(tx.amount || 0))} {t('iqd')}</p>
+                        </div>
+                        <div className="p-2 rounded bg-gray-50 border border-gray-100">
+                          <p className="text-[11px] text-gray-500">Client ID</p>
+                          <p className="font-mono text-xs text-gray-900 break-all" dir="ltr">{tx.client_id}</p>
+                        </div>
+                        <div className="p-2 rounded bg-gray-50 border border-gray-100">
+                          <p className="text-[11px] text-gray-500">Agent Number ID</p>
+                          <p className="font-mono text-xs text-gray-900 break-all" dir="ltr">{tx.agent_number_id || '—'}</p>
+                        </div>
+                      </div>
+                      {tx.details ? (
+                        <details className="rounded bg-gray-50 border border-gray-100 p-2">
+                          <summary className="cursor-pointer text-xs font-bold text-gray-700">
+                            {lang === 'ar' ? 'عرض تفاصيل الطلب الكاملة' : 'Show full order details'}
+                          </summary>
+                          <pre className="mt-2 text-xs whitespace-pre-wrap text-gray-700">{tx.details}</pre>
+                        </details>
+                      ) : null}
+                    </div>
+                  );
+                })}
+                {adminFilteredTransactions.length === 0 && (
+                  <div className="py-14 text-center bg-white rounded-3xl border border-dashed border-gray-200">
+                    <p className="text-gray-400 font-bold">{lang === 'ar' ? 'لا توجد طلبات مطابقة للفلاتر.' : 'No orders match current filters.'}</p>
                   </div>
                 )}
               </div>

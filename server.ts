@@ -2063,6 +2063,84 @@ async function startServer() {
     }
   });
 
+  app.post("/api/admin/agent-payment-methods", async (req, res) => {
+    try {
+      const body = req.body as Partial<{
+        agent_id: string;
+        method_key: string;
+        account_number: string;
+        account_holder: string | null;
+        barcode_url: string | null;
+      }>;
+      const agent_id = String(body.agent_id || "").trim();
+      const method_key = String(body.method_key || "").trim();
+      const account_number = String(body.account_number || "").trim();
+      if (!agent_id || !method_key || !account_number) {
+        return res.status(400).json({ error: "agent_id, method_key, account_number required" });
+      }
+      const row = await store.upsertAgentPaymentMethod({
+        agent_id,
+        method_key,
+        account_number,
+        account_holder: typeof body.account_holder === "string" ? body.account_holder : null,
+        barcode_url: typeof body.barcode_url === "string" ? body.barcode_url : null,
+      });
+      if (!row) return res.status(400).json({ error: "invalid payment method data" });
+      res.json(row);
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to save agent payment method" });
+    }
+  });
+
+  app.delete("/api/admin/agent-payment-methods", async (req, res) => {
+    try {
+      const body = req.body as Partial<{ agent_id: string; method_key: string }>;
+      const agent_id = String(body.agent_id || "").trim();
+      const method_key = String(body.method_key || "").trim();
+      if (!agent_id || !method_key) {
+        return res.status(400).json({ error: "agent_id and method_key required" });
+      }
+      await store.removeAgentPaymentMethod(agent_id, method_key);
+      res.json({ success: true });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to delete agent payment method" });
+    }
+  });
+
+  app.get("/api/admin/transactions", async (req, res) => {
+    try {
+      const all = await store.listAllTransactionsMerged();
+      const type = typeof req.query.type === "string" ? req.query.type.trim() : "";
+      const method = typeof req.query.method === "string" ? req.query.method.trim() : "";
+      const orderRef = typeof req.query.order_ref === "string" ? req.query.order_ref.trim().toLowerCase() : "";
+      const from = typeof req.query.from === "string" ? req.query.from.trim() : "";
+      const to = typeof req.query.to === "string" ? req.query.to.trim() : "";
+
+      let rows = all;
+      if (type === "buy" || type === "sell") rows = rows.filter((r) => r.type === type);
+      if (method) rows = rows.filter((r) => String(r.method || "").toLowerCase() === method.toLowerCase());
+      if (orderRef) rows = rows.filter((r) => String(r.order_ref || "").toLowerCase().includes(orderRef));
+      if (from) {
+        const d = new Date(from);
+        if (!Number.isNaN(d.getTime())) rows = rows.filter((r) => new Date(r.created_at).getTime() >= d.getTime());
+      }
+      if (to) {
+        const d = new Date(to);
+        if (!Number.isNaN(d.getTime())) {
+          const end = new Date(d);
+          end.setHours(23, 59, 59, 999);
+          rows = rows.filter((r) => new Date(r.created_at).getTime() <= end.getTime());
+        }
+      }
+      res.json(rows.slice(0, 2000));
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to list admin transactions" });
+    }
+  });
+
   app.get("/api/admin/offers", async (_req, res) => {
     try {
       const offers = await store.listOffers();
