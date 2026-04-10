@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
-import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogIn, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Tag, XCircle, Eye, EyeOff, Download } from 'lucide-react';
+import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogIn, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Tag, XCircle, Eye, EyeOff, Download, Smartphone } from 'lucide-react';
 import Cookies from 'js-cookie';
 import { supabase } from './lib/supabase';
 import { notificationService } from './lib/notifications';
@@ -159,11 +159,15 @@ function MainContent() {
     maintenance_mode: false,
     buy_coming_soon: false,
     sell_coming_soon: false,
-    method_zaincash_enabled: true,
-    method_superqi_enabled: true,
-    method_firstbank_enabled: true,
-    method_fastpay_enabled: true,
-    method_creditcard_enabled: true,
+    method_zaincash_buy_enabled: true,
+    method_zaincash_sell_enabled: true,
+    method_superqi_buy_enabled: true,
+    method_superqi_sell_enabled: true,
+    method_firstbank_buy_enabled: true,
+    method_firstbank_sell_enabled: true,
+    method_fastpay_buy_enabled: true,
+    method_fastpay_sell_enabled: true,
+    method_creditcard_buy_enabled: true,
     buy_custom_wallets: [] as BuyCustomWalletRow[],
   });
   const [adminNewWallet, setAdminNewWallet] = useState({ id: '', name_ar: '', name_en: '' });
@@ -318,11 +322,15 @@ function MainContent() {
             maintenance_mode: Boolean(d.maintenance_mode),
             buy_coming_soon: Boolean(d.buy_coming_soon),
             sell_coming_soon: Boolean(d.sell_coming_soon),
-            method_zaincash_enabled: d.method_zaincash_enabled !== false,
-            method_superqi_enabled: d.method_superqi_enabled !== false,
-            method_firstbank_enabled: d.method_firstbank_enabled !== false,
-            method_fastpay_enabled: d.method_fastpay_enabled !== false,
-            method_creditcard_enabled: d.method_creditcard_enabled !== false,
+            method_zaincash_buy_enabled: d.method_zaincash_buy_enabled !== false,
+            method_zaincash_sell_enabled: d.method_zaincash_sell_enabled !== false,
+            method_superqi_buy_enabled: d.method_superqi_buy_enabled !== false,
+            method_superqi_sell_enabled: d.method_superqi_sell_enabled !== false,
+            method_firstbank_buy_enabled: d.method_firstbank_buy_enabled !== false,
+            method_firstbank_sell_enabled: d.method_firstbank_sell_enabled !== false,
+            method_fastpay_buy_enabled: d.method_fastpay_buy_enabled !== false,
+            method_fastpay_sell_enabled: d.method_fastpay_sell_enabled !== false,
+            method_creditcard_buy_enabled: d.method_creditcard_buy_enabled !== false,
             buy_custom_wallets: Array.isArray(d.buy_custom_wallets)
               ? (d.buy_custom_wallets as BuyCustomWalletRow[])
               : prev.buy_custom_wallets,
@@ -616,11 +624,15 @@ function MainContent() {
           maintenance_mode: Boolean(d.maintenance_mode),
           buy_coming_soon: Boolean(d.buy_coming_soon),
           sell_coming_soon: Boolean(d.sell_coming_soon),
-          method_zaincash_enabled: d.method_zaincash_enabled !== false,
-          method_superqi_enabled: d.method_superqi_enabled !== false,
-          method_firstbank_enabled: d.method_firstbank_enabled !== false,
-          method_fastpay_enabled: d.method_fastpay_enabled !== false,
-          method_creditcard_enabled: d.method_creditcard_enabled !== false,
+          method_zaincash_buy_enabled: d.method_zaincash_buy_enabled !== false,
+          method_zaincash_sell_enabled: d.method_zaincash_sell_enabled !== false,
+          method_superqi_buy_enabled: d.method_superqi_buy_enabled !== false,
+          method_superqi_sell_enabled: d.method_superqi_sell_enabled !== false,
+          method_firstbank_buy_enabled: d.method_firstbank_buy_enabled !== false,
+          method_firstbank_sell_enabled: d.method_firstbank_sell_enabled !== false,
+          method_fastpay_buy_enabled: d.method_fastpay_buy_enabled !== false,
+          method_fastpay_sell_enabled: d.method_fastpay_sell_enabled !== false,
+          method_creditcard_buy_enabled: d.method_creditcard_buy_enabled !== false,
           buy_custom_wallets: Array.isArray(d.buy_custom_wallets)
             ? (d.buy_custom_wallets as BuyCustomWalletRow[])
             : prev.buy_custom_wallets,
@@ -944,11 +956,15 @@ function MainContent() {
 
   const currentMethods = txType === 'sell' ? sellMethods : buyMethods;
   const currentMethodsFiltered = currentMethods.filter((m) => {
-    if (m.id === 'zaincash') return appSettings.method_zaincash_enabled;
-    if (m.id === 'superqi') return appSettings.method_superqi_enabled;
-    if (m.id === 'firstbank') return appSettings.method_firstbank_enabled;
-    if (m.id === 'fastpay') return appSettings.method_fastpay_enabled;
-    if (m.id === 'creditcard') return appSettings.method_creditcard_enabled;
+    if (m.id === 'zaincash')
+      return txType === 'buy' ? appSettings.method_zaincash_buy_enabled : appSettings.method_zaincash_sell_enabled;
+    if (m.id === 'superqi')
+      return txType === 'buy' ? appSettings.method_superqi_buy_enabled : appSettings.method_superqi_sell_enabled;
+    if (m.id === 'firstbank')
+      return txType === 'buy' ? appSettings.method_firstbank_buy_enabled : appSettings.method_firstbank_sell_enabled;
+    if (m.id === 'fastpay')
+      return txType === 'buy' ? appSettings.method_fastpay_buy_enabled : appSettings.method_fastpay_sell_enabled;
+    if (m.id === 'creditcard') return appSettings.method_creditcard_buy_enabled;
     if (m.id.startsWith('wallet_')) {
       const wid = m.id.slice('wallet_'.length);
       const row = appSettings.buy_custom_wallets?.find((w) => w.id === wid);
@@ -1489,52 +1505,65 @@ function MainContent() {
                     </button>
                   </div>
                   <div className="pt-2 border-t border-gray-100">
-                    <p className="text-xs font-bold text-gray-500 mb-3">{t('paymentMethodsVisibility')}</p>
+                    <p className="text-xs font-bold text-gray-500 mb-1">{t('paymentMethodsVisibility')}</p>
+                    <p className="text-[11px] text-gray-400 mb-3">{t('adminMethodsVisibilityHint')}</p>
+                    <div className="mb-2 grid grid-cols-[1fr_auto_auto] items-end gap-x-2 gap-y-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+                      <span />
+                      <span className="text-center">{t('adminMethodPay')}</span>
+                      <span className="text-center">{t('adminMethodReceive')}</span>
+                    </div>
                     <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-gray-700">{t('zainCash')}</span>
-                        <button
-                          onClick={() => toggleSetting('method_zaincash_enabled')}
-                          className={`w-12 h-6 rounded-full relative transition-colors ${appSettings.method_zaincash_enabled ? 'bg-red-500' : 'bg-gray-200'}`}
-                        >
-                          <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow-sm transition-transform ${appSettings.method_zaincash_enabled ? 'left-6' : 'left-0.5'}`}></div>
-                        </button>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-gray-700">{t('superQi')}</span>
-                        <button
-                          onClick={() => toggleSetting('method_superqi_enabled')}
-                          className={`w-12 h-6 rounded-full relative transition-colors ${appSettings.method_superqi_enabled ? 'bg-red-500' : 'bg-gray-200'}`}
-                        >
-                          <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow-sm transition-transform ${appSettings.method_superqi_enabled ? 'left-6' : 'left-0.5'}`}></div>
-                        </button>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-gray-700">{t('firstBank')} (FIB)</span>
-                        <button
-                          onClick={() => toggleSetting('method_firstbank_enabled')}
-                          className={`w-12 h-6 rounded-full relative transition-colors ${appSettings.method_firstbank_enabled ? 'bg-red-500' : 'bg-gray-200'}`}
-                        >
-                          <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow-sm transition-transform ${appSettings.method_firstbank_enabled ? 'left-6' : 'left-0.5'}`}></div>
-                        </button>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-gray-700">{t('fastPay')}</span>
-                        <button
-                          onClick={() => toggleSetting('method_fastpay_enabled')}
-                          className={`w-12 h-6 rounded-full relative transition-colors ${appSettings.method_fastpay_enabled ? 'bg-red-500' : 'bg-gray-200'}`}
-                        >
-                          <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow-sm transition-transform ${appSettings.method_fastpay_enabled ? 'left-6' : 'left-0.5'}`}></div>
-                        </button>
-                      </div>
-                      <div className="flex items-center justify-between">
+                      {(
+                        [
+                          ['zaincash', t('zainCash')],
+                          ['superqi', t('superQi')],
+                          ['firstbank', `${t('firstBank')} (FIB)`],
+                          ['fastpay', t('fastPay')],
+                        ] as const
+                      ).map(([id, label]) => {
+                        const buyK = `method_${id}_buy_enabled` as keyof typeof appSettings;
+                        const sellK = `method_${id}_sell_enabled` as keyof typeof appSettings;
+                        return (
+                          <div key={id} className="grid grid-cols-[1fr_auto_auto] items-center gap-x-2 gap-y-1">
+                            <span className="font-medium text-gray-700 min-w-0">{label}</span>
+                            <button
+                              type="button"
+                              onClick={() => toggleSetting(buyK as string)}
+                              className={`w-12 h-6 rounded-full relative transition-colors justify-self-center ${appSettings[buyK] ? 'bg-red-500' : 'bg-gray-200'}`}
+                              aria-label={`${label} ${t('adminMethodPay')}`}
+                            >
+                              <div
+                                className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow-sm transition-transform ${appSettings[buyK] ? 'left-6' : 'left-0.5'}`}
+                              />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => toggleSetting(sellK as string)}
+                              className={`w-12 h-6 rounded-full relative transition-colors justify-self-center ${appSettings[sellK] ? 'bg-red-500' : 'bg-gray-200'}`}
+                              aria-label={`${label} ${t('adminMethodReceive')}`}
+                            >
+                              <div
+                                className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow-sm transition-transform ${appSettings[sellK] ? 'left-6' : 'left-0.5'}`}
+                              />
+                            </button>
+                          </div>
+                        );
+                      })}
+                      <div className="grid grid-cols-[1fr_auto_auto] items-center gap-x-2 border-t border-gray-100 pt-3">
                         <span className="font-medium text-gray-700">{t('creditCard')}</span>
                         <button
-                          onClick={() => toggleSetting('method_creditcard_enabled')}
-                          className={`w-12 h-6 rounded-full relative transition-colors ${appSettings.method_creditcard_enabled ? 'bg-red-500' : 'bg-gray-200'}`}
+                          type="button"
+                          onClick={() => toggleSetting('method_creditcard_buy_enabled')}
+                          className={`w-12 h-6 rounded-full relative transition-colors justify-self-center ${appSettings.method_creditcard_buy_enabled ? 'bg-red-500' : 'bg-gray-200'}`}
+                          aria-label={`${t('creditCard')} ${t('adminMethodPay')}`}
                         >
-                          <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow-sm transition-transform ${appSettings.method_creditcard_enabled ? 'left-6' : 'left-0.5'}`}></div>
+                          <div
+                            className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow-sm transition-transform ${appSettings.method_creditcard_buy_enabled ? 'left-6' : 'left-0.5'}`}
+                          />
                         </button>
+                        <span className="justify-self-center text-xs text-gray-300" title={t('adminCreditCardSellNa')}>
+                          —
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -2494,10 +2523,11 @@ function MainContent() {
   );
 
   const renderUserGreeting = () => {
-    const profileName = siteProfile?.full_name?.trim();
+    /** اسم من جهازك فقط (بعد الحفظ من الإعدادات) — ليس من ملف الموقع العام على السيرفر */
+    const savedLocalName = Cookies.get('saraf_full_name')?.trim();
     const welcomeWithName =
-      profileName &&
-      (lang === 'ar' ? `مرحباً بعودتك، ${profileName}` : `Welcome back, ${profileName}`);
+      savedLocalName &&
+      (lang === 'ar' ? `مرحباً بعودتك، ${savedLocalName}` : `Welcome back, ${savedLocalName}`);
 
     const totalRaw = Number.isFinite(dashboardStats.totalCompletedIqd) ? dashboardStats.totalCompletedIqd : 0;
     const activeDisplay = formatLatinDigits(dashboardStats.activeOrders);
@@ -2583,41 +2613,65 @@ function MainContent() {
   const renderOfferCard = () => (
     <div
       key={txType}
-      className={`relative mb-8 overflow-hidden rounded-[2rem] border border-black/10 shadow-md [contain:layout_paint] ${txType === 'sell' ? 'bg-gray-900' : 'bg-red-700'}`}
+      className="relative mb-8 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_30px_-8px_rgba(15,23,42,0.12)] ring-1 ring-slate-900/[0.04] [contain:layout_paint]"
     >
-      <div className="relative z-10 p-8">
-        <div className="mb-10 flex items-start justify-between">
-          <div className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/15 px-3 py-1.5 text-xs font-bold text-white">
-            <Zap className="h-3.5 w-3.5 fill-current" />
+      <div
+        className={`h-1.5 ${txType === 'sell' ? 'bg-gradient-to-l from-slate-700 via-slate-600 to-slate-700' : 'bg-gradient-to-l from-red-700 via-red-600 to-red-700'}`}
+        aria-hidden
+      />
+      <div className="relative z-10 p-6 sm:p-8">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
+          <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-900 ring-1 ring-amber-200/80">
+            <Zap className="h-3.5 w-3.5 shrink-0 fill-amber-600 text-amber-600" />
             {t('recommended')}
           </div>
-          <span className="rounded-full border border-white/15 bg-black/25 px-3 py-1.5 text-xs font-bold text-white/90">
+          <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-900 ring-1 ring-emerald-200/80">
             {t('days')}
           </span>
         </div>
 
-        <h3 className="mb-1 text-sm font-medium uppercase tracking-wide text-white/70">
-          {txType === 'sell' ? t('offerTitle') : t('buyOfferTitle')}
-        </h3>
-        <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-          <span
-            className="min-w-0 max-w-full text-[clamp(1.75rem,6vw,3rem)] font-black leading-[1.1] tracking-normal text-white tabular-nums [font-variant-numeric:lining-nums] [text-rendering:geometricPrecision]"
-            dir="ltr"
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:gap-8">
+          <div
+            className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl sm:h-[4.5rem] sm:w-[4.5rem] ${
+              txType === 'sell' ? 'bg-slate-100 text-slate-700 ring-1 ring-slate-200/90' : 'bg-red-50 text-red-600 ring-1 ring-red-100'
+            }`}
           >
-            {txType === 'sell' ? siteContent.heroSellAmountDisplay : siteContent.heroBuyAmountDisplay}
-          </span>
-          <span className="shrink-0 text-lg font-bold leading-none text-white/85">
-            {txType === 'sell' ? t('iqd') : 'Asiacell'}
-          </span>
+            <Smartphone className="h-8 w-8 sm:h-9 sm:w-9" strokeWidth={1.75} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+              {txType === 'sell' ? t('sellCredit') : t('buyCredit')}
+            </p>
+            <h3 className="mb-3 mt-1 text-sm font-semibold leading-relaxed text-slate-700">
+              {txType === 'sell' ? t('offerTitle') : t('buyOfferTitle')}
+            </h3>
+            <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span
+                className="min-w-0 max-w-full text-[clamp(1.85rem,6vw,3.25rem)] font-black leading-[1.1] tracking-tight text-slate-900 tabular-nums [font-variant-numeric:lining-nums] [text-rendering:geometricPrecision]"
+                dir="ltr"
+              >
+                {txType === 'sell' ? siteContent.heroSellAmountDisplay : siteContent.heroBuyAmountDisplay}
+              </span>
+              <span className="shrink-0 text-lg font-bold text-slate-600">
+                {txType === 'sell' ? t('iqd') : 'Asiacell'}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
-      <div
-        className={`flex items-center justify-between border-t border-white/10 px-8 py-4 text-sm font-bold text-white ${txType === 'sell' ? 'bg-red-600' : 'bg-gray-900'}`}
-      >
-        <span className="flex items-center gap-2 uppercase tracking-wider">
-          <CheckCircle2 className="h-4 w-4" /> {t('limitedOffer')}
+      <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/90 px-6 py-4 sm:px-8">
+        <span className="flex items-center gap-2 text-sm font-semibold text-slate-600">
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+          {t('limitedOffer')}
         </span>
-        <ArrowRight className={`h-4 w-4 ${dir === 'rtl' ? 'rotate-180' : ''}`} />
+        <span
+          className={`flex h-10 w-10 items-center justify-center rounded-full border border-slate-200/80 bg-white text-slate-500 shadow-sm ${
+            txType === 'sell' ? 'text-slate-600' : 'text-red-600'
+          }`}
+          aria-hidden
+        >
+          <ArrowRight className={`h-4 w-4 ${dir === 'rtl' ? 'rotate-180' : ''}`} />
+        </span>
       </div>
     </div>
   );
@@ -2658,43 +2712,66 @@ function MainContent() {
           {list.map((item) => (
             <div
               key={item.id}
-              className={`relative flex flex-col overflow-hidden rounded-3xl border border-black/10 shadow-sm [contain:layout_paint] ${
-                item.variant === 'sell' ? 'bg-gray-900' : 'bg-red-700'
-              }`}
+              className="relative flex flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_28px_-10px_rgba(15,23,42,0.1)] ring-1 ring-slate-900/[0.04] [contain:layout_paint]"
             >
-              <div className="relative z-10 flex-1 p-6 sm:p-8">
-                <div className="mb-6 flex items-start justify-between gap-2">
-                  <div className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/15 px-3 py-1.5 text-xs font-bold text-white">
-                    <Zap className="h-3.5 w-3.5 shrink-0 fill-current" />
+              <div
+                className={`h-1.5 ${
+                  item.variant === 'sell'
+                    ? 'bg-gradient-to-l from-slate-700 via-slate-600 to-slate-700'
+                    : 'bg-gradient-to-l from-red-700 via-red-600 to-red-700'
+                }`}
+                aria-hidden
+              />
+              <div className="relative z-10 flex flex-1 flex-col p-6 sm:p-7">
+                <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
+                  <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-900 ring-1 ring-amber-200/80">
+                    <Zap className="h-3.5 w-3.5 shrink-0 fill-amber-600 text-amber-600" />
                     {t('recommended')}
                   </div>
-                  <span className="shrink-0 rounded-full border border-white/15 bg-black/25 px-3 py-1.5 text-xs font-bold text-white/90">
+                  <span className="shrink-0 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-900 ring-1 ring-emerald-200/80">
                     {t('days')}
                   </span>
                 </div>
-                <h3 className="mb-2 text-sm font-medium leading-relaxed text-white/90">{item.title}</h3>
-                <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-                  <span
-                    className="min-w-0 text-4xl font-black leading-[1.1] tracking-normal text-white tabular-nums [font-variant-numeric:lining-nums] sm:text-5xl"
-                    dir="ltr"
+                <div className="flex flex-1 flex-col gap-5 sm:flex-row sm:items-start sm:gap-6">
+                  <div
+                    className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl ${
+                      item.variant === 'sell'
+                        ? 'bg-slate-100 text-slate-700 ring-1 ring-slate-200/90'
+                        : 'bg-red-50 text-red-600 ring-1 ring-red-100'
+                    }`}
                   >
-                    {item.amount}
-                  </span>
-                  <span className="shrink-0 text-base font-bold text-white/85">{item.unit}</span>
+                    <Smartphone className="h-7 w-7" strokeWidth={1.75} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                      {item.variant === 'sell' ? t('sellCredit') : t('buyCredit')}
+                    </p>
+                    <h3 className="mb-3 mt-1 text-sm font-semibold leading-relaxed text-slate-700">{item.title}</h3>
+                    <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                      <span
+                        className="min-w-0 text-4xl font-black leading-[1.1] tracking-tight text-slate-900 tabular-nums [font-variant-numeric:lining-nums] sm:text-5xl"
+                        dir="ltr"
+                      >
+                        {item.amount}
+                      </span>
+                      <span className="shrink-0 text-base font-bold text-slate-600">{item.unit}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div
-                className={`flex flex-col gap-3 px-6 py-3.5 sm:flex-row sm:items-center sm:justify-between ${
-                  item.variant === 'sell' ? 'bg-red-600' : 'bg-gray-900'
-                }`}
-              >
-                <span className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-white/95">
-                  <CheckCircle2 className="h-4 w-4 shrink-0" /> {t('limitedOffer')}
+              <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/90 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <span className="flex items-center gap-2 text-sm font-semibold text-slate-600">
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                  {t('limitedOffer')}
                 </span>
                 <button
                   type="button"
                   onClick={() => goExchange(item.variant)}
-                  className="w-full rounded-xl border border-white/25 bg-white/15 py-2.5 text-center text-sm font-black text-white active:bg-white/25 sm:w-auto sm:px-5"
+                  className={`w-full rounded-xl py-3 text-center text-sm font-black text-white shadow-sm transition-colors active:opacity-95 sm:w-auto sm:px-6 ${
+                    item.variant === 'sell'
+                      ? 'bg-slate-800 hover:bg-slate-900'
+                      : 'bg-red-600 hover:bg-red-700'
+                  }`}
                 >
                   {t('subscribe')}
                 </button>

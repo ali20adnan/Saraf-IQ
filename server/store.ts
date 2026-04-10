@@ -153,11 +153,21 @@ const defaultAppSettings: Record<string, string> = {
 
   buy_coming_soon: "false",
   sell_coming_soon: "false",
+  /** قديمة: تُستخدم للتوافق عند غياب المفتاحين _buy_ و _sell_ */
   method_zaincash_enabled: "true",
   method_superqi_enabled: "true",
   method_firstbank_enabled: "true",
   method_fastpay_enabled: "true",
   method_creditcard_enabled: "true",
+  method_zaincash_buy_enabled: "true",
+  method_zaincash_sell_enabled: "true",
+  method_superqi_buy_enabled: "true",
+  method_superqi_sell_enabled: "true",
+  method_firstbank_buy_enabled: "true",
+  method_firstbank_sell_enabled: "true",
+  method_fastpay_buy_enabled: "true",
+  method_fastpay_sell_enabled: "true",
+  method_creditcard_buy_enabled: "true",
   /** روابط وعرض الأرقام في بطاقة الصفحة الرئيسية — يُعدّل من البوت */
   link_support: "https://t.me/sarafiq_support",
   hero_buy_amount_display: "100,000",
@@ -653,23 +663,52 @@ export type AppSettingsPublic = {
   maintenance_mode: boolean;
   buy_coming_soon: boolean;
   sell_coming_soon: boolean;
-  method_zaincash_enabled: boolean;
-  method_superqi_enabled: boolean;
-  method_firstbank_enabled: boolean;
-  method_fastpay_enabled: boolean;
-  method_creditcard_enabled: boolean;
+  method_zaincash_buy_enabled: boolean;
+  method_zaincash_sell_enabled: boolean;
+  method_superqi_buy_enabled: boolean;
+  method_superqi_sell_enabled: boolean;
+  method_firstbank_buy_enabled: boolean;
+  method_firstbank_sell_enabled: boolean;
+  method_fastpay_buy_enabled: boolean;
+  method_fastpay_sell_enabled: boolean;
+  method_creditcard_buy_enabled: boolean;
   buy_custom_wallets: BuyCustomWallet[];
 };
+
+function methodPairFromMerged(
+  merged: Record<string, string>,
+  base: "zaincash" | "superqi" | "firstbank" | "fastpay"
+): { buy: boolean; sell: boolean } {
+  const legacyKey = `method_${base}_enabled`;
+  const legacyVal = merged[legacyKey] === undefined ? true : merged[legacyKey] !== "false";
+  const buyKey = `method_${base}_buy_enabled`;
+  const sellKey = `method_${base}_sell_enabled`;
+  const buy = merged[buyKey] === undefined ? legacyVal : merged[buyKey] !== "false";
+  const sell = merged[sellKey] === undefined ? legacyVal : merged[sellKey] !== "false";
+  return { buy, sell };
+}
+
+function creditcardBuyFromMerged(merged: Record<string, string>): boolean {
+  const legacyVal =
+    merged.method_creditcard_enabled === undefined ? true : merged.method_creditcard_enabled !== "false";
+  return merged.method_creditcard_buy_enabled === undefined
+    ? legacyVal
+    : merged.method_creditcard_buy_enabled !== "false";
+}
 
 const APP_SETTING_KEYS = [
   "maintenance_mode",
   "buy_coming_soon",
   "sell_coming_soon",
-  "method_zaincash_enabled",
-  "method_superqi_enabled",
-  "method_firstbank_enabled",
-  "method_fastpay_enabled",
-  "method_creditcard_enabled",
+  "method_zaincash_buy_enabled",
+  "method_zaincash_sell_enabled",
+  "method_superqi_buy_enabled",
+  "method_superqi_sell_enabled",
+  "method_firstbank_buy_enabled",
+  "method_firstbank_sell_enabled",
+  "method_fastpay_buy_enabled",
+  "method_fastpay_sell_enabled",
+  "method_creditcard_buy_enabled",
 ] as const;
 
 export async function getAppSettings(): Promise<AppSettingsPublic> {
@@ -681,15 +720,23 @@ export async function getAppSettings(): Promise<AppSettingsPublic> {
       for (const row of data as { key: string; value: string }[]) {
         if (row.key && typeof row.value === "string") merged[row.key] = row.value;
       }
+      const z = methodPairFromMerged(merged, "zaincash");
+      const su = methodPairFromMerged(merged, "superqi");
+      const fi = methodPairFromMerged(merged, "firstbank");
+      const fa = methodPairFromMerged(merged, "fastpay");
       return {
         maintenance_mode: merged.maintenance_mode === "true",
         buy_coming_soon: merged.buy_coming_soon === "true",
         sell_coming_soon: merged.sell_coming_soon === "true",
-        method_zaincash_enabled: merged.method_zaincash_enabled !== "false",
-        method_superqi_enabled: merged.method_superqi_enabled !== "false",
-        method_firstbank_enabled: merged.method_firstbank_enabled !== "false",
-        method_fastpay_enabled: merged.method_fastpay_enabled !== "false",
-        method_creditcard_enabled: merged.method_creditcard_enabled !== "false",
+        method_zaincash_buy_enabled: z.buy,
+        method_zaincash_sell_enabled: z.sell,
+        method_superqi_buy_enabled: su.buy,
+        method_superqi_sell_enabled: su.sell,
+        method_firstbank_buy_enabled: fi.buy,
+        method_firstbank_sell_enabled: fi.sell,
+        method_fastpay_buy_enabled: fa.buy,
+        method_fastpay_sell_enabled: fa.sell,
+        method_creditcard_buy_enabled: creditcardBuyFromMerged(merged),
         buy_custom_wallets: parseBuyCustomWallets(merged.buy_custom_wallets),
       };
     }
@@ -698,15 +745,23 @@ export async function getAppSettings(): Promise<AppSettingsPublic> {
   // Fallback to local file settings
   const fileSettings = loadFileStore().app_settings;
   const final = { ...merged, ...fileSettings };
+  const z = methodPairFromMerged(final, "zaincash");
+  const su = methodPairFromMerged(final, "superqi");
+  const fi = methodPairFromMerged(final, "firstbank");
+  const fa = methodPairFromMerged(final, "fastpay");
   return {
     maintenance_mode: final.maintenance_mode === "true",
     buy_coming_soon: final.buy_coming_soon === "true",
     sell_coming_soon: final.sell_coming_soon === "true",
-    method_zaincash_enabled: final.method_zaincash_enabled !== "false",
-    method_superqi_enabled: final.method_superqi_enabled !== "false",
-    method_firstbank_enabled: final.method_firstbank_enabled !== "false",
-    method_fastpay_enabled: final.method_fastpay_enabled !== "false",
-    method_creditcard_enabled: final.method_creditcard_enabled !== "false",
+    method_zaincash_buy_enabled: z.buy,
+    method_zaincash_sell_enabled: z.sell,
+    method_superqi_buy_enabled: su.buy,
+    method_superqi_sell_enabled: su.sell,
+    method_firstbank_buy_enabled: fi.buy,
+    method_firstbank_sell_enabled: fi.sell,
+    method_fastpay_buy_enabled: fa.buy,
+    method_fastpay_sell_enabled: fa.sell,
+    method_creditcard_buy_enabled: creditcardBuyFromMerged(final),
     buy_custom_wallets: parseBuyCustomWallets(final.buy_custom_wallets),
   };
 }

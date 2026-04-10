@@ -339,12 +339,12 @@ async function startServer() {
         `🔧 وضع الصيانة: ${line(s.maintenance_mode)}\n` +
         `🛒 شراء (قريباً): ${line(s.buy_coming_soon)}\n` +
         `💰 بيع (قريباً): ${line(s.sell_coming_soon)}\n` +
-        `\n💳 <b>طرق الدفع/الاستلام:</b>\n` +
-        `• زين كاش: ${line(s.method_zaincash_enabled)}\n` +
-        `• سوبر كي: ${line(s.method_superqi_enabled)}\n` +
-        `• FIB: ${line(s.method_firstbank_enabled)}\n` +
-        `• فاست بي: ${line(s.method_fastpay_enabled)}\n` +
-        `• بطاقة بنكية: ${line(s.method_creditcard_enabled)}\n\n` +
+        `\n💳 <b>طرق الدفع (شراء) / الاستلام (بيع):</b>\n` +
+        `• زين كاش: دفع ${line(s.method_zaincash_buy_enabled)} · استلام ${line(s.method_zaincash_sell_enabled)}\n` +
+        `• سوبر كي: دفع ${line(s.method_superqi_buy_enabled)} · استلام ${line(s.method_superqi_sell_enabled)}\n` +
+        `• FIB: دفع ${line(s.method_firstbank_buy_enabled)} · استلام ${line(s.method_firstbank_sell_enabled)}\n` +
+        `• فاست بي: دفع ${line(s.method_fastpay_buy_enabled)} · استلام ${line(s.method_fastpay_sell_enabled)}\n` +
+        `• بطاقة بنكية (شراء فقط): ${line(s.method_creditcard_buy_enabled)}\n\n` +
         `🔗 <b>رابط التواصل:</b> <code>${escapeHtml(sc.supportUrl)}</code>\n` +
         `🛒 <b>عرض الشراء (الرئيسية):</b> <code>${escapeHtml(sc.heroBuyAmountDisplay)}</code>\n` +
         `💵 <b>عرض البيع (الرئيسية):</b> <code>${escapeHtml(sc.heroSellAmountDisplay)}</code>\n\n` +
@@ -359,11 +359,23 @@ async function startServer() {
         [{ text: s.maintenance_mode ? "⛔ إيقاف الصيانة" : "🔧 تفعيل الصيانة", callback_data: "site_toggle_maintenance_mode" }],
         [{ text: s.buy_coming_soon ? "⛔ إيقاف «قريباً» شراء" : "🛒 تفعيل «قريباً» شراء", callback_data: "site_toggle_buy_coming_soon" }],
         [{ text: s.sell_coming_soon ? "⛔ إيقاف «قريباً» بيع" : "💰 تفعيل «قريباً» بيع", callback_data: "site_toggle_sell_coming_soon" }],
-        [{ text: s.method_zaincash_enabled ? "⛔ إخفاء زين كاش" : "✅ إظهار زين كاش", callback_data: "site_toggle_method_zaincash_enabled" }],
-        [{ text: s.method_superqi_enabled ? "⛔ إخفاء سوبر كي" : "✅ إظهار سوبر كي", callback_data: "site_toggle_method_superqi_enabled" }],
-        [{ text: s.method_firstbank_enabled ? "⛔ إخفاء FIB" : "✅ إظهار FIB", callback_data: "site_toggle_method_firstbank_enabled" }],
-        [{ text: s.method_fastpay_enabled ? "⛔ إخفاء فاست بي" : "✅ إظهار فاست بي", callback_data: "site_toggle_method_fastpay_enabled" }],
-        [{ text: s.method_creditcard_enabled ? "⛔ إخفاء البطاقة" : "✅ إظهار البطاقة", callback_data: "site_toggle_method_creditcard_enabled" }],
+        [
+          { text: `💚 زين · دفع ${s.method_zaincash_buy_enabled ? "✅" : "⛔"}`, callback_data: "site_toggle_method_zaincash_buy_enabled" },
+          { text: `استلام ${s.method_zaincash_sell_enabled ? "✅" : "⛔"}`, callback_data: "site_toggle_method_zaincash_sell_enabled" },
+        ],
+        [
+          { text: `🌐 سوبر · دفع ${s.method_superqi_buy_enabled ? "✅" : "⛔"}`, callback_data: "site_toggle_method_superqi_buy_enabled" },
+          { text: `استلام ${s.method_superqi_sell_enabled ? "✅" : "⛔"}`, callback_data: "site_toggle_method_superqi_sell_enabled" },
+        ],
+        [
+          { text: `🏦 FIB · دفع ${s.method_firstbank_buy_enabled ? "✅" : "⛔"}`, callback_data: "site_toggle_method_firstbank_buy_enabled" },
+          { text: `استلام ${s.method_firstbank_sell_enabled ? "✅" : "⛔"}`, callback_data: "site_toggle_method_firstbank_sell_enabled" },
+        ],
+        [
+          { text: `⚡ فاست · دفع ${s.method_fastpay_buy_enabled ? "✅" : "⛔"}`, callback_data: "site_toggle_method_fastpay_buy_enabled" },
+          { text: `استلام ${s.method_fastpay_sell_enabled ? "✅" : "⛔"}`, callback_data: "site_toggle_method_fastpay_sell_enabled" },
+        ],
+        [{ text: `💳 بطاقة (شراء) ${s.method_creditcard_buy_enabled ? "✅" : "⛔"}`, callback_data: "site_toggle_method_creditcard_buy_enabled" }],
         [{ text: "🔙 رجوع", callback_data: "admin_home" }],
       ];
 
@@ -1882,11 +1894,15 @@ async function startServer() {
         "maintenance_mode",
         "buy_coming_soon",
         "sell_coming_soon",
-        "method_zaincash_enabled",
-        "method_superqi_enabled",
-        "method_firstbank_enabled",
-        "method_fastpay_enabled",
-        "method_creditcard_enabled",
+        "method_zaincash_buy_enabled",
+        "method_zaincash_sell_enabled",
+        "method_superqi_buy_enabled",
+        "method_superqi_sell_enabled",
+        "method_firstbank_buy_enabled",
+        "method_firstbank_sell_enabled",
+        "method_fastpay_buy_enabled",
+        "method_fastpay_sell_enabled",
+        "method_creditcard_buy_enabled",
       ];
       for (const k of keys) {
         if (typeof body[k] === "boolean") {
