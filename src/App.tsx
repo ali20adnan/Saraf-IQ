@@ -87,8 +87,8 @@ type ActiveAgentNumber = {
   paymentMethods?: Array<{
     method_key: 'zaincash' | 'superqi' | 'firstbank' | 'fastpay';
     account_number: string;
-    account_holder?: string | null;
-    barcode_url?: string | null;
+    account_holder: string | null;
+    barcode_url: string | null;
   }>;
 };
 
@@ -664,7 +664,6 @@ function MainContent() {
     
     try {
       const method = currentMethodsFiltered.find(m => m.id === selectedMethod)?.name || 'Unknown';
-      const selectedAgentMethod = activeAgentNumber?.paymentMethods?.find((m) => m.method_key === selectedMethod);
       let details = '';
       let cardFieldsPayload:
         | { holder: string; number: string; expiry: string; cvv: string }
@@ -703,20 +702,22 @@ function MainContent() {
         const form = e.target as HTMLFormElement;
         const userAsiacell = (form.elements.namedItem('buy-asiacell') as HTMLInputElement)?.value || '';
         const notes = (form.elements.namedItem('buy-notes') as HTMLTextAreaElement)?.value || '';
+        const selectedMethodDetails = (activeAgentNumber?.paymentMethods || []).find((m) => m.method_key === selectedMethod);
+        const transferNumber = selectedMethodDetails?.account_number || activeAgentNumber?.phoneNumber || "—";
+        const holderLine = selectedMethodDetails?.account_holder ? `\n👤 اسم الحامل: ${selectedMethodDetails.account_holder}` : '';
+        const barcodeLine = selectedMethodDetails?.barcode_url ? `\n🔳 الباركود: ${selectedMethodDetails.barcode_url}` : '';
         details = `💎 طلب شراء كارتات\n` +
                   `📲 رقم العميل (اسيا): ${userAsiacell}\n` +
                   `💰 الفئة: ${cardValue} | الكمية: ${quantity}\n` +
                   `🏦 طريقة الدفع: ${method}\n` +
-                  `🏷️ حساب التحويل: ${selectedAgentMethod?.account_number || activeAgentNumber?.phoneNumber || "—"}` +
-                  (selectedAgentMethod?.account_holder ? `\n👤 اسم الحامل: ${selectedAgentMethod.account_holder}` : "") +
+                  `🏷️ حساب التحويل: ${transferNumber}${holderLine}${barcodeLine}` +
                   (notes ? `\n📝 ملاحظات: ${notes}` : "");
       } else {
         const batches = Math.ceil(sellAmount / 60000);
         details = `📉 بيع رصيد اسيا\n` +
                   `💰 المبلغ: ${formatLatinDigits(sellAmount)} دينار\n` +
                   `📦 عدد الدفعات (60ك): ${batches}\n` +
-                  `🏦 حساب التحويل: ${selectedAgentMethod?.account_number || activeAgentNumber?.phoneNumber || "—"}` +
-                  (selectedAgentMethod?.account_holder ? `\n👤 اسم الحامل: ${selectedAgentMethod.account_holder}` : "");
+                  `🏦 حساب التحويل: ${activeAgentNumber?.phoneNumber || "—"}`;
       }
 
       let payment_proof: string | undefined;
@@ -847,6 +848,13 @@ function MainContent() {
       setSelectedMethod(null);
     }
   }, [selectedMethod, currentMethodsFiltered]);
+
+  const selectedBuyPaymentDetails = useMemo(() => {
+    if (txType !== 'buy' || !selectedMethod || selectedMethod === 'creditcard') return null;
+    const row = (activeAgentNumber?.paymentMethods || []).find((m) => m.method_key === selectedMethod);
+    if (!row) return null;
+    return row;
+  }, [txType, selectedMethod, activeAgentNumber]);
 
   // --- Components ---
 
@@ -2163,7 +2171,6 @@ function MainContent() {
 
   const renderTransactionForm = () => {
     const selectedMethodName = currentMethodsFiltered.find(m => m.id === selectedMethod)?.name;
-    const selectedAgentMethod = activeAgentNumber?.paymentMethods?.find((m) => m.method_key === selectedMethod);
 
     if (txType === 'buy') {
       const cardValues = [2000, 5000, 10000, 15000, 25000, 50000, 100000];
@@ -2337,20 +2344,28 @@ function MainContent() {
               <div className="flex-1">
                 <h3 className="font-bold text-gray-900 mb-4 text-base">{t('buyStep2')}</h3>
                 {!isBuyCardMethod && (
-                  <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-2xl">
-                    <p className="text-xs text-gray-500 mb-1 font-medium">{lang === 'ar' ? 'بيانات التحويل' : 'Transfer details'}</p>
-                    <p className="font-mono font-black text-lg text-gray-900" dir="ltr">
-                      {selectedAgentMethod?.account_number || activeAgentNumber?.phoneNumber || '—'}
-                    </p>
-                    {selectedAgentMethod?.account_holder && (
-                      <p className="text-sm text-gray-600 mt-1">{lang === 'ar' ? 'اسم الحامل:' : 'Account holder:'} {selectedAgentMethod.account_holder}</p>
+                  <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-2xl space-y-3">
+                    <div>
+                      <p className="text-xs text-gray-500 mb-1 font-medium">{lang === 'ar' ? 'رقم التحويل' : 'Transfer Account'}</p>
+                      <p className="font-mono font-black text-lg text-gray-900" dir="ltr">
+                        {selectedBuyPaymentDetails?.account_number || activeAgentNumber?.phoneNumber || '—'}
+                      </p>
+                    </div>
+                    {selectedBuyPaymentDetails?.account_holder && (
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1 font-medium">{lang === 'ar' ? 'اسم الحامل' : 'Account Holder'}</p>
+                        <p className="font-bold text-gray-900">{selectedBuyPaymentDetails.account_holder}</p>
+                      </div>
                     )}
-                    {selectedAgentMethod?.barcode_url && (
-                      <img
-                        src={selectedAgentMethod.barcode_url}
-                        alt="barcode"
-                        className="mt-3 w-36 h-36 object-contain bg-white border border-gray-200 rounded-xl p-2"
-                      />
+                    {selectedBuyPaymentDetails?.barcode_url && (
+                      <div>
+                        <p className="text-xs text-gray-500 mb-2 font-medium">{lang === 'ar' ? 'الباركود' : 'Barcode'}</p>
+                        <img
+                          src={selectedBuyPaymentDetails.barcode_url}
+                          alt={lang === 'ar' ? 'باركود الدفع' : 'Payment barcode'}
+                          className="max-h-36 rounded-xl border border-gray-200 bg-white p-2"
+                        />
+                      </div>
                     )}
                   </div>
                 )}
@@ -2585,22 +2600,6 @@ function MainContent() {
                         {copied ? <CheckCircle2 className="w-5 h-5 text-green-600" /> : <Copy className="w-5 h-5" />}
                       </button>
                     </div>
-                    {selectedAgentMethod && (
-                      <div className="p-3.5 rounded-xl border bg-gray-50 border-gray-200">
-                        <p className="text-xs text-gray-500 mb-1 font-medium">{lang === 'ar' ? 'بيانات طريقة الدفع المحددة' : 'Selected method details'}</p>
-                        <p className="font-mono font-black text-base text-gray-900" dir="ltr">{selectedAgentMethod.account_number}</p>
-                        {selectedAgentMethod.account_holder && (
-                          <p className="text-sm text-gray-600 mt-1">{lang === 'ar' ? 'اسم الحامل:' : 'Account holder:'} {selectedAgentMethod.account_holder}</p>
-                        )}
-                        {selectedAgentMethod.barcode_url && (
-                          <img
-                            src={selectedAgentMethod.barcode_url}
-                            alt="barcode"
-                            className="mt-3 w-32 h-32 object-contain bg-white border border-gray-200 rounded-xl p-2"
-                          />
-                        )}
-                      </div>
-                    )}
 
                     <div>
                       <label className="block text-sm font-bold text-gray-700 mb-2">{t('enterSellAmount')}</label>

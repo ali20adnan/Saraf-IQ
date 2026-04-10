@@ -869,9 +869,9 @@ export async function getActiveSellNumber(): Promise<{
     fastpay: hasMethodPerms ? perms.has("method_fastpay") : true,
     creditcard: hasMethodPerms ? perms.has("method_creditcard") : true,
   };
-  const methodRows = await listAgentPaymentMethods(activeAgent.id);
-  const paymentMethods = methodRows
-    .filter((m) => allowedMethods[m.method_key] !== false)
+  const paymentMethodsRaw = await listAgentPaymentMethods(activeAgent.id);
+  const paymentMethods = paymentMethodsRaw
+    .filter((m) => !!m.account_number)
     .map((m) => ({
       method_key: m.method_key,
       account_number: m.account_number,
