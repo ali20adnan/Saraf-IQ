@@ -832,6 +832,56 @@ function MainContent() {
     <div className="flex-1 p-6 lg:p-8">
       <div className="max-w-md mx-auto mt-10">
         <div className="bg-white p-8 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100">
+          {window.location.pathname === '/admin' ? (
+            <>
+              {/* Logo and Identity */}
+              <div className="flex flex-col items-center gap-3 mb-8">
+                <div className="w-24 h-24 rounded-3xl flex items-center justify-center p-2 bg-transparent">
+                  <BrandLogo alt={t('appTitle')} size="xl" priority />
+                </div>
+                <div>
+                  <h1 className="font-black text-xl tracking-tight text-gray-900">{t('appTitle')}</h1>
+                </div>
+              </div>
+
+              <h2 className="text-2xl font-black text-center text-gray-900 mb-2">Admin Access</h2>
+              <p className="text-center text-gray-500 mb-8 font-medium">تسجيل دخول المسؤول فقط</p>
+
+              {authError && (
+                <div className="mb-6 p-4 bg-red-50 text-red-600 rounded-xl text-sm font-bold border border-red-100 flex items-center gap-2">
+                  <ShieldAlert className="w-5 h-5 shrink-0" />
+                  {authError}
+                </div>
+              )}
+
+              <form onSubmit={(e) => handleAuth(e, false)} className="space-y-4">
+                <input
+                  name="email"
+                  type="email"
+                  required
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl hidden"
+                  value="admin@sarafiq.com"
+                  readOnly
+                />
+                <input
+                  name="password"
+                  type="password"
+                  required
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/20 focus:border-gray-900 outline-none transition-all"
+                  placeholder="Admin Password"
+                  dir="ltr"
+                />
+                <button
+                  type="submit"
+                  disabled={isAuthLoading}
+                  className="w-full bg-gray-900 text-white py-3.5 rounded-xl font-bold hover:bg-gray-800 transition-colors shadow-lg shadow-gray-900/20"
+                >
+                  {isAuthLoading ? '...' : 'Login as Admin'}
+                </button>
+              </form>
+            </>
+          ) : (
+            <>
           {/* Logo and Identity */}
           <div className="flex flex-col items-center gap-3 mb-8">
             <div className="w-24 h-24 rounded-3xl flex items-center justify-center p-2 bg-transparent">
@@ -911,17 +961,7 @@ function MainContent() {
             )}
           </div>
           
-          {window.location.pathname === '/admin' && (
-            <div className="mt-6 pt-6 border-t border-gray-100 text-center">
-              <p className="text-sm text-gray-500 mb-4">Admin Access</p>
-              <form onSubmit={(e) => handleAuth(e, false)} className="space-y-4">
-                <input name="email" type="email" required className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl hidden" value="admin@sarafiq.com" readOnly />
-                <input name="password" type="password" required className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/20 focus:border-gray-900 outline-none transition-all" placeholder="Admin Password" dir="ltr" />
-                <button type="submit" disabled={isAuthLoading} className="w-full bg-gray-900 text-white py-3.5 rounded-xl font-bold hover:bg-gray-800 transition-colors shadow-lg shadow-gray-900/20">
-                  {isAuthLoading ? '...' : 'Login as Admin'}
-                </button>
-              </form>
-            </div>
+          </>
           )}
         </div>
       </div>
