@@ -1003,17 +1003,11 @@ function MainContent() {
                   (notes ? `\n📝 ملاحظات: ${notes}` : "");
       } else {
         const batches = Math.ceil(sellAmount / 60000);
-        const sellPm = (activeAgentNumber?.paymentMethods || []).find((m) => m.method_key === selectedMethod);
-        const recvLine =
-          sellPm?.account_number
-            ? `\n💳 استلام عبر ${method}: ${sellPm.account_number}${
-                sellPm.account_holder ? ` (${sellPm.account_holder})` : ''
-              }`
-            : '';
         details = `📉 بيع رصيد اسيا\n` +
                   `💰 المبلغ: ${formatLatinDigits(sellAmount)} دينار\n` +
                   `📦 عدد الدفعات (60ك): ${batches}\n` +
-                  `🏦 تحويل اسيا إلى: ${activeAgentNumber?.phoneNumber || "—"}${recvLine}`;
+                  `🏦 طريقة استلام الدينار: ${method}\n` +
+                  `📱 تحويل رصيد اسيا إلى رقم الوكيل: ${activeAgentNumber?.phoneNumber || "—"}`;
       }
 
       let payment_proof: string | undefined;
@@ -1210,13 +1204,6 @@ function MainContent() {
       : activeAgentNumber
         ? 'No transfer account for this method (set it in admin)'
         : 'No active agent';
-
-  const selectedSellPaymentDetails = useMemo(() => {
-    if (txType !== 'sell' || !selectedMethod) return null;
-    const row = (activeAgentNumber?.paymentMethods || []).find((m) => m.method_key === selectedMethod);
-    if (!row) return null;
-    return row;
-  }, [txType, selectedMethod, activeAgentNumber]);
 
   // --- Components ---
 
@@ -3747,7 +3734,13 @@ function MainContent() {
     const step1Amount = t('amountToTransfer');
     const step2Label = t('receivingNumber');
 
-
+    /** كود اسيا للتحويل: *123*المبلغ*رقم_الوكيل# — يُنسخ كاملاً عند الضغط على نسخ */
+    const sellAsiacellUssd = (() => {
+      const raw = String(activeAgentNumber?.phoneNumber ?? '').replace(/\D/g, '');
+      if (!raw) return '';
+      const amt = Math.max(0, Math.floor(sellAmount));
+      return `*123*${amt}*${raw}#`;
+    })();
 
     return (
       <div
@@ -3783,9 +3776,15 @@ function MainContent() {
                         </p>
                         <p className="font-mono font-black text-xl tracking-wider text-gray-900" dir="ltr">{step1Number}</p>
                       </div>
-                      <button 
-                        onClick={() => handleCopy(step1Number)}
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(sellAsiacellUssd || step1Number)}
                         className="p-3 bg-gray-50 rounded-xl border border-gray-200 text-gray-600 hover:text-red-600 hover:border-red-200 transition-all active:scale-90"
+                        title={
+                          lang === 'ar'
+                            ? 'نسخ *123*المبلغ*رقم الوكيل# للاتصال السريع'
+                            : 'Copy *123*amount*agent# for USSD'
+                        }
                       >
                         {copied ? <CheckCircle2 className="w-5 h-5 text-green-600" /> : <Copy className="w-5 h-5" />}
                       </button>
@@ -3849,67 +3848,11 @@ function MainContent() {
             <div className="w-8 h-8 rounded-full font-black flex items-center justify-center shrink-0 shadow-sm border bg-red-100 text-red-600 border-red-200">2</div>
             <div className="flex-1">
               <h3 className="font-bold text-gray-900 mb-4 text-base">{t('paymentStep2')}</h3>
-              {selectedSellPaymentDetails ? (
-                <div
-                  dir={dir}
-                  className="mb-4 p-4 sm:p-5 bg-white border border-red-100 rounded-2xl space-y-4 shadow-sm"
-                >
-                  <div className="flex justify-between items-start gap-3">
-                    <div className={`min-w-0 flex-1 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>
-                      <p className="text-xs text-gray-500 font-medium mb-1">
-                        {lang === 'ar' ? 'حساب الاستلام (الوكيل)' : 'Receiving account (agent)'}
-                      </p>
-                      <p
-                        dir={selectedSellPaymentDetails.account_number ? 'ltr' : dir}
-                        className={`font-mono font-black text-lg min-w-0 break-all ${
-                          selectedSellPaymentDetails.account_number ? 'text-gray-900' : 'text-gray-500'
-                        }`}
-                      >
-                        {selectedSellPaymentDetails.account_number ||
-                          (lang === 'ar' ? 'غير مُعرّف' : 'Not set')}
-                      </p>
-                    </div>
-                    {selectedSellPaymentDetails.account_number ? (
-                      <button
-                        type="button"
-                        onClick={() => handleCopy(selectedSellPaymentDetails.account_number)}
-                        className="shrink-0 p-3 bg-red-50 rounded-xl border border-red-100 text-gray-600 hover:text-red-600 hover:border-red-200 transition-all active:scale-90"
-                        title={lang === 'ar' ? 'نسخ رقم الوكيل' : 'Copy agent number'}
-                      >
-                        {copied ? <CheckCircle2 className="w-5 h-5 text-green-600" /> : <Copy className="w-5 h-5" />}
-                      </button>
-                    ) : null}
-                  </div>
-                  {selectedMethod === 'superqi' && selectedSellPaymentDetails.account_holder ? (
-                    <div className={dir === 'rtl' ? 'text-right' : 'text-left'}>
-                      <p className="text-xs text-gray-500 mb-1 font-medium">
-                        {lang === 'ar' ? 'اسم الحامل' : 'Account holder'}
-                      </p>
-                      <p className="font-bold text-gray-900">{selectedSellPaymentDetails.account_holder}</p>
-                    </div>
-                  ) : null}
-                  {selectedSellPaymentDetails.barcode_url ? (
-                    <div className={dir === 'rtl' ? 'text-right' : 'text-left'}>
-                      <p className="text-xs text-gray-500 mb-2 font-medium">
-                        {lang === 'ar' ? 'الباركود' : 'Barcode'}
-                      </p>
-                      <div className="inline-flex rounded-2xl border border-red-100 bg-white p-3 shadow-inner">
-                        <img
-                          src={selectedSellPaymentDetails.barcode_url}
-                          alt=""
-                          className="max-h-36 w-auto object-contain"
-                        />
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              ) : activeAgentNumber && selectedMethod ? (
-                <div className="mb-4 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2.5 text-xs font-bold text-amber-900">
-                  {lang === 'ar'
-                    ? 'لم يُضبط حساب هذه الطريقة للوكيل النشط في لوحة الإدارة.'
-                    : 'No account is configured for this method for the active agent.'}
-                </div>
-              ) : null}
+              <p className="mb-4 text-xs font-medium leading-relaxed text-gray-500">
+                {lang === 'ar'
+                  ? 'أدخل رقمك لاستلام المبلغ بالدينار عبر الطريقة المختارة. رقم تحويل اسيا يظهر في الخطوة السابقة فقط.'
+                  : 'Enter your number to receive IQD via the selected method. The Asiacell transfer number is only in step 1.'}
+              </p>
               <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">
