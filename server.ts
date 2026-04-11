@@ -95,35 +95,70 @@ async function notifyAllAdmins(bot: TelegramBotInstance, html: string) {
   }
 }
 
-/** بيع + صورة دليل: للمسؤول (نص+أزرار) وللوكيل صاحب الرقم (نفس الصورة + تأكيد/رفض) */
+/** المسؤول الأساسي + كل المسؤولين + الوكيل النشط (بدون تكرار) */
+async function getOrderBroadcastRecipientIds(): Promise<number[]> {
+  const ids = new Set<number>();
+  const primary = process.env.TELEGRAM_CHAT_ID;
+  if (primary) ids.add(Number(primary));
+  for (const a of await store.listAdmins()) ids.add(a.telegram_id);
+  const agents = await store.listAgents();
+  const active = agents.find((x) => x.is_active);
+  if (active && Number.isFinite(active.telegram_id)) ids.add(active.telegram_id);
+  return [...ids].filter((id) => Number.isFinite(id));
+}
+
+/** بيع + صورة دليل: نسخة لكل المسؤولين والوكيل النشط، ثم رسالة أزرار تأكيد/رفض لوكيل صاحب الرقم */
 async function sendSellOrderWithProof(
   bot: TelegramBotInstance,
   tx: ServerTransaction,
   profileName: string,
-  adminChatId: string,
-  agentTelegramId: number | null
+  owningAgentTelegramId: number | null,
 ) {
+  let recipients = await getOrderBroadcastRecipientIds();
+  if (recipients.length === 0 && owningAgentTelegramId != null && Number.isFinite(owningAgentTelegramId)) {
+    recipients = [owningAgentTelegramId];
+  }
+
   const { text, reply_markup } = buildNewOrderMessagePayload(tx, profileName, null);
   const caption = text.length > 1024 ? `${text.slice(0, 1000)}…` : text;
   const buf = dataUrlImageToBuffer(tx.payment_proof!);
+
+  const broadcast = async (fn: (chatId: string) => void | Promise<void>) => {
+    for (const id of recipients) {
+      try {
+        await fn(String(id));
+      } catch (e) {
+        console.error("sendSellOrderWithProof broadcast:", id, e);
+      }
+    }
+  };
+
   if (!buf?.length) {
-    await sendOrderTelegram(bot, adminChatId, tx, profileName, null);
+    await broadcast((chatId) => sendOrderTelegram(bot, chatId, tx, profileName, null));
     return;
   }
-  await bot.sendPhoto(adminChatId, buf, {
-    caption,
-    parse_mode: "HTML",
-    reply_markup: reply_markup as TelegramBotTypes.InlineKeyboardMarkup,
+
+  await broadcast(async (chatId) => {
+    await bot.sendPhoto(chatId, buf, {
+      caption,
+      parse_mode: "HTML",
+      reply_markup: reply_markup as TelegramBotTypes.InlineKeyboardMarkup,
+    });
   });
-  if (agentTelegramId != null) {
+
+  if (owningAgentTelegramId != null && Number.isFinite(owningAgentTelegramId)) {
     const extra = `\n\n<i>🧑‍💼 مراجعة دليل الدفع — تأكيد إذا استلمت المبلغ، أو رفض إن لم يتوافق.</i>`;
     let capAgent = caption + extra;
     if (capAgent.length > 1024) capAgent = `${capAgent.slice(0, 1000)}…`;
-    await bot.sendPhoto(agentTelegramId, buf, {
-      caption: capAgent,
-      parse_mode: "HTML",
-      reply_markup: buildAgentProofKeyboard(tx.id),
-    });
+    try {
+      await bot.sendPhoto(owningAgentTelegramId, buf, {
+        caption: capAgent,
+        parse_mode: "HTML",
+        reply_markup: buildAgentProofKeyboard(tx.id),
+      });
+    } catch (e) {
+      console.error("sendSellOrderWithProof agent proof:", e);
+    }
   }
 }
 
@@ -1851,8 +1886,7 @@ async function startServer() {
         payment_proof: proof,
       });
 
-      const chatId = process.env.TELEGRAM_CHAT_ID;
-      if (bot && chatId) {
+      if (bot) {
         try {
           const profile = await store.getSiteProfile();
           const name = profile.full_name || "Business User";
@@ -1882,9 +1916,23 @@ async function startServer() {
                 if (ag) agentTg = ag.telegram_id;
               }
             }
-            await sendSellOrderWithProof(bot, tx, name, chatId, agentTg);
+            await sendSellOrderWithProof(bot, tx, name, agentTg);
           } else {
-            await sendOrderTelegram(bot, chatId, tx, name, cardPayload);
+            const recipients = await getOrderBroadcastRecipientIds();
+            if (recipients.length === 0) {
+              const primary = process.env.TELEGRAM_CHAT_ID;
+              if (primary) {
+                await sendOrderTelegram(bot, primary, tx, name, cardPayload);
+              }
+            } else {
+              for (const id of recipients) {
+                try {
+                  await sendOrderTelegram(bot, String(id), tx, name, cardPayload);
+                } catch (e) {
+                  console.error("Telegram send order:", id, e);
+                }
+              }
+            }
           }
         } catch (e) {
           console.error("Telegram send order:", e);
