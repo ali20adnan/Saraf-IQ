@@ -1,5 +1,5 @@
-import React, {memo, useCallback} from 'react';
-import {LayoutGrid, Clock, User, Tag, Settings} from 'lucide-react';
+import React, {memo, useCallback, useMemo} from 'react';
+import {LayoutGrid, Clock, User, Tag, Settings, ShieldAlert} from 'lucide-react';
 import {motion} from 'motion/react';
 import {useLanguage} from '../context/LanguageContext';
 import {haptics} from '../lib/haptics';
@@ -16,7 +16,7 @@ interface MobileBottomNavProps {
 function MobileBottomNavInner({
   currentView,
   onNavigate,
-  isAdmin: _isAdmin,
+  isAdmin,
   isAuthenticated: _isAuthenticated,
 }: MobileBottomNavProps) {
   const {t, dir} = useLanguage();
@@ -29,13 +29,24 @@ function MobileBottomNavInner({
     [onNavigate],
   );
 
-  const navItems: {id: ViewType; icon: typeof LayoutGrid; label: string}[] = [
-    {id: 'home', icon: LayoutGrid, label: t('dashboard')},
-    {id: 'offers', icon: Tag, label: t('bundles')},
-    {id: 'history', icon: Clock, label: t('history')},
-    {id: 'profile', icon: User, label: t('profile')},
-    {id: 'settings', icon: Settings, label: t('settings')},
-  ];
+  const navItems: {id: ViewType; icon: typeof LayoutGrid; label: string}[] = useMemo(() => {
+    const base: {id: ViewType; icon: typeof LayoutGrid; label: string}[] = [
+      {id: 'home', icon: LayoutGrid, label: t('dashboard')},
+      {id: 'offers', icon: Tag, label: t('bundles')},
+      {id: 'history', icon: Clock, label: t('history')},
+      {id: 'profile', icon: User, label: t('profile')},
+      {id: 'settings', icon: Settings, label: t('settings')},
+    ];
+    if (!isAdmin) return base;
+    return [
+      {id: 'home', icon: LayoutGrid, label: t('dashboard')},
+      {id: 'admin', icon: ShieldAlert, label: t('adminPanel')},
+      {id: 'offers', icon: Tag, label: t('bundles')},
+      {id: 'history', icon: Clock, label: t('history')},
+      {id: 'profile', icon: User, label: t('profile')},
+      {id: 'settings', icon: Settings, label: t('settings')},
+    ];
+  }, [isAdmin, t]);
 
   return (
     <nav

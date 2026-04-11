@@ -68,7 +68,12 @@ export type BuyCustomWallet = {
   name_ar: string;
   name_en: string;
   enabled: boolean;
+  /** رابط https خارجي أو مسار مرفوع على الخادم: `/uploads/buy-wallet-icons/<id>.png` */
+  icon_url?: string | null;
 };
+
+/** محافظ بيع إضافية — نفس الشكل؛ المفتاح الفني `sell_wallet_<id>` */
+export type SellCustomWallet = BuyCustomWallet;
 
 export type BotUser = {
   id: string; // uuid
@@ -97,6 +102,34 @@ type FileStore = {
 };
 
 const DATA_DIR = path.join(process.cwd(), "data");
+const BUY_WALLET_ICONS_DIR = path.join(DATA_DIR, "buy-wallet-icons");
+const SELL_WALLET_ICONS_DIR = path.join(DATA_DIR, "sell-wallet-icons");
+
+export function ensureBuyWalletIconsDir(): void {
+  fs.mkdirSync(BUY_WALLET_ICONS_DIR, { recursive: true });
+}
+
+export function ensureSellWalletIconsDir(): void {
+  fs.mkdirSync(SELL_WALLET_ICONS_DIR, { recursive: true });
+}
+
+export function buyWalletIconDiskPath(walletId: string): string {
+  return path.join(BUY_WALLET_ICONS_DIR, `${walletId}.png`);
+}
+
+export function sellWalletIconDiskPath(walletId: string): string {
+  return path.join(SELL_WALLET_ICONS_DIR, `${walletId}.png`);
+}
+
+/** مسار العلني المحفوظ في JSON بعد رفع PNG من لوحة الإدارة */
+export function buyWalletIconPublicPath(walletId: string): string {
+  return `/uploads/buy-wallet-icons/${walletId}.png`;
+}
+
+export function sellWalletIconPublicPath(walletId: string): string {
+  return `/uploads/sell-wallet-icons/${walletId}.png`;
+}
+
 const DATA_FILE = path.join(DATA_DIR, "saraf-store.json");
 
 const defaultOffers: ServerOffer[] = [
@@ -174,6 +207,8 @@ const defaultAppSettings: Record<string, string> = {
   hero_sell_amount_display: "95,000",
   /** JSON array: admin-defined buy payment wallets (method_key wallet_<id>) */
   buy_custom_wallets: "[]",
+  /** JSON array: admin-defined sell receiving wallets (method_key sell_wallet_<id>) */
+  sell_custom_wallets: "[]",
 };
 
 function isValidHttpUrl(s: string): boolean {
@@ -183,6 +218,17 @@ function isValidHttpUrl(s: string): boolean {
   } catch {
     return false;
   }
+}
+
+export function normalizeWalletIconUrl(raw: unknown): string | null {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== "string") return null;
+  const s = raw.trim();
+  if (!s) return null;
+  if (isValidHttpUrl(s)) return s;
+  if (/^\/uploads\/buy-wallet-icons\/[a-z0-9][a-z0-9_-]{0,20}\.png$/i.test(s)) return s;
+  if (/^\/uploads\/sell-wallet-icons\/[a-z0-9][a-z0-9_-]{0,20}\.png$/i.test(s)) return s;
+  return null;
 }
 
 /** مفاتيح نصية يمكن ضبطها من البوت (لا تُمرّر إلى الواجهة كأنواع boolean) */
@@ -218,7 +264,7 @@ export async function getSiteContent(): Promise<SiteContentPublic> {
   };
 }
 
-function parseBuyCustomWallets(raw: string | undefined): BuyCustomWallet[] {
+function parseCustomWalletListJson(raw: string | undefined): BuyCustomWallet[] {
   if (!raw || raw.trim() === "") return [];
   try {
     const j = JSON.parse(raw) as unknown;
@@ -238,12 +284,21 @@ function parseBuyCustomWallets(raw: string | undefined): BuyCustomWallet[] {
         name_ar: name_ar || name_en,
         name_en: name_en || name_ar,
         enabled,
+        icon_url: normalizeWalletIconUrl(r.icon_url),
       });
     }
     return out;
   } catch {
     return [];
   }
+}
+
+function parseBuyCustomWallets(raw: string | undefined): BuyCustomWallet[] {
+  return parseCustomWalletListJson(raw);
+}
+
+function parseSellCustomWallets(raw: string | undefined): SellCustomWallet[] {
+  return parseCustomWalletListJson(raw);
 }
 
 export async function getBuyCustomWallets(): Promise<BuyCustomWallet[]> {
@@ -261,15 +316,52 @@ export async function getBuyCustomWallets(): Promise<BuyCustomWallet[]> {
   return parseBuyCustomWallets(final.buy_custom_wallets);
 }
 
+function syncBuyWalletIconFiles(prev: BuyCustomWallet[], next: BuyCustomWallet[]): void {
+  ensureBuyWalletIconsDir();
+  const nextIds = new Set(next.map((n) => n.id));
+  const localPathFor = (id: string) => buyWalletIconPublicPath(id);
+
+  for (const p of prev) {
+    if (!nextIds.has(p.id)) {
+      try {
+        if (fs.existsSync(buyWalletIconDiskPath(p.id))) fs.unlinkSync(buyWalletIconDiskPath(p.id));
+      } catch {
+        /* ignore */
+      }
+      continue;
+    }
+    const n = next.find((x) => x.id === p.id);
+    if (!n) continue;
+    const hadLocal = p.icon_url === localPathFor(p.id);
+    const hasLocal = n.icon_url === localPathFor(n.id);
+    if (hadLocal && !hasLocal) {
+      try {
+        if (fs.existsSync(buyWalletIconDiskPath(p.id))) fs.unlinkSync(buyWalletIconDiskPath(p.id));
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+}
+
 export async function setBuyCustomWallets(next: BuyCustomWallet[]): Promise<BuyCustomWallet[]> {
+  const normalized: BuyCustomWallet[] = [];
   for (const w of next) {
     if (!/^[a-z0-9][a-z0-9_-]{0,20}$/.test(w.id)) {
       throw new Error("invalid wallet id (use lowercase letters, numbers, - or _)");
     }
+    normalized.push({
+      id: w.id,
+      name_ar: w.name_ar,
+      name_en: w.name_en,
+      enabled: w.enabled !== false,
+      icon_url: normalizeWalletIconUrl(w.icon_url),
+    });
   }
   const prev = await getBuyCustomWallets();
+  syncBuyWalletIconFiles(prev, normalized);
   const prevIds = new Set(prev.map((p) => p.id));
-  const json = JSON.stringify(next);
+  const json = JSON.stringify(normalized);
   if (db) {
     const { error } = await db.from("settings").upsert({ key: "buy_custom_wallets", value: json }, { onConflict: "key" });
     if (error) console.error("setBuyCustomWallets db:", error);
@@ -277,12 +369,96 @@ export async function setBuyCustomWallets(next: BuyCustomWallet[]): Promise<BuyC
   const st = loadFileStore();
   st.app_settings = { ...st.app_settings, buy_custom_wallets: json };
   saveFileStore(st);
-  for (const w of next) {
+  for (const w of normalized) {
     if (!prevIds.has(w.id)) {
       await grantWalletPermissionToAllAgents(w.id);
     }
   }
   return getBuyCustomWallets();
+}
+
+export async function getSellCustomWallets(): Promise<SellCustomWallet[]> {
+  const merged: Record<string, string> = { ...defaultAppSettings };
+  if (db) {
+    const { data, error } = await db.from("settings").select("key, value");
+    if (!error && data?.length) {
+      for (const row of data as { key: string; value: string }[]) {
+        if (row.key && typeof row.value === "string") merged[row.key] = row.value;
+      }
+    }
+  }
+  const fileSettings = loadFileStore().app_settings;
+  const final = { ...merged, ...fileSettings };
+  return parseSellCustomWallets(final.sell_custom_wallets);
+}
+
+function syncSellWalletIconFiles(prev: SellCustomWallet[], next: SellCustomWallet[]): void {
+  ensureSellWalletIconsDir();
+  const nextIds = new Set(next.map((n) => n.id));
+  const localPathFor = (id: string) => sellWalletIconPublicPath(id);
+
+  for (const p of prev) {
+    if (!nextIds.has(p.id)) {
+      try {
+        if (fs.existsSync(sellWalletIconDiskPath(p.id))) fs.unlinkSync(sellWalletIconDiskPath(p.id));
+      } catch {
+        /* ignore */
+      }
+      continue;
+    }
+    const n = next.find((x) => x.id === p.id);
+    if (!n) continue;
+    const hadLocal = p.icon_url === localPathFor(p.id);
+    const hasLocal = n.icon_url === localPathFor(n.id);
+    if (hadLocal && !hasLocal) {
+      try {
+        if (fs.existsSync(sellWalletIconDiskPath(p.id))) fs.unlinkSync(sellWalletIconDiskPath(p.id));
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+}
+
+export async function setSellCustomWallets(next: SellCustomWallet[]): Promise<SellCustomWallet[]> {
+  const normalized: SellCustomWallet[] = [];
+  for (const w of next) {
+    if (!/^[a-z0-9][a-z0-9_-]{0,20}$/.test(w.id)) {
+      throw new Error("invalid wallet id (use lowercase letters, numbers, - or _)");
+    }
+    normalized.push({
+      id: w.id,
+      name_ar: w.name_ar,
+      name_en: w.name_en,
+      enabled: w.enabled !== false,
+      icon_url: normalizeWalletIconUrl(w.icon_url),
+    });
+  }
+  const prev = await getSellCustomWallets();
+  syncSellWalletIconFiles(prev, normalized);
+  const prevIds = new Set(prev.map((p) => p.id));
+  const json = JSON.stringify(normalized);
+  if (db) {
+    const { error } = await db.from("settings").upsert({ key: "sell_custom_wallets", value: json }, { onConflict: "key" });
+    if (error) console.error("setSellCustomWallets db:", error);
+  }
+  const st = loadFileStore();
+  st.app_settings = { ...st.app_settings, sell_custom_wallets: json };
+  saveFileStore(st);
+  for (const w of normalized) {
+    if (!prevIds.has(w.id)) {
+      await grantSellWalletPermissionToAllAgents(w.id);
+    }
+  }
+  return getSellCustomWallets();
+}
+
+async function grantSellWalletPermissionToAllAgents(walletId: string): Promise<void> {
+  const perm = `method_sell_wallet_${walletId}`;
+  const agents = await listAgents();
+  for (const a of agents) {
+    await addAgentPermission(a.id, perm);
+  }
 }
 
 export async function addAgentPermission(agentId: string, permission: string): Promise<void> {
@@ -673,6 +849,7 @@ export type AppSettingsPublic = {
   method_fastpay_sell_enabled: boolean;
   method_creditcard_buy_enabled: boolean;
   buy_custom_wallets: BuyCustomWallet[];
+  sell_custom_wallets: SellCustomWallet[];
 };
 
 function methodPairFromMerged(
@@ -738,6 +915,7 @@ export async function getAppSettings(): Promise<AppSettingsPublic> {
         method_fastpay_sell_enabled: fa.sell,
         method_creditcard_buy_enabled: creditcardBuyFromMerged(merged),
         buy_custom_wallets: parseBuyCustomWallets(merged.buy_custom_wallets),
+        sell_custom_wallets: parseSellCustomWallets(merged.sell_custom_wallets),
       };
     }
   }
@@ -763,6 +941,7 @@ export async function getAppSettings(): Promise<AppSettingsPublic> {
     method_fastpay_sell_enabled: fa.sell,
     method_creditcard_buy_enabled: creditcardBuyFromMerged(final),
     buy_custom_wallets: parseBuyCustomWallets(final.buy_custom_wallets),
+    sell_custom_wallets: parseSellCustomWallets(final.sell_custom_wallets),
   };
 }
 
@@ -810,6 +989,10 @@ export async function createAgent(input: { telegram_id: number; name: string }):
   const wallets = await getBuyCustomWallets();
   for (const w of wallets) {
     await addAgentPermission(id, `method_wallet_${w.id}`);
+  }
+  const sellWallets = await getSellCustomWallets();
+  for (const w of sellWallets) {
+    await addAgentPermission(id, `method_sell_wallet_${w.id}`);
   }
   return row;
 }
@@ -1047,6 +1230,13 @@ export async function getActiveSellNumber(): Promise<{
     if (!w.enabled) continue;
     const mid = `wallet_${w.id}`;
     const pkey = `method_wallet_${w.id}`;
+    allowedMethods[mid] = hasMethodPerms ? perms.has(pkey) : true;
+  }
+  const sellCustomWallets = await getSellCustomWallets();
+  for (const w of sellCustomWallets) {
+    if (!w.enabled) continue;
+    const mid = `sell_wallet_${w.id}`;
+    const pkey = `method_sell_wallet_${w.id}`;
     allowedMethods[mid] = hasMethodPerms ? perms.has(pkey) : true;
   }
   const paymentMethodsRaw = await listAgentPaymentMethods(activeAgent.id);

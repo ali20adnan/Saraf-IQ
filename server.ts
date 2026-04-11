@@ -1,5 +1,5 @@
 import "dotenv/config";
-import {existsSync} from "node:fs";
+import {existsSync, writeFileSync} from "node:fs";
 import express, {type RequestHandler} from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
@@ -131,6 +131,25 @@ async function startServer() {
 
   app.use(express.json({ limit: "12mb" }));
   app.set("trust proxy", true);
+
+  store.ensureBuyWalletIconsDir();
+  store.ensureSellWalletIconsDir();
+  app.use(
+    "/uploads/buy-wallet-icons",
+    express.static(path.join(process.cwd(), "data", "buy-wallet-icons"), {
+      maxAge: "7d",
+      index: false,
+      fallthrough: true,
+    }),
+  );
+  app.use(
+    "/uploads/sell-wallet-icons",
+    express.static(path.join(process.cwd(), "data", "sell-wallet-icons"), {
+      maxAge: "7d",
+      index: false,
+      fallthrough: true,
+    }),
+  );
 
   /** CORS: تطبيق Capacitor يستدعي Railway من أصل مختلف (مثل https://localhost) */
   app.use((req, res, next) => {
@@ -652,10 +671,18 @@ async function startServer() {
       }
     };
 
-    const methodLabel = (key: string, walletNames?: Map<string, string>) => {
+    const methodLabel = (
+      key: string,
+      buyWalletNames?: Map<string, string>,
+      sellWalletNames?: Map<string, string>,
+    ) => {
+      if (key.startsWith("sell_wallet_")) {
+        const id = key.slice("sell_wallet_".length);
+        return sellWalletNames?.get(id) || `محفظة بيع ${id}`;
+      }
       if (key.startsWith("wallet_")) {
         const id = key.slice("wallet_".length);
-        return walletNames?.get(id) || `محفظة ${id}`;
+        return buyWalletNames?.get(id) || `محفظة ${id}`;
       }
       if (key === "zaincash") return "زين كاش";
       if (key === "superqi") return "سوبر كي";
@@ -664,6 +691,7 @@ async function startServer() {
     };
 
     const methodIcon = (key: string) => {
+      if (key.startsWith("sell_wallet_")) return "📤";
       if (key.startsWith("wallet_")) return "💼";
       if (key === "zaincash") return "💚";
       if (key === "superqi") return "🌐";
@@ -691,18 +719,26 @@ async function startServer() {
       const rows = await store.listAgentPaymentMethods(agentId);
       const byKey = new Map(rows.map((r) => [r.method_key, r]));
       const wallets = await store.getBuyCustomWallets();
+      const sellWallets = await store.getSellCustomWallets();
       const walletNameMap = new Map(wallets.filter((w) => w.enabled).map((w) => [w.id, w.name_ar]));
+      const sellWalletNameMap = new Map(sellWallets.filter((w) => w.enabled).map((w) => [w.id, w.name_ar]));
       const keysBuiltin: Array<"fastpay" | "zaincash" | "firstbank" | "superqi"> = ["fastpay", "zaincash", "firstbank", "superqi"];
       let msg = "💳 <b>تعديل بيانات الدفع</b>\n\nاختر طريقة الدفع:";
       for (const k of keysBuiltin) {
         const row = byKey.get(k);
-        msg += `\n• ${methodLabel(k, walletNameMap)}: ${row?.account_number ? "مضبوطة" : "غير مضبوطة"}`;
+        msg += `\n• ${methodLabel(k, walletNameMap, sellWalletNameMap)}: ${row?.account_number ? "مضبوطة" : "غير مضبوطة"}`;
       }
       for (const w of wallets) {
         if (!w.enabled) continue;
         const mk = `wallet_${w.id}`;
         const row = byKey.get(mk);
         msg += `\n• ${w.name_ar}: ${row?.account_number ? "مضبوطة" : "غير مضبوطة"}`;
+      }
+      for (const w of sellWallets) {
+        if (!w.enabled) continue;
+        const mk = `sell_wallet_${w.id}`;
+        const row = byKey.get(mk);
+        msg += `\n• (بيع) ${w.name_ar}: ${row?.account_number ? "مضبوطة" : "غير مضبوطة"}`;
       }
       const buttons: TelegramBotTypes.InlineKeyboardButton[][] = [
         [
@@ -724,6 +760,16 @@ async function startServer() {
         if (b) rowBtns.push({ text: `💼 ${b.name_ar.slice(0, 18)}`, callback_data: `agent_mview_wallet_${b.id}` });
         buttons.push(rowBtns);
       }
+      const sellWalletRows = sellWallets.filter((w) => w.enabled);
+      for (let i = 0; i < sellWalletRows.length; i += 2) {
+        const a = sellWalletRows[i];
+        const b = sellWalletRows[i + 1];
+        const rowBtns: TelegramBotTypes.InlineKeyboardButton[] = [
+          { text: `📤 ${a.name_ar.slice(0, 16)}`, callback_data: `agent_mview_sell_wallet_${a.id}` },
+        ];
+        if (b) rowBtns.push({ text: `📤 ${b.name_ar.slice(0, 16)}`, callback_data: `agent_mview_sell_wallet_${b.id}` });
+        buttons.push(rowBtns);
+      }
       buttons.push([{ text: "🔙 رجوع", callback_data: "agent_home" }]);
       if (messageId) {
         await bot?.editMessageText(msg, { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } });
@@ -734,12 +780,14 @@ async function startServer() {
 
     const sendAgentMethodDetails = async (chatId: number, agentId: string, methodKey: string, messageId: number) => {
       const wallets = await store.getBuyCustomWallets();
+      const sellWallets = await store.getSellCustomWallets();
       const walletNameMap = new Map(wallets.map((w) => [w.id, w.name_ar]));
+      const sellWalletNameMap = new Map(sellWallets.map((w) => [w.id, w.name_ar]));
       const rows = await store.listAgentPaymentMethods(agentId);
       const row = rows.find((r) => r.method_key === methodKey);
       const showHolder = methodKey === "superqi";
       const msg =
-        `✏️ <b>${methodLabel(methodKey, walletNameMap)}</b>\n` +
+        `✏️ <b>${methodLabel(methodKey, walletNameMap, sellWalletNameMap)}</b>\n` +
         `رقم الحساب: <code>${escapeHtml(row?.account_number || "غير محدد")}</code>\n` +
         (showHolder ? `اسم الحامل: ${escapeHtml(row?.account_holder || "غير محدد")}\n` : "") +
         `الباركود: ${row?.barcode_url ? "✅ موجود" : "❌ غير محدد"}`;
@@ -824,6 +872,10 @@ async function startServer() {
 
         if (agent && pendingAgentPaymentEdits.has(userId)) {
           const pending = pendingAgentPaymentEdits.get(userId)!;
+          const buyWalletsForLabel = await store.getBuyCustomWallets();
+          const sellWalletsForLabel = await store.getSellCustomWallets();
+          const buyWalletNameMap = new Map(buyWalletsForLabel.map((w) => [w.id, w.name_ar]));
+          const sellWalletNameMap = new Map(sellWalletsForLabel.map((w) => [w.id, w.name_ar]));
           const rows = await store.listAgentPaymentMethods(pending.agentId);
           const current = rows.find((r) => r.method_key === pending.methodKey);
           if (pending.field === "barcode") {
@@ -843,7 +895,10 @@ async function startServer() {
                 barcode_url: barcode,
               });
               pendingAgentPaymentEdits.delete(userId);
-              await bot?.sendMessage(msg.chat.id, `✅ تم تحديث باركود ${methodIcon(pending.methodKey)} ${methodLabel(pending.methodKey)}.`);
+              await bot?.sendMessage(
+                msg.chat.id,
+                `✅ تم تحديث باركود ${methodIcon(pending.methodKey)} ${methodLabel(pending.methodKey, buyWalletNameMap, sellWalletNameMap)}.`,
+              );
               return;
             }
             if (text.trim() === "-") {
@@ -860,7 +915,10 @@ async function startServer() {
                 barcode_url: null,
               });
               pendingAgentPaymentEdits.delete(userId);
-              await bot?.sendMessage(msg.chat.id, `✅ تم حذف باركود ${methodLabel(pending.methodKey)}.`);
+              await bot?.sendMessage(
+                msg.chat.id,
+                `✅ تم حذف باركود ${methodLabel(pending.methodKey, buyWalletNameMap, sellWalletNameMap)}.`,
+              );
               return;
             }
             await bot?.sendMessage(msg.chat.id, "📸 أرسل صورة الباركود الآن، أو أرسل <code>-</code> للحذف.", { parse_mode: "HTML" });
@@ -881,7 +939,10 @@ async function startServer() {
               barcode_url: current?.barcode_url || null,
             });
             pendingAgentPaymentEdits.delete(userId);
-            await bot?.sendMessage(msg.chat.id, `✅ تم تحديث رقم حساب ${methodLabel(pending.methodKey)}.`);
+            await bot?.sendMessage(
+              msg.chat.id,
+              `✅ تم تحديث رقم حساب ${methodLabel(pending.methodKey, buyWalletNameMap, sellWalletNameMap)}.`,
+            );
             return;
           }
           const accountNumber = current?.account_number || "";
@@ -897,7 +958,10 @@ async function startServer() {
             barcode_url: current?.barcode_url || null,
           });
           pendingAgentPaymentEdits.delete(userId);
-          await bot?.sendMessage(msg.chat.id, `✅ تم تحديث اسم الحامل لـ ${methodLabel(pending.methodKey)}.`);
+          await bot?.sendMessage(
+            msg.chat.id,
+            `✅ تم تحديث اسم الحامل لـ ${methodLabel(pending.methodKey, buyWalletNameMap, sellWalletNameMap)}.`,
+          );
           return;
         }
 
@@ -1611,14 +1675,16 @@ async function startServer() {
             if (!parsed) return answer();
             const { key, field } = parsed;
             const wallets = await store.getBuyCustomWallets();
+            const sellWalletsCb = await store.getSellCustomWallets();
             const walletNameMap = new Map(wallets.map((w) => [w.id, w.name_ar]));
+            const sellWalletNameMap = new Map(sellWalletsCb.map((w) => [w.id, w.name_ar]));
             pendingAgentPaymentEdits.set(chatId, { agentId: agent.id, methodKey: key, field });
             if (field === "account_number") {
-              await bot?.sendMessage(chatId, `✍️ أرسل الآن رقم الحساب لطريقة ${methodLabel(key, walletNameMap)}.`);
+              await bot?.sendMessage(chatId, `✍️ أرسل الآن رقم الحساب لطريقة ${methodLabel(key, walletNameMap, sellWalletNameMap)}.`);
             } else if (field === "account_holder") {
-              await bot?.sendMessage(chatId, `✍️ أرسل الآن اسم الحامل لطريقة ${methodLabel(key, walletNameMap)}.\nأرسل <code>-</code> لإفراغ الاسم.`, { parse_mode: "HTML" });
+              await bot?.sendMessage(chatId, `✍️ أرسل الآن اسم الحامل لطريقة ${methodLabel(key, walletNameMap, sellWalletNameMap)}.\nأرسل <code>-</code> لإفراغ الاسم.`, { parse_mode: "HTML" });
             } else {
-              await bot?.sendMessage(chatId, `📸 أرسل صورة باركود ${methodLabel(key, walletNameMap)}.\nأرسل <code>-</code> لحذف الباركود.`, { parse_mode: "HTML" });
+              await bot?.sendMessage(chatId, `📸 أرسل صورة باركود ${methodLabel(key, walletNameMap, sellWalletNameMap)}.\nأرسل <code>-</code> لحذف الباركود.`, { parse_mode: "HTML" });
             }
             return answer();
           }
@@ -2251,6 +2317,7 @@ async function startServer() {
           name_ar: name_ar || name_en,
           name_en: name_en || name_ar,
           enabled,
+          icon_url: store.normalizeWalletIconUrl(r.icon_url),
         });
       }
       const saved = await store.setBuyCustomWallets(next);
@@ -2259,6 +2326,133 @@ async function startServer() {
       console.error(e);
       const msg = e instanceof Error ? e.message : "Failed to save wallets";
       res.status(e instanceof Error && msg.includes("invalid") ? 400 : 500).json({ error: msg });
+    }
+  });
+
+  app.put("/api/admin/sell-custom-wallets", async (req, res) => {
+    try {
+      const raw = (req.body as { wallets?: unknown })?.wallets;
+      if (!Array.isArray(raw)) {
+        return res.status(400).json({ error: "wallets array required" });
+      }
+      const next: store.SellCustomWallet[] = [];
+      for (const row of raw) {
+        if (!row || typeof row !== "object") continue;
+        const r = row as Record<string, unknown>;
+        const id = typeof r.id === "string" ? r.id.trim().toLowerCase() : "";
+        const name_ar = typeof r.name_ar === "string" ? r.name_ar.trim() : "";
+        const name_en = typeof r.name_en === "string" ? r.name_en.trim() : "";
+        const enabled = r.enabled !== false;
+        if (!/^[a-z0-9][a-z0-9_-]{0,20}$/.test(id)) continue;
+        if (!name_ar && !name_en) continue;
+        next.push({
+          id,
+          name_ar: name_ar || name_en,
+          name_en: name_en || name_ar,
+          enabled,
+          icon_url: store.normalizeWalletIconUrl(r.icon_url),
+        });
+      }
+      const saved = await store.setSellCustomWallets(next);
+      res.json(saved);
+    } catch (e) {
+      console.error(e);
+      const msg = e instanceof Error ? e.message : "Failed to save wallets";
+      res.status(e instanceof Error && msg.includes("invalid") ? 400 : 500).json({ error: msg });
+    }
+  });
+
+  const MAX_BUY_WALLET_PNG_BYTES = 512 * 1024;
+
+  function isPngMagic(buf: Buffer): boolean {
+    return (
+      buf.length >= 8 &&
+      buf[0] === 0x89 &&
+      buf[1] === 0x50 &&
+      buf[2] === 0x4e &&
+      buf[3] === 0x47 &&
+      buf[4] === 0x0d &&
+      buf[5] === 0x0a &&
+      buf[6] === 0x1a &&
+      buf[7] === 0x0a
+    );
+  }
+
+  /** رفع أيقونة PNG لمحفظة شراء مخصّصة (بعد إنشائها في القائمة) */
+  app.post("/api/admin/buy-wallet-icon", async (req, res) => {
+    try {
+      const body = req.body as { wallet_id?: string; image_base64?: string };
+      const wallet_id = typeof body.wallet_id === "string" ? body.wallet_id.trim().toLowerCase() : "";
+      if (!/^[a-z0-9][a-z0-9_-]{0,20}$/.test(wallet_id)) {
+        return res.status(400).json({ error: "invalid wallet_id" });
+      }
+      const wallets = await store.getBuyCustomWallets();
+      if (!wallets.some((w) => w.id === wallet_id)) {
+        return res.status(404).json({ error: "wallet not found" });
+      }
+      const raw = String(body.image_base64 || "").trim();
+      let buf: Buffer | null = null;
+      if (raw.startsWith("data:")) {
+        buf = dataUrlImageToBuffer(raw);
+      } else {
+        try {
+          buf = Buffer.from(raw, "base64");
+        } catch {
+          buf = null;
+        }
+      }
+      if (!buf?.length) return res.status(400).json({ error: "invalid image data" });
+      if (buf.length > MAX_BUY_WALLET_PNG_BYTES) {
+        return res.status(400).json({ error: "png too large (max 512KB)" });
+      }
+      if (!isPngMagic(buf)) {
+        return res.status(400).json({ error: "file must be png" });
+      }
+      store.ensureBuyWalletIconsDir();
+      writeFileSync(store.buyWalletIconDiskPath(wallet_id), buf);
+      res.json({ icon_url: store.buyWalletIconPublicPath(wallet_id) });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "upload failed" });
+    }
+  });
+
+  /** رفع أيقونة PNG لمحفظة بيع مخصّصة */
+  app.post("/api/admin/sell-wallet-icon", async (req, res) => {
+    try {
+      const body = req.body as { wallet_id?: string; image_base64?: string };
+      const wallet_id = typeof body.wallet_id === "string" ? body.wallet_id.trim().toLowerCase() : "";
+      if (!/^[a-z0-9][a-z0-9_-]{0,20}$/.test(wallet_id)) {
+        return res.status(400).json({ error: "invalid wallet_id" });
+      }
+      const wallets = await store.getSellCustomWallets();
+      if (!wallets.some((w) => w.id === wallet_id)) {
+        return res.status(404).json({ error: "wallet not found" });
+      }
+      const raw = String(body.image_base64 || "").trim();
+      let buf: Buffer | null = null;
+      if (raw.startsWith("data:")) {
+        buf = dataUrlImageToBuffer(raw);
+      } else {
+        try {
+          buf = Buffer.from(raw, "base64");
+        } catch {
+          buf = null;
+        }
+      }
+      if (!buf?.length) return res.status(400).json({ error: "invalid image data" });
+      if (buf.length > MAX_BUY_WALLET_PNG_BYTES) {
+        return res.status(400).json({ error: "png too large (max 512KB)" });
+      }
+      if (!isPngMagic(buf)) {
+        return res.status(400).json({ error: "file must be png" });
+      }
+      store.ensureSellWalletIconsDir();
+      writeFileSync(store.sellWalletIconDiskPath(wallet_id), buf);
+      res.json({ icon_url: store.sellWalletIconPublicPath(wallet_id) });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "upload failed" });
     }
   });
 

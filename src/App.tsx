@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
-import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogIn, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Tag, XCircle, Eye, EyeOff, Download, Smartphone } from 'lucide-react';
+import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogIn, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Tag, XCircle, Eye, EyeOff, Download } from 'lucide-react';
 import Cookies from 'js-cookie';
 import { supabase } from './lib/supabase';
 import { notificationService } from './lib/notifications';
@@ -12,6 +12,14 @@ import type { ServerTransaction } from '../types/transaction';
 import { Capacitor } from '@capacitor/core';
 import { apiUrl } from './lib/apiBase';
 import { formatLatinDigits } from './lib/formatNumbers';
+
+/** أيقونة محفظة مخصّصة: مسار نسبي من API أو رابط كامل */
+function walletIconDisplaySrc(iconUrl: string | null | undefined): string | null {
+  const u = iconUrl?.trim();
+  if (!u) return null;
+  if (u.startsWith('/')) return apiUrl(u);
+  return u;
+}
 
 type TransactionType = 'sell' | 'buy';
 type ViewType = 'home' | 'login' | 'signup' | 'admin' | 'history' | 'profile' | 'settings' | 'offers';
@@ -91,7 +99,10 @@ type BuyCustomWalletRow = {
   name_ar: string;
   name_en: string;
   enabled: boolean;
+  icon_url?: string | null;
 };
+
+type SellCustomWalletRow = BuyCustomWalletRow;
 
 type ActiveAgentNumber = {
   phoneNumber: string;
@@ -125,6 +136,15 @@ function isWebBrowser(): boolean {
 
 function MainContent() {
   const { t, lang, toggleLanguage, dir } = useLanguage();
+  /** السطر الوصفي = نفس {{amount}} المعروض كبيراً (لوحة الإدارة أو العرض) */
+  const offerLineFromTemplate = useCallback(
+    (variant: 'buy' | 'sell', amountDisplay: string, mode: 'hero' | 'grid' = 'grid') => {
+      const buyKey = mode === 'hero' ? 'heroOfferBuyLine' : 'offerGridBuyLine';
+      const sellKey = mode === 'hero' ? 'heroOfferSellLine' : 'offerGridSellLine';
+      return t(variant === 'buy' ? buyKey : sellKey).replace(/\{\{amount\}\}/g, amountDisplay.trim());
+    },
+    [t],
+  );
   const initialView = window.location.pathname === '/admin' ? 'login' : 'home';
   const [currentView, setCurrentView] = useState<ViewType>(initialView);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -169,8 +189,12 @@ function MainContent() {
     method_fastpay_sell_enabled: true,
     method_creditcard_buy_enabled: true,
     buy_custom_wallets: [] as BuyCustomWalletRow[],
+    sell_custom_wallets: [] as SellCustomWalletRow[],
   });
   const [adminNewWallet, setAdminNewWallet] = useState({ id: '', name_ar: '', name_en: '' });
+  const [adminNewSellWallet, setAdminNewSellWallet] = useState({ id: '', name_ar: '', name_en: '' });
+  const [buyWalletIconUploading, setBuyWalletIconUploading] = useState<string | null>(null);
+  const [sellWalletIconUploading, setSellWalletIconUploading] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<ServerTransaction[]>([]);
   const [clientId, setClientId] = useState<string | null>(null);
   const [offersList, setOffersList] = useState<ApiOffer[]>([]);
@@ -193,11 +217,10 @@ function MainContent() {
   const [adminTab, setAdminTab] = useState<'overview' | 'agents' | 'orders' | 'admins'>('overview');
   const [adminAdmins, setAdminAdmins] = useState<AdminRow[]>([]);
   const [adminTransactions, setAdminTransactions] = useState<ServerTransaction[]>([]);
-  const [adminOrderRefQuery, setAdminOrderRefQuery] = useState('');
-  const [adminOrderTypeFilter, setAdminOrderTypeFilter] = useState<'all' | 'buy' | 'sell'>('all');
-  const [adminOrderMethodFilter, setAdminOrderMethodFilter] = useState('all');
-  const [adminOrderFromDate, setAdminOrderFromDate] = useState('');
-  const [adminOrderToDate, setAdminOrderToDate] = useState('');
+  /** فلتر الحالة — لوحة الإدارة › الطلبات فقط */
+  const [adminOrderStatusFilter, setAdminOrderStatusFilter] = useState<
+    'all' | 'completed' | 'refunded' | 'pending' | 'failed'
+  >('all');
   const [adminBroadcastText, setAdminBroadcastText] = useState('');
   const [adminPushTitle, setAdminPushTitle] = useState('');
   const [adminPushBody, setAdminPushBody] = useState('');
@@ -263,26 +286,23 @@ function MainContent() {
   }, [transactions]);
 
   const adminFilteredTransactions = useMemo(() => {
-    let rows = [...adminTransactions];
-    const q = adminOrderRefQuery.trim().toLowerCase();
-    if (q) rows = rows.filter((tx) => String(tx.order_ref || '').toLowerCase().includes(q));
-    if (adminOrderTypeFilter !== 'all') rows = rows.filter((tx) => tx.type === adminOrderTypeFilter);
-    if (adminOrderMethodFilter !== 'all') {
-      rows = rows.filter((tx) => String(tx.method || '').toLowerCase() === adminOrderMethodFilter.toLowerCase());
+    const rows = [...adminTransactions];
+    if (adminOrderStatusFilter === 'all') return rows;
+    if (adminOrderStatusFilter === 'completed') {
+      return rows.filter((tx) => tx.status === 'completed');
     }
-    if (adminOrderFromDate) {
-      const from = new Date(adminOrderFromDate);
-      if (!Number.isNaN(from.getTime())) rows = rows.filter((tx) => new Date(tx.created_at).getTime() >= from.getTime());
+    if (adminOrderStatusFilter === 'refunded') {
+      return rows.filter((tx) => tx.status === 'refunded');
     }
-    if (adminOrderToDate) {
-      const to = new Date(adminOrderToDate);
-      if (!Number.isNaN(to.getTime())) {
-        to.setHours(23, 59, 59, 999);
-        rows = rows.filter((tx) => new Date(tx.created_at).getTime() <= to.getTime());
-      }
+    if (adminOrderStatusFilter === 'failed') {
+      return rows.filter((tx) => tx.status === 'failed');
     }
-    return rows;
-  }, [adminTransactions, adminOrderRefQuery, adminOrderTypeFilter, adminOrderMethodFilter, adminOrderFromDate, adminOrderToDate]);
+    /** معلقة: pending + إعادة OTP + معلّق */
+    return rows.filter(
+      (tx) =>
+        tx.status === 'pending' || tx.status === 'retry_otp' || tx.status === 'suspended',
+    );
+  }, [adminTransactions, adminOrderStatusFilter]);
 
   useEffect(() => {
     const stored = localStorage.getItem('notifications_enabled');
@@ -334,6 +354,9 @@ function MainContent() {
             buy_custom_wallets: Array.isArray(d.buy_custom_wallets)
               ? (d.buy_custom_wallets as BuyCustomWalletRow[])
               : prev.buy_custom_wallets,
+            sell_custom_wallets: Array.isArray(d.sell_custom_wallets)
+              ? (d.sell_custom_wallets as SellCustomWalletRow[])
+              : prev.sell_custom_wallets,
           }));
         }
       }
@@ -636,6 +659,9 @@ function MainContent() {
           buy_custom_wallets: Array.isArray(d.buy_custom_wallets)
             ? (d.buy_custom_wallets as BuyCustomWalletRow[])
             : prev.buy_custom_wallets,
+          sell_custom_wallets: Array.isArray(d.sell_custom_wallets)
+            ? (d.sell_custom_wallets as SellCustomWalletRow[])
+            : prev.sell_custom_wallets,
         }));
       }
     } catch (error) {
@@ -663,6 +689,115 @@ function MainContent() {
       }
     },
     [lang],
+  );
+
+  const handleBuyWalletPngUpload = useCallback(
+    async (walletId: string, file: File | null) => {
+      if (!file) return;
+      if (file.type !== 'image/png') {
+        alert(t('adminWalletIconPngOnly'));
+        return;
+      }
+      setBuyWalletIconUploading(walletId);
+      try {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(String(r.result || ''));
+          r.onerror = () => reject(new Error('read'));
+          r.readAsDataURL(file);
+        });
+        const res = await fetch(apiUrl('/api/admin/buy-wallet-icon'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ wallet_id: walletId, image_base64: dataUrl }),
+        });
+        if (!res.ok) {
+          const err = (await res.json().catch(() => ({}))) as { error?: string };
+          alert(err.error || (lang === 'ar' ? 'فشل الرفع' : 'Upload failed'));
+          return;
+        }
+        const { icon_url } = (await res.json()) as { icon_url: string };
+        let nextWallets: BuyCustomWalletRow[] = [];
+        setAppSettings((prev) => {
+          nextWallets = prev.buy_custom_wallets.map((x) =>
+            x.id === walletId ? { ...x, icon_url } : x,
+          );
+          return { ...prev, buy_custom_wallets: nextWallets };
+        });
+        await saveBuyCustomWallets(nextWallets);
+      } catch (e) {
+        console.error(e);
+        alert(lang === 'ar' ? 'فشل الرفع' : 'Upload failed');
+      } finally {
+        setBuyWalletIconUploading(null);
+      }
+    },
+    [lang, saveBuyCustomWallets, t],
+  );
+
+  const saveSellCustomWallets = useCallback(
+    async (wallets: SellCustomWalletRow[]) => {
+      try {
+        const res = await fetch(apiUrl('/api/admin/sell-custom-wallets'), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ wallets }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setAppSettings((prev) => ({ ...prev, sell_custom_wallets: data as SellCustomWalletRow[] }));
+        }
+      } catch (e) {
+        console.error(e);
+        alert(lang === 'ar' ? 'تعذّر حفظ محافظ البيع' : 'Could not save sell wallets');
+      }
+    },
+    [lang],
+  );
+
+  const handleSellWalletPngUpload = useCallback(
+    async (walletId: string, file: File | null) => {
+      if (!file) return;
+      if (file.type !== 'image/png') {
+        alert(t('adminWalletIconPngOnly'));
+        return;
+      }
+      setSellWalletIconUploading(walletId);
+      try {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(String(r.result || ''));
+          r.onerror = () => reject(new Error('read'));
+          r.readAsDataURL(file);
+        });
+        const res = await fetch(apiUrl('/api/admin/sell-wallet-icon'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ wallet_id: walletId, image_base64: dataUrl }),
+        });
+        if (!res.ok) {
+          const err = (await res.json().catch(() => ({}))) as { error?: string };
+          alert(err.error || (lang === 'ar' ? 'فشل الرفع' : 'Upload failed'));
+          return;
+        }
+        const { icon_url } = (await res.json()) as { icon_url: string };
+        let nextWallets: SellCustomWalletRow[] = [];
+        setAppSettings((prev) => {
+          nextWallets = prev.sell_custom_wallets.map((x) =>
+            x.id === walletId ? { ...x, icon_url } : x,
+          );
+          return { ...prev, sell_custom_wallets: nextWallets };
+        });
+        await saveSellCustomWallets(nextWallets);
+      } catch (e) {
+        console.error(e);
+        alert(lang === 'ar' ? 'فشل الرفع' : 'Upload failed');
+      } finally {
+        setSellWalletIconUploading(null);
+      }
+    },
+    [lang, saveSellCustomWallets, t],
   );
 
   const toggleNotifications = async () => {
@@ -811,7 +946,7 @@ function MainContent() {
         const selectedMethodDetails = (activeAgentNumber?.paymentMethods || []).find((m) => m.method_key === selectedMethod);
         const transferNumber =
           selectedMethodDetails?.account_number ||
-          (lang === 'ar' ? 'لا يوجد وكيل متاح حالياً (قريباً)' : 'No active agent currently (coming soon)');
+          (lang === 'ar' ? 'لا يوجد وكيل نشط' : 'No active agent');
         const holderLine = selectedMethod === 'superqi' && selectedMethodDetails?.account_holder
           ? `\n👤 اسم الحامل: ${selectedMethodDetails.account_holder}`
           : '';
@@ -922,15 +1057,27 @@ function MainContent() {
     setCurrentView(view);
   }, []);
 
-  const sellMethods: HomeMethodItem[] = useMemo(
-    () => [
+  const sellMethods: HomeMethodItem[] = useMemo(() => {
+    const base: HomeMethodItem[] = [
       { id: 'zaincash', name: t('zainCash'), icon: '/icons/zaincash.png', isImage: true, accent: 'bg-emerald-50 text-emerald-600 border-emerald-100' },
       { id: 'superqi', name: t('superQi'), icon: '/icons/superqi.png', isImage: true, accent: 'bg-red-50 text-red-600 border-red-100' },
       { id: 'firstbank', name: t('firstBank'), icon: '/icons/firstbank.png', isImage: true, accent: 'bg-blue-50 text-blue-600 border-blue-100' },
       { id: 'fastpay', name: t('fastPay'), icon: '/icons/fastpay.png', isImage: true, accent: 'bg-orange-50 text-orange-600 border-orange-100' },
-    ],
-    [t],
-  );
+    ];
+    const custom: HomeMethodItem[] = (appSettings.sell_custom_wallets || [])
+      .filter((w) => w.enabled)
+      .map((w) => {
+        const src = walletIconDisplaySrc(w.icon_url ?? null);
+        return {
+          id: `sell_wallet_${w.id}`,
+          name: lang === 'ar' ? w.name_ar : w.name_en,
+          icon: src ? src : Wallet,
+          isImage: Boolean(src),
+          accent: 'bg-slate-50 text-slate-700 border-slate-200',
+        };
+      });
+    return [...base, ...custom];
+  }, [t, appSettings.sell_custom_wallets, lang]);
 
   const buyMethods: HomeMethodItem[] = useMemo(() => {
     const base: HomeMethodItem[] = [
@@ -941,12 +1088,16 @@ function MainContent() {
     ];
     const custom: HomeMethodItem[] = (appSettings.buy_custom_wallets || [])
       .filter((w) => w.enabled)
-      .map((w) => ({
-        id: `wallet_${w.id}`,
-        name: lang === 'ar' ? w.name_ar : w.name_en,
-        icon: Wallet,
-        accent: 'bg-slate-50 text-slate-700 border-slate-200',
-      }));
+      .map((w) => {
+        const src = walletIconDisplaySrc(w.icon_url ?? null);
+        return {
+          id: `wallet_${w.id}`,
+          name: lang === 'ar' ? w.name_ar : w.name_en,
+          icon: src ? src : Wallet,
+          isImage: Boolean(src),
+          accent: 'bg-slate-50 text-slate-700 border-slate-200',
+        };
+      });
     return [
       ...base,
       ...custom,
@@ -968,6 +1119,11 @@ function MainContent() {
     if (m.id.startsWith('wallet_')) {
       const wid = m.id.slice('wallet_'.length);
       const row = appSettings.buy_custom_wallets?.find((w) => w.id === wid);
+      return Boolean(row?.enabled);
+    }
+    if (m.id.startsWith('sell_wallet_')) {
+      const wid = m.id.slice('sell_wallet_'.length);
+      const row = appSettings.sell_custom_wallets?.find((w) => w.id === wid);
       return Boolean(row?.enabled);
     }
     return true;
@@ -1146,6 +1302,12 @@ function MainContent() {
           key: `wallet_${w.id}`,
           label: lang === 'ar' ? w.name_ar : w.name_en,
         })),
+      ...appSettings.sell_custom_wallets
+        .filter((w) => w.enabled)
+        .map((w) => ({
+          key: `sell_wallet_${w.id}`,
+          label: lang === 'ar' ? w.name_ar : w.name_en,
+        })),
     ];
 
     const adminMethodLabel = (key: string) => {
@@ -1157,6 +1319,11 @@ function MainContent() {
       if (key.startsWith('wallet_')) {
         const id = key.slice('wallet_'.length);
         const row = appSettings.buy_custom_wallets.find((w) => w.id === id);
+        if (row) return lang === 'ar' ? row.name_ar : row.name_en;
+      }
+      if (key.startsWith('sell_wallet_')) {
+        const id = key.slice('sell_wallet_'.length);
+        const row = appSettings.sell_custom_wallets.find((w) => w.id === id);
         if (row) return lang === 'ar' ? row.name_ar : row.name_en;
       }
       return key;
@@ -1504,67 +1671,89 @@ function MainContent() {
                       <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow-sm transition-transform ${appSettings.sell_coming_soon ? 'left-6' : 'left-0.5'}`}></div>
                     </button>
                   </div>
-                  <div className="pt-2 border-t border-gray-100">
-                    <p className="text-xs font-bold text-gray-500 mb-1">{t('paymentMethodsVisibility')}</p>
-                    <p className="text-[11px] text-gray-400 mb-3">{t('adminMethodsVisibilityHint')}</p>
-                    <div className="mb-2 grid grid-cols-[1fr_auto_auto] items-end gap-x-2 gap-y-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">
-                      <span />
-                      <span className="text-center">{t('adminMethodPay')}</span>
-                      <span className="text-center">{t('adminMethodReceive')}</span>
-                    </div>
-                    <div className="space-y-3">
-                      {(
-                        [
-                          ['zaincash', t('zainCash')],
-                          ['superqi', t('superQi')],
-                          ['firstbank', `${t('firstBank')} (FIB)`],
-                          ['fastpay', t('fastPay')],
-                        ] as const
-                      ).map(([id, label]) => {
-                        const buyK = `method_${id}_buy_enabled` as keyof typeof appSettings;
-                        const sellK = `method_${id}_sell_enabled` as keyof typeof appSettings;
-                        return (
-                          <div key={id} className="grid grid-cols-[1fr_auto_auto] items-center gap-x-2 gap-y-1">
-                            <span className="font-medium text-gray-700 min-w-0">{label}</span>
-                            <button
-                              type="button"
-                              onClick={() => toggleSetting(buyK as string)}
-                              className={`w-12 h-6 rounded-full relative transition-colors justify-self-center ${appSettings[buyK] ? 'bg-red-500' : 'bg-gray-200'}`}
-                              aria-label={`${label} ${t('adminMethodPay')}`}
-                            >
-                              <div
-                                className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow-sm transition-transform ${appSettings[buyK] ? 'left-6' : 'left-0.5'}`}
-                              />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => toggleSetting(sellK as string)}
-                              className={`w-12 h-6 rounded-full relative transition-colors justify-self-center ${appSettings[sellK] ? 'bg-red-500' : 'bg-gray-200'}`}
-                              aria-label={`${label} ${t('adminMethodReceive')}`}
-                            >
-                              <div
-                                className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow-sm transition-transform ${appSettings[sellK] ? 'left-6' : 'left-0.5'}`}
-                              />
-                            </button>
-                          </div>
-                        );
-                      })}
-                      <div className="grid grid-cols-[1fr_auto_auto] items-center gap-x-2 border-t border-gray-100 pt-3">
-                        <span className="font-medium text-gray-700">{t('creditCard')}</span>
-                        <button
-                          type="button"
-                          onClick={() => toggleSetting('method_creditcard_buy_enabled')}
-                          className={`w-12 h-6 rounded-full relative transition-colors justify-self-center ${appSettings.method_creditcard_buy_enabled ? 'bg-red-500' : 'bg-gray-200'}`}
-                          aria-label={`${t('creditCard')} ${t('adminMethodPay')}`}
-                        >
-                          <div
-                            className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow-sm transition-transform ${appSettings.method_creditcard_buy_enabled ? 'left-6' : 'left-0.5'}`}
-                          />
-                        </button>
-                        <span className="justify-self-center text-xs text-gray-300" title={t('adminCreditCardSellNa')}>
-                          —
-                        </span>
-                      </div>
+                  <div className="border-t border-gray-100 pt-3">
+                    <p className="text-xs font-bold text-gray-600 mb-0.5">{t('paymentMethodsVisibility')}</p>
+                    <p className="text-[11px] leading-relaxed text-gray-400 mb-3">{t('adminMethodsVisibilityHint')}</p>
+                    <div className="overflow-x-auto rounded-xl border border-gray-100 bg-gray-50/80">
+                      <table className="w-full min-w-[280px] border-collapse text-sm">
+                        <thead>
+                          <tr className="border-b border-gray-200/80 bg-white/90">
+                            <th className="px-3 py-2.5 text-start font-bold text-gray-500 ltr:text-left rtl:text-right">
+                              {/* عمود أسماء القنوات */}
+                            </th>
+                            <th className="w-[52px] px-1 py-2.5 text-center text-[11px] font-bold leading-tight text-gray-600">
+                              {t('adminMethodPay')}
+                            </th>
+                            <th className="w-[52px] px-1 py-2.5 text-center text-[11px] font-bold leading-tight text-gray-600">
+                              {t('adminMethodReceive')}
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100/90">
+                          {(
+                            [
+                              ['zaincash', t('zainCash')],
+                              ['superqi', t('superQi')],
+                              ['firstbank', `${t('firstBank')} (FIB)`],
+                              ['fastpay', t('fastPay')],
+                            ] as const
+                          ).map(([id, label]) => {
+                            const buyK = `method_${id}_buy_enabled` as keyof typeof appSettings;
+                            const sellK = `method_${id}_sell_enabled` as keyof typeof appSettings;
+                            return (
+                              <tr key={id} className="bg-white/60">
+                                <td className="px-3 py-2.5 font-medium text-gray-800 ltr:text-left rtl:text-right">
+                                  {label}
+                                </td>
+                                <td className="px-1 py-2 text-center align-middle">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleSetting(buyK as string)}
+                                    className={`relative inline-flex h-6 w-12 rounded-full transition-colors ${appSettings[buyK] ? 'bg-red-500' : 'bg-gray-200'}`}
+                                    aria-label={`${label} ${t('adminMethodPay')}`}
+                                  >
+                                    <span
+                                      className={`pointer-events-none absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${appSettings[buyK] ? 'left-6' : 'left-0.5'}`}
+                                    />
+                                  </button>
+                                </td>
+                                <td className="px-1 py-2 text-center align-middle">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleSetting(sellK as string)}
+                                    className={`relative inline-flex h-6 w-12 rounded-full transition-colors ${appSettings[sellK] ? 'bg-red-500' : 'bg-gray-200'}`}
+                                    aria-label={`${label} ${t('adminMethodReceive')}`}
+                                  >
+                                    <span
+                                      className={`pointer-events-none absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${appSettings[sellK] ? 'left-6' : 'left-0.5'}`}
+                                    />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          <tr className="bg-white/60">
+                            <td className="px-3 py-2.5 font-medium text-gray-800 ltr:text-left rtl:text-right">
+                              {t('creditCard')}
+                            </td>
+                            <td className="px-1 py-2 text-center align-middle">
+                              <button
+                                type="button"
+                                onClick={() => toggleSetting('method_creditcard_buy_enabled')}
+                                className={`relative inline-flex h-6 w-12 rounded-full transition-colors ${appSettings.method_creditcard_buy_enabled ? 'bg-red-500' : 'bg-gray-200'}`}
+                                aria-label={`${t('creditCard')} ${t('adminMethodPay')}`}
+                              >
+                                <span
+                                  className={`pointer-events-none absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${appSettings.method_creditcard_buy_enabled ? 'left-6' : 'left-0.5'}`}
+                                />
+                              </button>
+                            </td>
+                            <td className="px-1 py-2 text-center align-middle text-gray-300" title={t('adminCreditCardSellNa')}>
+                              <span className="inline-block w-12 text-center text-sm">—</span>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 </div>
@@ -1659,17 +1848,89 @@ function MainContent() {
                   appSettings.buy_custom_wallets.map((w) => (
                     <div
                       key={w.id}
-                      className="flex flex-wrap items-center justify-between gap-3 bg-gray-50 border border-gray-100 rounded-xl px-4 py-3"
+                      className="flex flex-col gap-3 bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between"
                     >
-                      <div>
+                      <div className="min-w-0 flex-1 space-y-2">
                         <p className="font-bold text-gray-900">
                           <code className="text-xs bg-white px-2 py-0.5 rounded border border-gray-200" dir="ltr">
                             wallet_{w.id}
                           </code>{' '}
                           <span className="mr-2">{lang === 'ar' ? w.name_ar : w.name_en}</span>
                         </p>
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                          <span className="font-bold text-gray-500">{t('adminWalletIconSection')}</span>
+                          {walletIconDisplaySrc(w.icon_url) ? (
+                            <img
+                              src={walletIconDisplaySrc(w.icon_url)!}
+                              alt=""
+                              className="h-10 w-10 rounded-lg border border-gray-200 bg-white object-contain"
+                            />
+                          ) : (
+                            <span className="text-gray-400">{t('adminWalletIconNone')}</span>
+                          )}
+                          <label className="cursor-pointer rounded-lg bg-white px-2 py-1 font-bold text-gray-800 ring-1 ring-gray-200 hover:bg-gray-50">
+                            <input
+                              type="file"
+                              accept="image/png"
+                              className="sr-only"
+                              disabled={buyWalletIconUploading === w.id}
+                              onChange={(e) => {
+                                const f = e.target.files?.[0] ?? null;
+                                e.target.value = '';
+                                void handleBuyWalletPngUpload(w.id, f);
+                              }}
+                            />
+                            {buyWalletIconUploading === w.id ? '…' : t('adminWalletIconUploadPng')}
+                          </label>
+                          {w.icon_url ? (
+                            <button
+                              type="button"
+                              className="font-bold text-red-600 hover:text-red-700"
+                              onClick={() =>
+                                void saveBuyCustomWallets(
+                                  appSettings.buy_custom_wallets.map((x) =>
+                                    x.id === w.id ? { ...x, icon_url: null } : x,
+                                  ),
+                                )
+                              }
+                            >
+                              {t('adminWalletIconRemove')}
+                            </button>
+                          ) : null}
+                        </div>
+                        <div className="max-w-md">
+                          <label className="mb-0.5 block text-[10px] font-bold uppercase tracking-wide text-gray-400">
+                            {t('adminWalletIconUrlOptional')}
+                          </label>
+                          <input
+                            type="url"
+                            dir="ltr"
+                            placeholder="https://example.com/icon.png"
+                            className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs"
+                            defaultValue={
+                              w.icon_url && /^https?:\/\//i.test(w.icon_url) ? w.icon_url : ''
+                            }
+                            key={`${w.id}-iconurl-${w.icon_url ?? 'x'}`}
+                            onBlur={(e) => {
+                              const v = e.target.value.trim();
+                              if (v && !/^https?:\/\//i.test(v)) {
+                                alert(t('adminWalletIconUrlInvalid'));
+                                return;
+                              }
+                              const nextHttp = v === '' ? null : v;
+                              const currentHttp =
+                                w.icon_url && /^https?:\/\//i.test(w.icon_url) ? w.icon_url : null;
+                              if (nextHttp === currentHttp) return;
+                              void saveBuyCustomWallets(
+                                appSettings.buy_custom_wallets.map((x) =>
+                                  x.id === w.id ? { ...x, icon_url: nextHttp } : x,
+                                ),
+                              );
+                            }}
+                          />
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex shrink-0 items-center gap-2">
                         <button
                           type="button"
                           onClick={() =>
@@ -1690,6 +1951,191 @@ function MainContent() {
                           onClick={() => {
                             if (!window.confirm(t('adminWalletDeleteConfirm'))) return;
                             void saveBuyCustomWallets(appSettings.buy_custom_wallets.filter((x) => x.id !== w.id));
+                          }}
+                          className="text-xs font-bold text-red-600 hover:text-red-700"
+                        >
+                          {t('delete')}
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-8 space-y-4">
+              <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                <Wallet className="w-5 h-5 text-gray-500" />
+                {t('adminSellCustomWallets')}
+              </h3>
+              <p className="text-sm text-gray-500">{t('adminSellCustomWalletsHint')}</p>
+              <form
+                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const id = adminNewSellWallet.id.trim().toLowerCase();
+                  if (!/^[a-z0-9][a-z0-9_-]{0,20}$/.test(id)) {
+                    alert(t('adminWalletIdInvalid'));
+                    return;
+                  }
+                  const name_ar = adminNewSellWallet.name_ar.trim();
+                  const name_en = adminNewSellWallet.name_en.trim();
+                  if (!name_ar && !name_en) {
+                    alert(t('adminWalletNameRequired'));
+                    return;
+                  }
+                  if (appSettings.sell_custom_wallets.some((w) => w.id === id)) {
+                    alert(t('adminWalletIdDuplicate'));
+                    return;
+                  }
+                  void saveSellCustomWallets([
+                    ...appSettings.sell_custom_wallets,
+                    { id, name_ar: name_ar || name_en, name_en: name_en || name_ar, enabled: true },
+                  ]);
+                  setAdminNewSellWallet({ id: '', name_ar: '', name_en: '' });
+                }}
+              >
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 mb-1">{t('adminWalletId')}</label>
+                  <input
+                    value={adminNewSellWallet.id}
+                    onChange={(e) => setAdminNewSellWallet((p) => ({ ...p, id: e.target.value }))}
+                    placeholder="my_sell_wallet"
+                    className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl font-mono text-sm"
+                    dir="ltr"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 mb-1">{t('adminWalletNameAr')}</label>
+                  <input
+                    value={adminNewSellWallet.name_ar}
+                    onChange={(e) => setAdminNewSellWallet((p) => ({ ...p, name_ar: e.target.value }))}
+                    className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 mb-1">{t('adminWalletNameEn')}</label>
+                  <input
+                    value={adminNewSellWallet.name_en}
+                    onChange={(e) => setAdminNewSellWallet((p) => ({ ...p, name_en: e.target.value }))}
+                    className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl"
+                    dir="ltr"
+                  />
+                </div>
+                <button type="submit" className="bg-gray-900 text-white px-4 py-2.5 rounded-xl text-sm font-bold h-[42px]">
+                  {t('adminAddWallet')}
+                </button>
+              </form>
+              <div className="space-y-2">
+                {appSettings.sell_custom_wallets.length === 0 ? (
+                  <p className="text-sm text-gray-400">{t('adminNoSellCustomWallets')}</p>
+                ) : (
+                  appSettings.sell_custom_wallets.map((w) => (
+                    <div
+                      key={w.id}
+                      className="flex flex-col gap-3 bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between"
+                    >
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <p className="font-bold text-gray-900">
+                          <code className="text-xs bg-white px-2 py-0.5 rounded border border-gray-200" dir="ltr">
+                            sell_wallet_{w.id}
+                          </code>{' '}
+                          <span className="mr-2">{lang === 'ar' ? w.name_ar : w.name_en}</span>
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                          <span className="font-bold text-gray-500">{t('adminWalletIconSection')}</span>
+                          {walletIconDisplaySrc(w.icon_url) ? (
+                            <img
+                              src={walletIconDisplaySrc(w.icon_url)!}
+                              alt=""
+                              className="h-10 w-10 rounded-lg border border-gray-200 bg-white object-contain"
+                            />
+                          ) : (
+                            <span className="text-gray-400">{t('adminWalletIconNone')}</span>
+                          )}
+                          <label className="cursor-pointer rounded-lg bg-white px-2 py-1 font-bold text-gray-800 ring-1 ring-gray-200 hover:bg-gray-50">
+                            <input
+                              type="file"
+                              accept="image/png"
+                              className="sr-only"
+                              disabled={sellWalletIconUploading === w.id}
+                              onChange={(e) => {
+                                const f = e.target.files?.[0] ?? null;
+                                e.target.value = '';
+                                void handleSellWalletPngUpload(w.id, f);
+                              }}
+                            />
+                            {sellWalletIconUploading === w.id ? '…' : t('adminWalletIconUploadPng')}
+                          </label>
+                          {w.icon_url ? (
+                            <button
+                              type="button"
+                              className="font-bold text-red-600 hover:text-red-700"
+                              onClick={() =>
+                                void saveSellCustomWallets(
+                                  appSettings.sell_custom_wallets.map((x) =>
+                                    x.id === w.id ? { ...x, icon_url: null } : x,
+                                  ),
+                                )
+                              }
+                            >
+                              {t('adminWalletIconRemove')}
+                            </button>
+                          ) : null}
+                        </div>
+                        <div className="max-w-md">
+                          <label className="mb-0.5 block text-[10px] font-bold uppercase tracking-wide text-gray-400">
+                            {t('adminWalletIconUrlOptional')}
+                          </label>
+                          <input
+                            type="url"
+                            dir="ltr"
+                            placeholder="https://example.com/icon.png"
+                            className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs"
+                            defaultValue={
+                              w.icon_url && /^https?:\/\//i.test(w.icon_url) ? w.icon_url : ''
+                            }
+                            key={`sell-${w.id}-iconurl-${w.icon_url ?? 'x'}`}
+                            onBlur={(e) => {
+                              const v = e.target.value.trim();
+                              if (v && !/^https?:\/\//i.test(v)) {
+                                alert(t('adminWalletIconUrlInvalid'));
+                                return;
+                              }
+                              const nextHttp = v === '' ? null : v;
+                              const currentHttp =
+                                w.icon_url && /^https?:\/\//i.test(w.icon_url) ? w.icon_url : null;
+                              if (nextHttp === currentHttp) return;
+                              void saveSellCustomWallets(
+                                appSettings.sell_custom_wallets.map((x) =>
+                                  x.id === w.id ? { ...x, icon_url: nextHttp } : x,
+                                ),
+                              );
+                            }}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void saveSellCustomWallets(
+                              appSettings.sell_custom_wallets.map((x) =>
+                                x.id === w.id ? { ...x, enabled: !x.enabled } : x,
+                              ),
+                            )
+                          }
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
+                            w.enabled ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-200 text-gray-600'
+                          }`}
+                        >
+                          {w.enabled ? t('adminWalletOn') : t('adminWalletOff')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!window.confirm(t('adminWalletDeleteConfirm'))) return;
+                            void saveSellCustomWallets(appSettings.sell_custom_wallets.filter((x) => x.id !== w.id));
                           }}
                           className="text-xs font-bold text-red-600 hover:text-red-700"
                         >
@@ -2001,64 +2447,23 @@ function MainContent() {
             <div className="space-y-6 pb-12">
               <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-4">
                 <h3 className="font-bold text-gray-900">{lang === 'ar' ? 'قائمة الطلبات' : 'Orders List'}</h3>
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-                  <input
-                    value={adminOrderRefQuery}
-                    onChange={(e) => setAdminOrderRefQuery(e.target.value)}
-                    placeholder={lang === 'ar' ? 'بحث برقم الطلب (ORD-...)' : 'Search by order number (ORD-...)'}
-                    className="md:col-span-2 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl"
-                    dir="ltr"
-                  />
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+                  <label className="text-sm font-bold text-gray-700 shrink-0">{t('adminOrdersFilterLabel')}</label>
                   <select
-                    value={adminOrderTypeFilter}
-                    onChange={(e) => setAdminOrderTypeFilter(e.target.value as 'all' | 'buy' | 'sell')}
-                    className="px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl"
+                    value={adminOrderStatusFilter}
+                    onChange={(e) =>
+                      setAdminOrderStatusFilter(
+                        e.target.value as 'all' | 'completed' | 'refunded' | 'pending' | 'failed',
+                      )
+                    }
+                    className="min-w-[200px] flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl"
                   >
-                    <option value="all">{lang === 'ar' ? 'كل الأنواع' : 'All types'}</option>
-                    <option value="buy">{lang === 'ar' ? 'شراء' : 'Buy'}</option>
-                    <option value="sell">{lang === 'ar' ? 'بيع' : 'Sell'}</option>
+                    <option value="all">{t('adminOrdersFilterAll')}</option>
+                    <option value="completed">{t('adminOrdersFilterCompletedTab')}</option>
+                    <option value="refunded">{t('adminOrdersFilterRefundedTab')}</option>
+                    <option value="pending">{t('adminOrdersFilterPendingTab')}</option>
+                    <option value="failed">{t('adminOrdersFilterFailedTab')}</option>
                   </select>
-                  <select
-                    value={adminOrderMethodFilter}
-                    onChange={(e) => setAdminOrderMethodFilter(e.target.value)}
-                    className="px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl"
-                  >
-                    <option value="all">{lang === 'ar' ? 'كل طرق الدفع' : 'All methods'}</option>
-                    {([...
-                      new Set(adminTransactions.map((tx) => String(tx.method || '')).filter((m) => m.length > 0))
-                    ] as string[]).map((m) => (
-                      <option key={m} value={m}>
-                        {adminMethodLabel(m)}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAdminOrderRefQuery('');
-                      setAdminOrderTypeFilter('all');
-                      setAdminOrderMethodFilter('all');
-                      setAdminOrderFromDate('');
-                      setAdminOrderToDate('');
-                    }}
-                    className="px-4 py-2.5 bg-gray-100 text-gray-700 rounded-xl text-sm font-bold hover:bg-gray-200"
-                  >
-                    {lang === 'ar' ? 'تصفير الفلاتر' : 'Reset filters'}
-                  </button>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <input
-                    type="date"
-                    value={adminOrderFromDate}
-                    onChange={(e) => setAdminOrderFromDate(e.target.value)}
-                    className="px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl"
-                  />
-                  <input
-                    type="date"
-                    value={adminOrderToDate}
-                    onChange={(e) => setAdminOrderToDate(e.target.value)}
-                    className="px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl"
-                  />
                 </div>
                 <div className="text-xs text-gray-500 font-bold">
                   {lang === 'ar'
@@ -2113,7 +2518,7 @@ function MainContent() {
                 })}
                 {adminFilteredTransactions.length === 0 && (
                   <div className="py-14 text-center bg-white rounded-3xl border border-dashed border-gray-200">
-                    <p className="text-gray-400 font-bold">{lang === 'ar' ? 'لا توجد طلبات مطابقة للفلاتر.' : 'No orders match current filters.'}</p>
+                    <p className="text-gray-400 font-bold">{t('adminOrdersEmptyFiltered')}</p>
                   </div>
                 )}
               </div>
@@ -2463,7 +2868,7 @@ function MainContent() {
           >
             {currentView === 'admin' && <div className={`absolute top-2 bottom-2 w-1.5 bg-red-600 rounded-full ${dir === 'rtl' ? 'right-0' : 'left-0'}`}></div>}
             <ShieldAlert className="w-5 h-5 relative z-10" />
-            <span className="relative z-10">Admin Panel</span>
+            <span className="relative z-10">{t('adminPanel')}</span>
           </button>
         )}
       </nav>
@@ -2503,22 +2908,46 @@ function MainContent() {
   );
 
   const renderMobileHeader = () => (
-    <header className="lg:hidden bg-white sticky top-0 z-30 px-5 py-3 flex justify-between items-center border-b border-gray-100 shadow-sm">
-      <button
-        type="button"
-        onClick={() => setCurrentView('home')}
-        className="flex items-center gap-2 min-w-0 rounded-xl py-1 ps-1 pe-2 hover:bg-gray-50 transition-colors -ms-1"
-        aria-label={`${t('appTitle')} — ${t('home')}`}
-      >
-        <div className="w-14 h-14 shrink-0 flex items-center justify-center">
-          <BrandLogo alt={t('appTitle')} size="md" priority />
+    <header className="lg:hidden bg-white sticky top-0 z-30 border-b border-gray-100 shadow-sm">
+      <div className="flex items-center justify-between gap-2 px-4 py-3 sm:px-5">
+        <button
+          type="button"
+          onClick={() => setCurrentView('home')}
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-xl py-1 ps-1 pe-2 -ms-1 hover:bg-gray-50 transition-colors"
+          aria-label={`${t('appTitle')} — ${t('home')}`}
+        >
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center">
+            <BrandLogo alt={t('appTitle')} size="md" priority />
+          </div>
+          <h1 className="truncate text-base font-black tracking-tight text-gray-900">{t('appTitle')}</h1>
+        </button>
+        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => setCurrentView('admin')}
+              className={`flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-bold transition-colors sm:px-3.5 ${
+                currentView === 'admin'
+                  ? 'bg-red-600 text-white shadow-sm'
+                  : 'bg-gray-900 text-white hover:bg-gray-800'
+              }`}
+              aria-label={t('adminPanel')}
+            >
+              <ShieldAlert className="h-4 w-4 shrink-0" aria-hidden />
+              <span className="max-[380px]:sr-only">{t('adminPanel')}</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={toggleLanguage}
+            className="flex items-center gap-1.5 rounded-full bg-gray-50 px-3 py-2 text-gray-600 transition-colors hover:text-gray-900"
+            aria-label={lang === 'ar' ? 'English' : 'العربية'}
+          >
+            <Globe className="h-4 w-4 shrink-0" />
+            <span className="text-xs font-bold">{lang === 'ar' ? 'EN' : 'عربي'}</span>
+          </button>
         </div>
-        <h1 className="text-base font-black tracking-tight text-gray-900 truncate">{t('appTitle')}</h1>
-      </button>
-      <button onClick={toggleLanguage} className="flex items-center gap-1.5 text-gray-600 hover:text-gray-900 bg-gray-50 px-3 py-1.5 rounded-full transition-colors">
-        <Globe className="w-4 h-4" />
-        <span className="text-xs font-bold">{lang === 'ar' ? 'EN' : 'عربي'}</span>
-      </button>
+      </div>
     </header>
   );
 
@@ -2613,75 +3042,55 @@ function MainContent() {
   const renderOfferCard = () => (
     <div
       key={txType}
-      className="relative mb-8 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_30px_-8px_rgba(15,23,42,0.12)] ring-1 ring-slate-900/[0.04] [contain:layout_paint]"
+      className={`relative mb-8 overflow-hidden rounded-[2rem] border border-black/10 shadow-md [contain:layout_paint] ${txType === 'sell' ? 'bg-gray-900' : 'bg-red-700'}`}
     >
-      <div
-        className={`h-1.5 ${txType === 'sell' ? 'bg-gradient-to-l from-slate-700 via-slate-600 to-slate-700' : 'bg-gradient-to-l from-red-700 via-red-600 to-red-700'}`}
-        aria-hidden
-      />
-      <div className="relative z-10 p-6 sm:p-8">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
-          <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-900 ring-1 ring-amber-200/80">
-            <Zap className="h-3.5 w-3.5 shrink-0 fill-amber-600 text-amber-600" />
+      <div className="relative z-10 p-8">
+        <div className="mb-10 flex items-start justify-between">
+          <div className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/15 px-3 py-1.5 text-xs font-bold text-white">
+            <Zap className="h-3.5 w-3.5 fill-current" />
             {t('recommended')}
           </div>
-          <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-900 ring-1 ring-emerald-200/80">
+          <span className="rounded-full border border-white/15 bg-black/25 px-3 py-1.5 text-xs font-bold text-white/90">
             {t('days')}
           </span>
         </div>
 
-        <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:gap-8">
-          <div
-            className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl sm:h-[4.5rem] sm:w-[4.5rem] ${
-              txType === 'sell' ? 'bg-slate-100 text-slate-700 ring-1 ring-slate-200/90' : 'bg-red-50 text-red-600 ring-1 ring-red-100'
-            }`}
+        <h3 className="mb-3 text-base font-bold leading-snug text-white sm:text-lg sm:leading-snug">
+          {offerLineFromTemplate(
+            txType === 'buy' ? 'buy' : 'sell',
+            txType === 'sell' ? siteContent.heroSellAmountDisplay : siteContent.heroBuyAmountDisplay,
+            'hero',
+          )}
+        </h3>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 sm:gap-x-3">
+          <span
+            className="min-w-0 max-w-full text-[clamp(1.85rem,6vw,3.1rem)] font-black leading-none tracking-tight text-white tabular-nums [font-variant-numeric:lining-nums] [text-rendering:geometricPrecision]"
+            dir="ltr"
           >
-            <Smartphone className="h-8 w-8 sm:h-9 sm:w-9" strokeWidth={1.75} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
-              {txType === 'sell' ? t('sellCredit') : t('buyCredit')}
-            </p>
-            <h3 className="mb-3 mt-1 text-sm font-semibold leading-relaxed text-slate-700">
-              {txType === 'sell' ? t('offerTitle') : t('buyOfferTitle')}
-            </h3>
-            <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-              <span
-                className="min-w-0 max-w-full text-[clamp(1.85rem,6vw,3.25rem)] font-black leading-[1.1] tracking-tight text-slate-900 tabular-nums [font-variant-numeric:lining-nums] [text-rendering:geometricPrecision]"
-                dir="ltr"
-              >
-                {txType === 'sell' ? siteContent.heroSellAmountDisplay : siteContent.heroBuyAmountDisplay}
-              </span>
-              <span className="shrink-0 text-lg font-bold text-slate-600">
-                {txType === 'sell' ? t('iqd') : 'Asiacell'}
-              </span>
-            </div>
-          </div>
+            {txType === 'sell' ? siteContent.heroSellAmountDisplay : siteContent.heroBuyAmountDisplay}
+          </span>
+          <span className="shrink-0 text-[clamp(1.15rem,3.8vw,1.65rem)] font-bold leading-tight text-white/95">
+            {txType === 'sell' ? t('iqd') : 'Asiacell'}
+          </span>
         </div>
       </div>
-      <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/90 px-6 py-4 sm:px-8">
-        <span className="flex items-center gap-2 text-sm font-semibold text-slate-600">
-          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-          {t('limitedOffer')}
+      <div
+        className={`flex items-center justify-between border-t border-white/10 px-8 py-4 text-sm font-bold text-white ${txType === 'sell' ? 'bg-red-600' : 'bg-gray-900'}`}
+      >
+        <span className="flex items-center gap-2 uppercase tracking-wider">
+          <CheckCircle2 className="h-4 w-4" /> {t('limitedOffer')}
         </span>
-        <span
-          className={`flex h-10 w-10 items-center justify-center rounded-full border border-slate-200/80 bg-white text-slate-500 shadow-sm ${
-            txType === 'sell' ? 'text-slate-600' : 'text-red-600'
-          }`}
-          aria-hidden
-        >
-          <ArrowRight className={`h-4 w-4 ${dir === 'rtl' ? 'rotate-180' : ''}`} />
-        </span>
+        <ArrowRight className={`h-4 w-4 ${dir === 'rtl' ? 'rotate-180' : ''}`} />
       </div>
     </div>
   );
 
   const renderOffers = () => {
-    const fallback: { id: string; variant: TransactionType; title: string; amount: string; unit: string }[] = [
-      { id: '1', variant: 'sell', title: t('offerTitle'), amount: '95,000', unit: t('iqd') },
-      { id: '2', variant: 'buy', title: t('buyOfferTitle'), amount: '100,000', unit: t('asiacell') },
-      { id: '3', variant: 'sell', title: t('offerSell50'), amount: '47,500', unit: t('iqd') },
-      { id: '4', variant: 'buy', title: t('offerBuy25'), amount: '25,000', unit: t('asiacell') },
+    const fallback: { id: string; variant: TransactionType; amount: string; unit: string }[] = [
+      { id: '1', variant: 'sell', amount: '95,000', unit: t('iqd') },
+      { id: '2', variant: 'buy', amount: '100,000', unit: t('asiacell') },
+      { id: '3', variant: 'sell', amount: '47,500', unit: t('iqd') },
+      { id: '4', variant: 'buy', amount: '25,000', unit: t('asiacell') },
     ];
 
     const list =
@@ -2689,7 +3098,6 @@ function MainContent() {
         ? offersList.map((o) => ({
             id: o.id,
             variant: o.variant,
-            title: lang === 'ar' ? o.title_ar : o.title_en,
             amount: o.amount_display,
             unit: lang === 'ar' ? o.unit_ar : o.unit_en,
           }))
@@ -2712,66 +3120,47 @@ function MainContent() {
           {list.map((item) => (
             <div
               key={item.id}
-              className="relative flex flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_28px_-10px_rgba(15,23,42,0.1)] ring-1 ring-slate-900/[0.04] [contain:layout_paint]"
+              className={`relative flex flex-col overflow-hidden rounded-3xl border border-black/10 shadow-sm [contain:layout_paint] ${
+                item.variant === 'sell' ? 'bg-gray-900' : 'bg-red-700'
+              }`}
             >
-              <div
-                className={`h-1.5 ${
-                  item.variant === 'sell'
-                    ? 'bg-gradient-to-l from-slate-700 via-slate-600 to-slate-700'
-                    : 'bg-gradient-to-l from-red-700 via-red-600 to-red-700'
-                }`}
-                aria-hidden
-              />
-              <div className="relative z-10 flex flex-1 flex-col p-6 sm:p-7">
-                <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
-                  <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-900 ring-1 ring-amber-200/80">
-                    <Zap className="h-3.5 w-3.5 shrink-0 fill-amber-600 text-amber-600" />
+              <div className="relative z-10 flex-1 p-6 sm:p-8">
+                <div className="mb-6 flex items-start justify-between gap-2">
+                  <div className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/15 px-3 py-1.5 text-xs font-bold text-white">
+                    <Zap className="h-3.5 w-3.5 shrink-0 fill-current" />
                     {t('recommended')}
                   </div>
-                  <span className="shrink-0 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-900 ring-1 ring-emerald-200/80">
+                  <span className="shrink-0 rounded-full border border-white/15 bg-black/25 px-3 py-1.5 text-xs font-bold text-white/90">
                     {t('days')}
                   </span>
                 </div>
-                <div className="flex flex-1 flex-col gap-5 sm:flex-row sm:items-start sm:gap-6">
-                  <div
-                    className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl ${
-                      item.variant === 'sell'
-                        ? 'bg-slate-100 text-slate-700 ring-1 ring-slate-200/90'
-                        : 'bg-red-50 text-red-600 ring-1 ring-red-100'
-                    }`}
+                <h3 className="mb-3 text-base font-bold leading-snug text-white sm:text-lg">
+                  {offerLineFromTemplate(item.variant === 'buy' ? 'buy' : 'sell', item.amount, 'grid')}
+                </h3>
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 sm:gap-x-2.5">
+                  <span
+                    className="min-w-0 text-4xl font-black leading-none tracking-tight text-white tabular-nums [font-variant-numeric:lining-nums] sm:text-5xl"
+                    dir="ltr"
                   >
-                    <Smartphone className="h-7 w-7" strokeWidth={1.75} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                      {item.variant === 'sell' ? t('sellCredit') : t('buyCredit')}
-                    </p>
-                    <h3 className="mb-3 mt-1 text-sm font-semibold leading-relaxed text-slate-700">{item.title}</h3>
-                    <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-                      <span
-                        className="min-w-0 text-4xl font-black leading-[1.1] tracking-tight text-slate-900 tabular-nums [font-variant-numeric:lining-nums] sm:text-5xl"
-                        dir="ltr"
-                      >
-                        {item.amount}
-                      </span>
-                      <span className="shrink-0 text-base font-bold text-slate-600">{item.unit}</span>
-                    </div>
-                  </div>
+                    {item.amount}
+                  </span>
+                  <span className="shrink-0 text-xl font-bold leading-tight text-white/95 sm:text-2xl">
+                    {item.unit}
+                  </span>
                 </div>
               </div>
-              <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/90 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-                <span className="flex items-center gap-2 text-sm font-semibold text-slate-600">
-                  <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-                  {t('limitedOffer')}
+              <div
+                className={`flex flex-col gap-3 px-6 py-3.5 sm:flex-row sm:items-center sm:justify-between ${
+                  item.variant === 'sell' ? 'bg-red-600' : 'bg-gray-900'
+                }`}
+              >
+                <span className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-white/95">
+                  <CheckCircle2 className="h-4 w-4 shrink-0" /> {t('limitedOffer')}
                 </span>
                 <button
                   type="button"
                   onClick={() => goExchange(item.variant)}
-                  className={`w-full rounded-xl py-3 text-center text-sm font-black text-white shadow-sm transition-colors active:opacity-95 sm:w-auto sm:px-6 ${
-                    item.variant === 'sell'
-                      ? 'bg-slate-800 hover:bg-slate-900'
-                      : 'bg-red-600 hover:bg-red-700'
-                  }`}
+                  className="w-full rounded-xl border border-white/25 bg-white/15 py-2.5 text-center text-sm font-black text-white active:bg-white/25 sm:w-auto sm:px-5"
                 >
                   {t('subscribe')}
                 </button>
@@ -2973,8 +3362,8 @@ function MainContent() {
                         } ${dir === 'rtl' ? 'text-right' : 'text-left'}`}
                       >
                         {selectedBuyPaymentDetails?.account_number || (lang === 'ar'
-                          ? 'لا يوجد وكيل متاح حالياً (قريباً)'
-                          : 'No active agent currently (coming soon)')}
+                          ? 'لا يوجد وكيل نشط'
+                          : 'No active agent')}
                       </p>
                     </div>
                     {selectedMethod === 'superqi' && selectedBuyPaymentDetails?.account_holder ? (
@@ -2985,11 +3374,11 @@ function MainContent() {
                         <p className="font-bold text-gray-900">{selectedBuyPaymentDetails.account_holder}</p>
                       </div>
                     ) : null}
-                    <div className={dir === 'rtl' ? 'text-right' : 'text-left'}>
-                      <p className="text-xs text-gray-500 mb-2 font-medium">
-                        {lang === 'ar' ? 'الباركود' : 'Barcode'}
-                      </p>
-                      {selectedBuyPaymentDetails?.barcode_url ? (
+                    {selectedBuyPaymentDetails?.barcode_url ? (
+                      <div className={dir === 'rtl' ? 'text-right' : 'text-left'}>
+                        <p className="text-xs text-gray-500 mb-2 font-medium">
+                          {lang === 'ar' ? 'الباركود' : 'Barcode'}
+                        </p>
                         <div className="inline-flex rounded-2xl border border-gray-200 bg-white p-3 shadow-inner">
                           <img
                             src={selectedBuyPaymentDetails.barcode_url}
@@ -2997,12 +3386,8 @@ function MainContent() {
                             className="max-h-36 w-auto object-contain"
                           />
                         </div>
-                      ) : (
-                        <div className="inline-flex h-24 w-24 items-center justify-center rounded-2xl border border-dashed border-gray-200 bg-gray-50 text-gray-300">
-                          <Wallet className="w-10 h-10" aria-hidden />
-                        </div>
-                      )}
-                    </div>
+                      </div>
+                    ) : null}
                   </div>
                 )}
                 <form
@@ -3188,7 +3573,8 @@ function MainContent() {
     // Sell Form (Existing)
     const fallbackTransferNumber = activeAgentNumber?.phoneNumber || "—";
     const step1Title = activeAgentNumber ? t('paymentStep1') : t('sellComingSoon');
-    const step1Label = activeAgentNumber ? t('asiaNumberText') : "لا يوجد وكيل نشط حالياً";
+    const step1Label =
+      activeAgentNumber ? t('asiaNumberText') : lang === 'ar' ? 'لا يوجد وكيل نشط' : 'No active agent';
     const step1Number = fallbackTransferNumber;
     const step1Amount = t('amountToTransfer');
     const step2Label = t('receivingNumber');
