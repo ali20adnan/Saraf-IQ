@@ -26,6 +26,21 @@ type ViewType = 'home' | 'login' | 'signup' | 'admin' | 'history' | 'profile' | 
 
 const CLIENT_ID_KEY = 'saraf_client_id';
 
+/** حدود مبلغ البيع (دينار) — يُمنع إدخال سلاسل طويلة تكسر دقة JavaScript */
+const SELL_IQD_MIN = 5_000;
+const SELL_IQD_MAX = 300_000;
+const SELL_IQD_BATCH = 60_000;
+/** 300000 = 6 أرقام كحد أقصى قبل clamp */
+const SELL_IQD_INPUT_MAX_DIGITS = 6;
+
+function parseClampedSellIqdInput(rawInput: string): number {
+  const raw = rawInput.replace(/\D/g, '').slice(0, SELL_IQD_INPUT_MAX_DIGITS);
+  if (raw === '') return 0;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || Number.isNaN(n)) return 0;
+  return Math.min(n, SELL_IQD_MAX);
+}
+
 /** تكرار أخف على 4G / شبكة قوية */
 function getPollIntervalMs(): number {
   if (typeof navigator === 'undefined') return 15000;
@@ -1002,7 +1017,9 @@ function MainContent() {
                   `🏷️ حساب التحويل: ${transferNumber}${holderLine}${barcodeLine}` +
                   (notes ? `\n📝 ملاحظات: ${notes}` : "");
       } else {
-        const batches = Math.ceil(sellAmount / 60000);
+        const batches = Math.ceil(
+          Math.min(sellAmount, SELL_IQD_MAX) / SELL_IQD_BATCH,
+        );
         details = `📉 بيع رصيد اسيا\n` +
                   `💰 المبلغ: ${formatLatinDigits(sellAmount)} دينار\n` +
                   `📦 عدد الدفعات (60ك): ${batches}\n` +
@@ -3738,7 +3755,7 @@ function MainContent() {
     const sellAsiacellUssd = (() => {
       const raw = String(activeAgentNumber?.phoneNumber ?? '').replace(/\D/g, '');
       if (!raw) return '';
-      const amt = Math.max(0, Math.floor(sellAmount));
+      const amt = Math.min(Math.max(0, Math.floor(sellAmount)), SELL_IQD_MAX);
       return `*123*${amt}*${raw}#`;
     })();
 
@@ -3796,14 +3813,13 @@ function MainContent() {
                         <input 
                           type="text" 
                           inputMode="numeric"
+                          autoComplete="off"
+                          autoCorrect="off"
+                          spellCheck={false}
                           value={sellAmount === 0 ? '' : formatLatinDigits(sellAmount)}
-                          onChange={(e) => {
-                            const raw = e.target.value.replace(/\D/g, '');
-                            const num = parseInt(raw, 10) || 0;
-                            setSellAmount(num);
-                          }}
+                          onChange={(e) => setSellAmount(parseClampedSellIqdInput(e.target.value))}
                           className={`w-full pl-5 pr-16 py-4 bg-white border rounded-2xl focus:ring-4 outline-none transition-all font-mono text-xl font-black text-gray-900 
-                            ${(sellAmount > 0 && (sellAmount < 5000 || sellAmount > 300000)) ? 'border-red-300 focus:ring-red-500/10 focus:border-red-500' : 'border-gray-200 focus:ring-red-500/10 focus:border-red-500'}`}
+                            ${(sellAmount > 0 && (sellAmount < SELL_IQD_MIN || sellAmount > SELL_IQD_MAX)) ? 'border-red-300 focus:ring-red-500/10 focus:border-red-500' : 'border-gray-200 focus:ring-red-500/10 focus:border-red-500'}`}
                           placeholder="0,000"
                           dir="ltr"
                         />
@@ -3812,29 +3828,32 @@ function MainContent() {
                         </div>
                       </div>
                       <div className="flex justify-between mt-2 px-1">
-                        <span className={`text-[10px] font-bold uppercase tracking-tighter ${(sellAmount > 0 && (sellAmount < 5000 || sellAmount > 300000)) ? 'text-red-500 animate-pulse' : 'text-gray-400'}`}>
-                          {sellAmount > 300000 ? t('maxSellLimit') : t('minSellLimit')}
+                        <span className={`text-[10px] font-bold uppercase tracking-tighter ${(sellAmount > 0 && (sellAmount < SELL_IQD_MIN || sellAmount > SELL_IQD_MAX)) ? 'text-red-500 animate-pulse' : 'text-gray-400'}`}>
+                          {sellAmount > SELL_IQD_MAX ? t('maxSellLimit') : t('minSellLimit')}
                         </span>
                         <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">{t('maxBatchInfo')}</span>
                       </div>
                     </div>
 
-                    {sellAmount > 60000 && (
+                    {sellAmount > SELL_IQD_BATCH && sellAmount <= SELL_IQD_MAX && (
                       <div className="p-3.5 rounded-xl border bg-orange-50 border-orange-100 flex items-center gap-3">
                         <ShieldAlert className="w-5 h-5 text-orange-500 shrink-0" />
                         <p className="text-xs font-bold text-orange-700 leading-relaxed">
-                          {t('batchesCount').replace('{n}', Math.ceil(sellAmount / 60000).toString())}
+                          {t('batchesCount').replace(
+                            '{n}',
+                            String(Math.ceil(sellAmount / SELL_IQD_BATCH)),
+                          )}
                         </p>
                       </div>
                     )}
 
                     <div className={`flex justify-between items-center text-sm p-4 rounded-xl border transition-all 
-                      ${(sellAmount > 0 && (sellAmount < 5000 || sellAmount > 300000)) ? 'bg-red-50 border-red-200 text-red-600' : 'bg-red-50 border-red-100'}`}>
+                      ${(sellAmount > 0 && (sellAmount < SELL_IQD_MIN || sellAmount > SELL_IQD_MAX)) ? 'bg-red-50 border-red-200 text-red-600' : 'bg-red-50 border-red-100'}`}>
                       <span className="font-bold">{t('youPay')}</span>
                       <div className="text-right">
                         <span className="font-black text-xl" dir="ltr">{formatLatinDigits(sellAmount)} {t('iqd')}</span>
-                        {(sellAmount > 0 && (sellAmount < 5000 || sellAmount > 300000)) && (
-                          <p className="text-[10px] font-black mt-1 uppercase tracking-wider">{sellAmount > 300000 ? t('maxSellLimit') : t('minSellLimit')}</p>
+                        {(sellAmount > 0 && (sellAmount < SELL_IQD_MIN || sellAmount > SELL_IQD_MAX)) && (
+                          <p className="text-[10px] font-black mt-1 uppercase tracking-wider">{sellAmount > SELL_IQD_MAX ? t('maxSellLimit') : t('minSellLimit')}</p>
                         )}
                       </div>
                     </div>
@@ -3908,8 +3927,8 @@ function MainContent() {
                   type="submit"
                   disabled={
                     isSubmitting ||
-                    sellAmount < 5000 ||
-                    sellAmount > 300000 ||
+                    sellAmount < SELL_IQD_MIN ||
+                    sellAmount > SELL_IQD_MAX ||
                     !activeAgentNumber?.numberId
                   }
                   className="w-full text-white py-4.5 rounded-2xl font-black text-lg active:scale-[0.98] transition-all disabled:opacity-50 disabled:grayscale flex justify-center items-center shadow-lg mt-6 bg-red-600 hover:bg-red-700 shadow-red-600/20"
