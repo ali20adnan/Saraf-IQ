@@ -92,6 +92,11 @@ export default defineConfig(() => {
           navigateFallback: 'index.html',
           navigateFallbackDenylist: [/^\/api\//, /\.apk$/i, /^\/robots\.txt$/, /^\/sitemap\.xml$/],
           runtimeCaching: [
+            /** طلبات API من دومين آخر — لا تُخزَّن في SW لتفادي استجابات بلا CORS */
+            {
+              urlPattern: /^https:\/\/[^/]+\.up\.railway\.app\/api\//i,
+              handler: 'NetworkOnly',
+            },
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
               handler: 'CacheFirst',

@@ -105,9 +105,9 @@ type BuyCustomWalletRow = {
 type SellCustomWalletRow = BuyCustomWalletRow;
 
 type ActiveAgentNumber = {
-  phoneNumber: string;
+  phoneNumber: string | null;
   agentId: string;
-  numberId: string;
+  numberId: string | null;
   allowedMethods?: Record<string, boolean>;
   paymentMethods?: Array<{
     method_key: string;
@@ -423,8 +423,8 @@ function MainContent() {
     try {
       const res = await fetch(apiUrl('/api/active-number'));
       if (res.ok) {
-        const data = await res.json();
-        setActiveAgentNumber(data);
+        const data = (await res.json()) as ActiveAgentNumber | null;
+        setActiveAgentNumber(data && typeof data === 'object' ? data : null);
       }
     } catch (e) {
       console.error("fetchActiveNumber:", e);
@@ -994,10 +994,17 @@ function MainContent() {
                   (notes ? `\n📝 ملاحظات: ${notes}` : "");
       } else {
         const batches = Math.ceil(sellAmount / 60000);
+        const sellPm = (activeAgentNumber?.paymentMethods || []).find((m) => m.method_key === selectedMethod);
+        const recvLine =
+          sellPm?.account_number
+            ? `\n💳 استلام عبر ${method}: ${sellPm.account_number}${
+                sellPm.account_holder ? ` (${sellPm.account_holder})` : ''
+              }`
+            : '';
         details = `📉 بيع رصيد اسيا\n` +
                   `💰 المبلغ: ${formatLatinDigits(sellAmount)} دينار\n` +
                   `📦 عدد الدفعات (60ك): ${batches}\n` +
-                  `🏦 حساب التحويل: ${activeAgentNumber?.phoneNumber || "—"}`;
+                  `🏦 تحويل اسيا إلى: ${activeAgentNumber?.phoneNumber || "—"}${recvLine}`;
       }
 
       let payment_proof: string | undefined;
@@ -1178,6 +1185,13 @@ function MainContent() {
 
   const selectedBuyPaymentDetails = useMemo(() => {
     if (txType !== 'buy' || !selectedMethod || selectedMethod === 'creditcard') return null;
+    const row = (activeAgentNumber?.paymentMethods || []).find((m) => m.method_key === selectedMethod);
+    if (!row) return null;
+    return row;
+  }, [txType, selectedMethod, activeAgentNumber]);
+
+  const selectedSellPaymentDetails = useMemo(() => {
+    if (txType !== 'sell' || !selectedMethod) return null;
     const row = (activeAgentNumber?.paymentMethods || []).find((m) => m.method_key === selectedMethod);
     if (!row) return null;
     return row;
@@ -3682,9 +3696,22 @@ function MainContent() {
 
     // Sell Form (Existing)
     const fallbackTransferNumber = activeAgentNumber?.phoneNumber || "—";
-    const step1Title = activeAgentNumber ? t('paymentStep1') : t('sellComingSoon');
-    const step1Label =
-      activeAgentNumber ? t('asiaNumberText') : lang === 'ar' ? 'لا يوجد وكيل نشط' : 'No active agent';
+    const step1Title = activeAgentNumber?.phoneNumber
+      ? t('paymentStep1')
+      : activeAgentNumber
+        ? lang === 'ar'
+          ? 'لا يوجد رقم اسيا متاح للتحويل'
+          : 'No Asiacell line available'
+        : t('sellComingSoon');
+    const step1Label = activeAgentNumber?.phoneNumber
+      ? t('asiaNumberText')
+      : activeAgentNumber
+        ? lang === 'ar'
+          ? 'أضف رقماً غير ممتلٍ للوكيل من الإدارة'
+          : 'Add a non-exhausted line in admin'
+        : lang === 'ar'
+          ? 'لا يوجد وكيل نشط'
+          : 'No active agent';
     const step1Number = fallbackTransferNumber;
     const step1Amount = t('amountToTransfer');
     const step2Label = t('receivingNumber');
@@ -3791,6 +3818,55 @@ function MainContent() {
             <div className="w-8 h-8 rounded-full font-black flex items-center justify-center shrink-0 shadow-sm border bg-red-100 text-red-600 border-red-200">2</div>
             <div className="flex-1">
               <h3 className="font-bold text-gray-900 mb-4 text-base">{t('paymentStep2')}</h3>
+              {selectedSellPaymentDetails ? (
+                <div
+                  dir={dir}
+                  className="mb-4 p-4 sm:p-5 bg-white border border-red-100 rounded-2xl space-y-4 shadow-sm"
+                >
+                  <div className={dir === 'rtl' ? 'text-right' : 'text-left'}>
+                    <p className="text-xs text-gray-500 font-medium mb-1">
+                      {lang === 'ar' ? 'حساب الاستلام (الوكيل)' : 'Receiving account (agent)'}
+                    </p>
+                    <p
+                      dir={selectedSellPaymentDetails.account_number ? 'ltr' : dir}
+                      className={`font-mono font-black text-lg min-w-0 break-all ${
+                        selectedSellPaymentDetails.account_number ? 'text-gray-900' : 'text-gray-500'
+                      }`}
+                    >
+                      {selectedSellPaymentDetails.account_number ||
+                        (lang === 'ar' ? 'غير مُعرّف' : 'Not set')}
+                    </p>
+                  </div>
+                  {selectedMethod === 'superqi' && selectedSellPaymentDetails.account_holder ? (
+                    <div className={dir === 'rtl' ? 'text-right' : 'text-left'}>
+                      <p className="text-xs text-gray-500 mb-1 font-medium">
+                        {lang === 'ar' ? 'اسم الحامل' : 'Account holder'}
+                      </p>
+                      <p className="font-bold text-gray-900">{selectedSellPaymentDetails.account_holder}</p>
+                    </div>
+                  ) : null}
+                  {selectedSellPaymentDetails.barcode_url ? (
+                    <div className={dir === 'rtl' ? 'text-right' : 'text-left'}>
+                      <p className="text-xs text-gray-500 mb-2 font-medium">
+                        {lang === 'ar' ? 'الباركود' : 'Barcode'}
+                      </p>
+                      <div className="inline-flex rounded-2xl border border-red-100 bg-white p-3 shadow-inner">
+                        <img
+                          src={selectedSellPaymentDetails.barcode_url}
+                          alt=""
+                          className="max-h-36 w-auto object-contain"
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : activeAgentNumber && selectedMethod ? (
+                <div className="mb-4 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2.5 text-xs font-bold text-amber-900">
+                  {lang === 'ar'
+                    ? 'لم يُضبط حساب هذه الطريقة للوكيل النشط في لوحة الإدارة.'
+                    : 'No account is configured for this method for the active agent.'}
+                </div>
+              ) : null}
               <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">
@@ -3844,7 +3920,12 @@ function MainContent() {
 
                 <button 
                   type="submit"
-                  disabled={isSubmitting || sellAmount < 5000 || sellAmount > 300000}
+                  disabled={
+                    isSubmitting ||
+                    sellAmount < 5000 ||
+                    sellAmount > 300000 ||
+                    !activeAgentNumber?.numberId
+                  }
                   className="w-full text-white py-4.5 rounded-2xl font-black text-lg active:scale-[0.98] transition-all disabled:opacity-50 disabled:grayscale flex justify-center items-center shadow-lg mt-6 bg-red-600 hover:bg-red-700 shadow-red-600/20"
                 >
                   {isSubmitting ? (

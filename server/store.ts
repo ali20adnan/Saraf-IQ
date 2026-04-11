@@ -1151,8 +1151,10 @@ export async function listAgentPaymentMethods(agentId: string): Promise<AgentPay
       .from("agent_payment_methods")
       .select("*")
       .eq("agent_id", id);
-    if (!error && data?.length) {
-      return (data as AgentPaymentMethod[]).sort((a, b) => {
+    if (error) {
+      console.error("listAgentPaymentMethods:", error);
+    } else {
+      return ((data ?? []) as AgentPaymentMethod[]).sort((a, b) => {
         const ai = AGENT_METHOD_KEYS.indexOf(a.method_key as AgentPaymentMethodKey);
         const bi = AGENT_METHOD_KEYS.indexOf(b.method_key as AgentPaymentMethodKey);
         if (ai !== -1 && bi !== -1) return ai - bi;
@@ -1196,9 +1198,10 @@ export async function removeAgentPaymentMethod(agentId: string, methodKey: strin
 /** ACTIVE NUMBER LOGIC */
 
 export async function getActiveSellNumber(): Promise<{
-  phoneNumber: string;
+  /** رقم اسيا للتحويل عند البيع — قد يكون null إن لم يبقَ رقم متاحاً رغم تفعيل الوكيل */
+  phoneNumber: string | null;
   agentId: string;
-  numberId: string;
+  numberId: string | null;
   allowedMethods: Record<string, boolean>;
   paymentMethods: Array<{
     method_key: string;
@@ -1213,9 +1216,7 @@ export async function getActiveSellNumber(): Promise<{
 
   const numbers = await listAgentNumbers(activeAgent.id);
   const activeNum = numbers.find(n => !n.is_exhausted && n.balance < 300000);
-  
-  if (!activeNum) return null;
-  
+
   const perms = new Set(activeAgent.permissions || []);
   const hasMethodPerms = [...perms].some((p) => p.startsWith("method_"));
   const allowedMethods: Record<string, boolean> = {
@@ -1250,9 +1251,9 @@ export async function getActiveSellNumber(): Promise<{
     }));
 
   return {
-    phoneNumber: activeNum.phone_number,
+    phoneNumber: activeNum ? activeNum.phone_number : null,
     agentId: activeAgent.id,
-    numberId: activeNum.id,
+    numberId: activeNum ? activeNum.id : null,
     allowedMethods,
     paymentMethods,
   };

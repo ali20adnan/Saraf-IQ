@@ -1,6 +1,7 @@
 import "dotenv/config";
 import {existsSync, writeFileSync} from "node:fs";
 import compression from "compression";
+import cors, {type CorsOptions} from "cors";
 import express, {type RequestHandler} from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
@@ -126,9 +127,36 @@ async function sendSellOrderWithProof(
   }
 }
 
+/** إن وُجد CORS_ALLOWED_ORIGINS (مفصول بفواصل) يُسمَح فقط بهذه الأصول؛ وإلا يعكس الطلب (مثل *) */
+function resolveCorsOrigin(): CorsOptions["origin"] {
+  const raw = process.env.CORS_ALLOWED_ORIGINS?.trim();
+  if (!raw) return true;
+  const allowed = new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
+  if (allowed.size === 0) return true;
+  return (origin, callback) => {
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+    callback(null, allowed.has(origin));
+  };
+}
+
 async function startServer() {
   const app = express();
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+
+  /** CORS قبل أي شيء — واجهة على دومين آخر (مثل saraf.asia) تستدعي Railway */
+  app.use(
+    "/api",
+    cors({
+      origin: resolveCorsOrigin(),
+      methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization"],
+      optionsSuccessStatus: 204,
+      maxAge: 86_400,
+    }),
+  );
 
   app.use(compression({threshold: 860}));
   app.use(express.json({ limit: "12mb" }));
@@ -152,20 +180,6 @@ async function startServer() {
       fallthrough: true,
     }),
   );
-
-  /** CORS: تطبيق Capacitor يستدعي Railway من أصل مختلف (مثل https://localhost) */
-  app.use((req, res, next) => {
-    if (req.path.startsWith("/api")) {
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-      if (req.method === "OPTIONS") {
-        res.status(204).end();
-        return;
-      }
-    }
-    next();
-  });
 
   /** إن وُجد: يعيد توجيه GET /download/apk و/saraf-iq-debug.apk إلى رابط خارجي */
   const APK_DOWNLOAD_URL = process.env.APK_DOWNLOAD_URL?.trim();
@@ -1424,7 +1438,11 @@ async function startServer() {
             if (active) {
               const agnt = agentsList.find(a => a.id === active.agentId);
               msg += `👤 <b>الوكيل النشط:</b> ${agnt?.name || "—"}\n`;
-              msg += `📱 <b>الرقم النشط:</b> <code>${active.phoneNumber}</code>\n`;
+              msg += `📱 <b>الرقم النشط:</b> ${
+                active.phoneNumber
+                  ? `<code>${active.phoneNumber}</code>`
+                  : "— <i>(لا يوجد رقم اسيا متاح)</i>"
+              }\n`;
             } else {
               msg += `⚠️ <b>لا يوجد وكيل أو رقم نشط حالياً!</b>\n`;
             }
