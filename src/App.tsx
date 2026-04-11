@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
-import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogIn, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Tag, XCircle, Eye, EyeOff, Download } from 'lucide-react';
+import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogIn, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Tag, XCircle, Eye, EyeOff, Download, Search } from 'lucide-react';
 import Cookies from 'js-cookie';
 import { supabase } from './lib/supabase';
 import { notificationService } from './lib/notifications';
@@ -217,10 +217,14 @@ function MainContent() {
   const [adminTab, setAdminTab] = useState<'overview' | 'agents' | 'orders' | 'admins'>('overview');
   const [adminAdmins, setAdminAdmins] = useState<AdminRow[]>([]);
   const [adminTransactions, setAdminTransactions] = useState<ServerTransaction[]>([]);
-  /** فلتر الحالة — لوحة الإدارة › الطلبات فقط */
+  /** فلاتر الطلبات — لوحة الإدارة › الطلبات */
   const [adminOrderStatusFilter, setAdminOrderStatusFilter] = useState<
     'all' | 'completed' | 'refunded' | 'pending' | 'failed'
   >('all');
+  const [adminOrderTypeFilter, setAdminOrderTypeFilter] = useState<'all' | 'buy' | 'sell'>('all');
+  const [adminOrderRefQuery, setAdminOrderRefQuery] = useState('');
+  const [adminOrderFromDate, setAdminOrderFromDate] = useState('');
+  const [adminOrderToDate, setAdminOrderToDate] = useState('');
   const [adminBroadcastText, setAdminBroadcastText] = useState('');
   const [adminPushTitle, setAdminPushTitle] = useState('');
   const [adminPushBody, setAdminPushBody] = useState('');
@@ -286,23 +290,54 @@ function MainContent() {
   }, [transactions]);
 
   const adminFilteredTransactions = useMemo(() => {
-    const rows = [...adminTransactions];
-    if (adminOrderStatusFilter === 'all') return rows;
-    if (adminOrderStatusFilter === 'completed') {
-      return rows.filter((tx) => tx.status === 'completed');
+    let rows = [...adminTransactions];
+
+    if (adminOrderStatusFilter !== 'all') {
+      if (adminOrderStatusFilter === 'completed') {
+        rows = rows.filter((tx) => tx.status === 'completed');
+      } else if (adminOrderStatusFilter === 'refunded') {
+        rows = rows.filter((tx) => tx.status === 'refunded');
+      } else if (adminOrderStatusFilter === 'failed') {
+        rows = rows.filter((tx) => tx.status === 'failed');
+      } else {
+        rows = rows.filter(
+          (tx) =>
+            tx.status === 'pending' || tx.status === 'retry_otp' || tx.status === 'suspended',
+        );
+      }
     }
-    if (adminOrderStatusFilter === 'refunded') {
-      return rows.filter((tx) => tx.status === 'refunded');
+
+    if (adminOrderTypeFilter !== 'all') {
+      rows = rows.filter((tx) => tx.type === adminOrderTypeFilter);
     }
-    if (adminOrderStatusFilter === 'failed') {
-      return rows.filter((tx) => tx.status === 'failed');
+
+    const q = adminOrderRefQuery.trim().toLowerCase();
+    if (q) {
+      rows = rows.filter((tx) => String(tx.order_ref || '').toLowerCase().includes(q));
     }
-    /** معلقة: pending + إعادة OTP + معلّق */
-    return rows.filter(
-      (tx) =>
-        tx.status === 'pending' || tx.status === 'retry_otp' || tx.status === 'suspended',
-    );
-  }, [adminTransactions, adminOrderStatusFilter]);
+
+    if (adminOrderFromDate) {
+      const from = new Date(adminOrderFromDate + 'T00:00:00');
+      if (!Number.isNaN(from.getTime())) {
+        rows = rows.filter((tx) => new Date(tx.created_at).getTime() >= from.getTime());
+      }
+    }
+    if (adminOrderToDate) {
+      const to = new Date(adminOrderToDate + 'T23:59:59.999');
+      if (!Number.isNaN(to.getTime())) {
+        rows = rows.filter((tx) => new Date(tx.created_at).getTime() <= to.getTime());
+      }
+    }
+
+    return rows;
+  }, [
+    adminTransactions,
+    adminOrderStatusFilter,
+    adminOrderTypeFilter,
+    adminOrderRefQuery,
+    adminOrderFromDate,
+    adminOrderToDate,
+  ]);
 
   useEffect(() => {
     const stored = localStorage.getItem('notifications_enabled');
@@ -2445,30 +2480,105 @@ function MainContent() {
             </div>
           ) : adminTab === 'orders' ? (
             <div className="space-y-6 pb-12">
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-4">
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-5">
                 <h3 className="font-bold text-gray-900">{lang === 'ar' ? 'قائمة الطلبات' : 'Orders List'}</h3>
-                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
-                  <label className="text-sm font-bold text-gray-700 shrink-0">{t('adminOrdersFilterLabel')}</label>
-                  <select
-                    value={adminOrderStatusFilter}
-                    onChange={(e) =>
-                      setAdminOrderStatusFilter(
-                        e.target.value as 'all' | 'completed' | 'refunded' | 'pending' | 'failed',
-                      )
-                    }
-                    className="min-w-[200px] flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl"
-                  >
-                    <option value="all">{t('adminOrdersFilterAll')}</option>
-                    <option value="completed">{t('adminOrdersFilterCompletedTab')}</option>
-                    <option value="refunded">{t('adminOrdersFilterRefundedTab')}</option>
-                    <option value="pending">{t('adminOrdersFilterPendingTab')}</option>
-                    <option value="failed">{t('adminOrdersFilterFailedTab')}</option>
-                  </select>
+
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold uppercase tracking-wide text-gray-500">
+                    {t('adminOrdersSearchLabel')}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="search"
+                      value={adminOrderRefQuery}
+                      onChange={(e) => setAdminOrderRefQuery(e.target.value)}
+                      placeholder={t('adminOrdersSearchPlaceholder')}
+                      className="w-full rounded-xl border border-gray-200 bg-gray-50 py-3 pe-4 ps-10 text-sm font-medium text-gray-900 placeholder:text-gray-400 focus:border-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900/10"
+                      dir="ltr"
+                      autoComplete="off"
+                    />
+                    <span
+                      className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-gray-400"
+                      aria-hidden
+                    >
+                      <Search className="h-4 w-4" strokeWidth={2} />
+                    </span>
+                  </div>
                 </div>
-                <div className="text-xs text-gray-500 font-bold">
-                  {lang === 'ar'
-                    ? `عدد النتائج: ${adminFilteredTransactions.length}`
-                    : `Results: ${adminFilteredTransactions.length}`}
+
+                <div className="border-t border-gray-100 pt-4 space-y-3">
+                  <p className="text-xs font-black uppercase tracking-wide text-gray-500">
+                    {t('adminOrdersAdvancedFilters')}
+                  </p>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-gray-600">{t('adminOrdersFilterLabel')}</label>
+                      <select
+                        value={adminOrderStatusFilter}
+                        onChange={(e) =>
+                          setAdminOrderStatusFilter(
+                            e.target.value as 'all' | 'completed' | 'refunded' | 'pending' | 'failed',
+                          )
+                        }
+                        className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm"
+                      >
+                        <option value="all">{t('adminOrdersFilterAll')}</option>
+                        <option value="completed">{t('adminOrdersFilterCompletedTab')}</option>
+                        <option value="refunded">{t('adminOrdersFilterRefundedTab')}</option>
+                        <option value="pending">{t('adminOrdersFilterPendingTab')}</option>
+                        <option value="failed">{t('adminOrdersFilterFailedTab')}</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-gray-600">{t('adminOrdersTypeLabel')}</label>
+                      <select
+                        value={adminOrderTypeFilter}
+                        onChange={(e) => setAdminOrderTypeFilter(e.target.value as 'all' | 'buy' | 'sell')}
+                        className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm"
+                      >
+                        <option value="all">{t('adminOrdersTypeAll')}</option>
+                        <option value="buy">{t('adminOrdersTypeBuy')}</option>
+                        <option value="sell">{t('adminOrdersTypeSell')}</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-gray-600">{t('adminOrdersDateFrom')}</label>
+                      <input
+                        type="date"
+                        value={adminOrderFromDate}
+                        onChange={(e) => setAdminOrderFromDate(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-gray-600">{t('adminOrdersDateTo')}</label>
+                      <input
+                        type="date"
+                        value={adminOrderToDate}
+                        onChange={(e) => setAdminOrderToDate(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdminOrderStatusFilter('all');
+                      setAdminOrderTypeFilter('all');
+                      setAdminOrderRefQuery('');
+                      setAdminOrderFromDate('');
+                      setAdminOrderToDate('');
+                    }}
+                    className="rounded-xl bg-gray-100 px-4 py-2.5 text-sm font-bold text-gray-800 hover:bg-gray-200"
+                  >
+                    {t('adminOrdersResetFilters')}
+                  </button>
+                  <div className="text-xs font-bold text-gray-500" dir="ltr">
+                    {t('adminOrdersResultCount')}: {adminFilteredTransactions.length}
+                  </div>
                 </div>
               </div>
 
