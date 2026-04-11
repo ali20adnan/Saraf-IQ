@@ -243,7 +243,6 @@ export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
             >
               {/* بدون صندوق أبيض — الشعار يُعرض كما في الملف (يفضّل PNG بخلفية شفافة) */}
               <BrandLogo
-                alt={appTitle}
                 size="xl"
                 priority
                 className="drop-shadow-[0_16px_48px_rgba(0,0,0,0.65)]"
@@ -266,7 +265,6 @@ export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
             }
           >
             <BrandLogo
-              alt={appTitle}
               size="xl"
               priority
               className={

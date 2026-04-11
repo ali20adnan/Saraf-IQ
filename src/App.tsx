@@ -1194,7 +1194,7 @@ function MainContent() {
               {/* Logo and Identity */}
               <div className="flex flex-col items-center gap-3 mb-8">
                 <div className="w-24 h-24 rounded-3xl flex items-center justify-center p-2 bg-transparent">
-                  <BrandLogo alt={t('appTitle')} size="xl" priority />
+                  <BrandLogo size="xl" priority />
                 </div>
                 <div>
                   <h1 className="font-black text-xl tracking-tight text-gray-900">{t('appTitle')}</h1>
@@ -1242,7 +1242,7 @@ function MainContent() {
           {/* Logo and Identity */}
           <div className="flex flex-col items-center gap-3 mb-8">
             <div className="w-24 h-24 rounded-3xl flex items-center justify-center p-2 bg-transparent">
-              <BrandLogo alt={t('appTitle')} size="xl" priority />
+              <BrandLogo size="xl" priority />
             </div>
             <div>
               <h1 className="font-black text-xl tracking-tight text-gray-900">{t('appTitle')}</h1>
@@ -2922,7 +2922,7 @@ function MainContent() {
         aria-label={`${t('appTitle')} — ${t('home')}`}
       >
         <div className="w-16 h-16 shrink-0 flex items-center justify-center">
-          <BrandLogo alt={t('appTitle')} size="lg" priority />
+          <BrandLogo size="lg" priority />
         </div>
         <div className="min-w-0">
           <h1 className="font-black text-lg tracking-tight text-gray-900">{t('appTitle')}</h1>
@@ -3027,7 +3027,7 @@ function MainContent() {
           aria-label={`${t('appTitle')} — ${t('home')}`}
         >
           <div className="flex h-14 w-14 shrink-0 items-center justify-center">
-            <BrandLogo alt={t('appTitle')} size="md" priority />
+            <BrandLogo size="md" priority />
           </div>
           <h1 className="truncate text-base font-black tracking-tight text-gray-900">{t('appTitle')}</h1>
         </button>
@@ -3871,11 +3871,11 @@ function MainContent() {
             {/* Logo and Identity */}
             <div className="flex flex-col items-center gap-3 mb-10">
               <div className="w-24 h-24 rounded-3xl flex items-center justify-center overflow-hidden p-2 bg-transparent">
-                <BrandLogo alt={t('appTitle')} size="xl" priority />
+                <BrandLogo size="xl" priority />
               </div>
               <div>
                 <h1 className="font-black text-xl tracking-tight text-gray-900">{t('appTitle')}</h1>
-                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest leading-none mt-1">Official Portal</p>
+                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest leading-none mt-1">Official Portal</p>
               </div>
             </div>
 
@@ -4007,16 +4007,20 @@ function MainContent() {
                                   <div className="w-10 h-10 flex items-center justify-center relative z-10">
                                     <img 
                                       src={method.icon as string} 
-                                      alt={method.name} 
+                                      alt=""
+                                      width={40}
+                                      height={40}
                                       className="w-full h-full object-contain filter drop-shadow-sm" 
-                                      loading="eager" 
+                                      loading="lazy"
+                                      decoding="async"
+                                      aria-hidden
                                     />
                                   </div>
                                 ) : (
-                                  <method.icon className={`w-7 h-7 relative z-10 ${isSelected ? 'text-red-500' : 'text-gray-400 group-hover:text-gray-900'}`} />
+                                  <method.icon className={`w-7 h-7 relative z-10 ${isSelected ? 'text-red-500' : 'text-gray-600 group-hover:text-gray-900'}`} />
                                 )}
                               </div>
-                              <span className={`text-[13px] font-black tracking-tight transition-colors ${isSelected ? 'text-gray-900' : 'text-gray-400 group-hover:text-gray-900'}`}>
+                              <span className={`text-[13px] font-black tracking-tight transition-colors ${isSelected ? 'text-gray-900' : 'text-gray-600 group-hover:text-gray-900'}`}>
                                 {method.name}
                               </span>
                             </button>

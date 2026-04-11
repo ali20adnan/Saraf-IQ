@@ -12,14 +12,15 @@ const sizeStyles = {
 export type BrandLogoSize = keyof typeof sizeStyles;
 
 type Props = Omit<ImgHTMLAttributes<HTMLImageElement>, 'src' | 'decoding'> & {
-  alt: string;
+  /** فارغ عند وجود عنوان بجانب الصورة (يتجنب تكرار للقارئ الشاشة) */
+  alt?: string;
   size?: BrandLogoSize;
   /** First paint / LCP — use on splash and primary headers */
   priority?: boolean;
 };
 
 /** Square logo asset; intrinsic 512×512 assumed for crisp downscaling on phones */
-export function BrandLogo({alt, size = 'md', priority = false, className = '', style, ...rest}: Props) {
+export function BrandLogo({alt = '', size = 'md', priority = false, className = '', style, ...rest}: Props) {
   return (
     <img
       src="/icons/logo.png"

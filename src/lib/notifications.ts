@@ -4,23 +4,45 @@ import { LocalNotifications } from '@capacitor/local-notifications';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { apiUrl } from './apiBase';
 
-const NOTIFICATION_SOUND_URL = 'https://www.myinstants.com/media/sounds/apple-original.mp3';
 const ANDROID_CHANNEL = 'saraf_default';
 
 let localNotifId = 10000;
+
+/** نغمة قصيرة بدون طلب شبكة — يتجنّب 404 من روابط خارجية قديمة */
+function playWebNotificationChime(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const AC =
+      window.AudioContext ||
+      (window as unknown as {webkitAudioContext?: typeof AudioContext}).webkitAudioContext;
+    if (!AC) return;
+    const ctx = new AC();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(523.25, ctx.currentTime);
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.1, ctx.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.2);
+    void ctx.resume().catch(() => {});
+  } catch {
+    /* يتطلب تفاعلاً أحياناً أو لا يوجد Web Audio */
+  }
+}
 
 function notificationsPreferenceOn(): boolean {
   return localStorage.getItem('notifications_enabled') !== 'false';
 }
 
 class NotificationService {
-  private audio: HTMLAudioElement | null = null;
   private enabled = false;
   private nativeListenersAttached = false;
 
   constructor() {
-    this.audio = new Audio(NOTIFICATION_SOUND_URL);
-    this.audio.volume = 0.5;
     const saved = localStorage.getItem('notifications_enabled');
     this.enabled = saved === 'true' || saved === null;
   }
@@ -173,13 +195,8 @@ class NotificationService {
       return;
     }
 
-    if (playSound && this.audio) {
-      try {
-        this.audio.currentTime = 0;
-        await this.audio.play();
-      } catch {
-        /* يتطلب تفاعلاً أحياناً */
-      }
+    if (playSound) {
+      playWebNotificationChime();
     }
 
     if (this.enabled && Notification.permission === 'granted') {
