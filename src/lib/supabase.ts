@@ -48,7 +48,8 @@ function publicConfigUrl(base: string): string {
   return '/api/public-config';
 }
 
-export let supabase: SupabaseClient;
+/** عميل فوري للرسم الأول — يُحدَّث بعد جلب الإعدادات دون حظر main.tsx */
+export let supabase: SupabaseClient = createClient(defaultUrl(), defaultKey());
 
 export async function initSupabase(): Promise<void> {
   let url = defaultUrl();

@@ -4,9 +4,9 @@ import {motion} from 'motion/react';
 import {whenPrecacheReady} from '../lib/pwaRegister';
 import {BrandLogo} from './BrandLogo';
 
-/** أصول واجهة تُحمَّل أثناء الشاشة لتصفح أخف لاحقاً */
-const PRELOAD_IMAGES = [
-  '/icons/logo.png',
+/** شعار الشاشة فقط — يُحدّد جاهزية الإغلاق؛ باقي الأيقونات تُحمَّل في الخلفية */
+const SPLASH_LOGO = '/icons/logo.png';
+const BACKGROUND_PRELOAD_ICONS = [
   '/icons/zaincash.png',
   '/icons/superqi.png',
   '/icons/firstbank.png',
@@ -21,8 +21,8 @@ const DESKTOP_INTRO_MS = 120;
 const PHONE_MOTION_INTRO_MS = 420;
 /** أجهزة ضعيفة / WebView */
 const PHONE_LOW_END_INTRO_MS = 180;
-/** لا نحجز الشاشة بانتظار الخطوط والصور */
-const BOOT_ASSETS_MAX_MS = 350;
+/** سقف قصير — لا ننتظر document.fonts (يبطئ الجوال); الخط يظهر بـ swap من CSS */
+const BOOT_ASSETS_MAX_MS = 220;
 const PHONE_MAX_WIDTH_PX = 767;
 
 /** يختصر المدد قليلاً عند RTT منخفض (شبكة سريعة) */
@@ -145,21 +145,18 @@ export function AppSplash({appTitle, settingsReady, onComplete}: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    const fontsReady = document.fonts.ready;
-    const imagesReady = Promise.all(
-      PRELOAD_IMAGES.map(
-        (src) =>
-          new Promise<void>((resolve) => {
-            const img = new Image();
-            img.onload = () => resolve();
-            img.onerror = () => resolve();
-            img.src = src;
-          }),
-      ),
-    );
-    const boot = Promise.all([fontsReady, imagesReady]);
+    for (const src of BACKGROUND_PRELOAD_ICONS) {
+      const img = new Image();
+      img.src = src;
+    }
+    const logoReady = new Promise<void>((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve();
+      img.onerror = () => resolve();
+      img.src = SPLASH_LOGO;
+    });
     const capped = new Promise<void>((r) => setTimeout(r, BOOT_ASSETS_MAX_MS));
-    Promise.race([boot, capped]).then(() => {
+    Promise.race([logoReady, capped]).then(() => {
       if (!cancelled) setBootAssetsReady(true);
     });
     return () => {

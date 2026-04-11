@@ -1,5 +1,6 @@
 import "dotenv/config";
 import {existsSync, writeFileSync} from "node:fs";
+import compression from "compression";
 import express, {type RequestHandler} from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
@@ -129,6 +130,7 @@ async function startServer() {
   const app = express();
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
+  app.use(compression({threshold: 860}));
   app.use(express.json({ limit: "12mb" }));
   app.set("trust proxy", true);
 
@@ -2584,7 +2586,18 @@ async function startServer() {
       res.status(404).type("text/plain").send("Not found");
     });
 
-    app.use(express.static(distPath));
+    app.use(
+      express.static(distPath, {
+        maxAge: "1y",
+        immutable: true,
+        setHeaders(res, filePath) {
+          const base = path.basename(filePath);
+          if (base === "index.html" || base.endsWith(".html")) {
+            res.setHeader("Cache-Control", "public, max-age=0, must-revalidate");
+          }
+        },
+      }),
+    );
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });

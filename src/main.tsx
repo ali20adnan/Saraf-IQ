@@ -2,8 +2,9 @@ import './index.css';
 import './lib/pwaRegister';
 import {initSupabase} from './lib/supabase';
 
+void initSupabase();
+
 void (async () => {
-  await initSupabase();
   const [{createRoot}, {StrictMode}, {default: App}] = await Promise.all([
     import('react-dom/client'),
     import('react'),
