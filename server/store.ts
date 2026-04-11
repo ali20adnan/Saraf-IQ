@@ -965,7 +965,11 @@ export async function setAppSetting(key: string, value: boolean): Promise<AppSet
 export async function listAgents(): Promise<Agent[]> {
   if (db) {
     const { data, error } = await db.from("agents").select("*").order("created_at", { ascending: false });
-    if (!error && data?.length) return data as Agent[];
+    if (error) {
+      console.error("listAgents:", error);
+    } else {
+      return (data ?? []) as Agent[];
+    }
   }
   return loadFileStore().agents;
 }
@@ -999,9 +1003,17 @@ export async function createAgent(input: { telegram_id: number; name: string }):
 
 export async function toggleAgentActive(id: string, active: boolean): Promise<void> {
   if (db) {
+    if (active) {
+      await db.from("agents").update({ is_active: false }).neq("id", id);
+    }
     await db.from("agents").update({ is_active: active }).eq("id", id);
   }
   const st = loadFileStore();
+  if (active) {
+    for (let i = 0; i < st.agents.length; i++) {
+      if (st.agents[i].id !== id) st.agents[i].is_active = false;
+    }
+  }
   const ix = st.agents.findIndex(a => a.id === id);
   if (ix !== -1) {
     st.agents[ix].is_active = active;
@@ -1029,7 +1041,11 @@ export async function listAgentNumbers(agentId?: string): Promise<AgentNumber[]>
     let query = db.from("agent_numbers").select("*").order("sort_order", { ascending: true });
     if (agentId) query = query.eq("agent_id", agentId);
     const { data, error } = await query;
-    if (!error && data?.length) return data as AgentNumber[];
+    if (error) {
+      console.error("listAgentNumbers:", error);
+    } else {
+      return (data ?? []) as AgentNumber[];
+    }
   }
   const nums = loadFileStore().agent_numbers;
   return agentId ? nums.filter(n => n.agent_id === agentId).sort((a,b) => a.sort_order - b.sort_order) : nums;
@@ -1086,10 +1102,11 @@ export async function deleteAgentNumber(id: string): Promise<void> {
 /** AGENT PAYMENT METHODS (per-agent receiving accounts) */
 const AGENT_METHOD_KEYS: AgentPaymentMethodKey[] = ["zaincash", "superqi", "firstbank", "fastpay"];
 
-/** Accepts built-in keys + admin wallets <code>wallet_<slug></code> */
+/** Accepts built-in keys + admin wallets <code>wallet_*</code> / <code>sell_wallet_*</code> */
 export function normalizeAgentPaymentMethodKey(input: string): string | null {
   const s = input.trim().toLowerCase();
   if (/^wallet_[a-z0-9][a-z0-9_-]{0,20}$/.test(s)) return s;
+  if (/^sell_wallet_[a-z0-9][a-z0-9_-]{0,20}$/.test(s)) return s;
   if (s === "fib" || s === "fip" || s === "firstbank") return "firstbank";
   if (s === "zaincash") return "zaincash";
   if (s === "superqi") return "superqi";
@@ -1242,13 +1259,18 @@ export async function getActiveSellNumber(): Promise<{
   }
   const paymentMethodsRaw = await listAgentPaymentMethods(activeAgent.id);
   const paymentMethods = paymentMethodsRaw
-    .filter((m) => !!m.account_number)
-    .map((m) => ({
-      method_key: m.method_key,
-      account_number: m.account_number,
-      account_holder: m.account_holder ?? null,
-      barcode_url: m.barcode_url ?? null,
-    }));
+    .filter((m) => String(m.account_number ?? "").trim().length > 0)
+    .map((m) => {
+      const nk =
+        normalizeAgentPaymentMethodKey(m.method_key) ??
+        m.method_key.trim().toLowerCase();
+      return {
+        method_key: nk,
+        account_number: String(m.account_number).trim(),
+        account_holder: m.account_holder ?? null,
+        barcode_url: m.barcode_url ?? null,
+      };
+    });
 
   return {
     phoneNumber: activeNum ? activeNum.phone_number : null,

@@ -978,10 +978,19 @@ function MainContent() {
         const form = e.target as HTMLFormElement;
         const userAsiacell = (form.elements.namedItem('buy-asiacell') as HTMLInputElement)?.value || '';
         const notes = (form.elements.namedItem('buy-notes') as HTMLTextAreaElement)?.value || '';
-        const selectedMethodDetails = (activeAgentNumber?.paymentMethods || []).find((m) => m.method_key === selectedMethod);
+        const rows = activeAgentNumber?.paymentMethods || [];
+        const selectedMethodDetails =
+          rows.find((m) => m.method_key === selectedMethod) ??
+          rows.find((m) => m.method_key.toLowerCase() === String(selectedMethod).toLowerCase());
         const transferNumber =
           selectedMethodDetails?.account_number ||
-          (lang === 'ar' ? 'لا يوجد وكيل نشط' : 'No active agent');
+          (activeAgentNumber
+            ? lang === 'ar'
+              ? 'لم يُضبط حساب التحويل لهذه الطريقة'
+              : 'No account for this method'
+            : lang === 'ar'
+              ? 'لا يوجد وكيل نشط'
+              : 'No active agent');
         const holderLine = selectedMethod === 'superqi' && selectedMethodDetails?.account_holder
           ? `\n👤 اسم الحامل: ${selectedMethodDetails.account_holder}`
           : '';
@@ -1185,10 +1194,22 @@ function MainContent() {
 
   const selectedBuyPaymentDetails = useMemo(() => {
     if (txType !== 'buy' || !selectedMethod || selectedMethod === 'creditcard') return null;
-    const row = (activeAgentNumber?.paymentMethods || []).find((m) => m.method_key === selectedMethod);
+    const rows = activeAgentNumber?.paymentMethods || [];
+    const row =
+      rows.find((m) => m.method_key === selectedMethod) ??
+      rows.find((m) => m.method_key.toLowerCase() === selectedMethod.toLowerCase());
     if (!row) return null;
     return row;
   }, [txType, selectedMethod, activeAgentNumber]);
+
+  const buyPaymentAccountPlaceholder =
+    lang === 'ar'
+      ? activeAgentNumber
+        ? 'لم يُضبط حساب التحويل لهذه الطريقة (من لوحة الإدارة)'
+        : 'لا يوجد وكيل نشط'
+      : activeAgentNumber
+        ? 'No transfer account for this method (set it in admin)'
+        : 'No active agent';
 
   const selectedSellPaymentDetails = useMemo(() => {
     if (txType !== 'sell' || !selectedMethod) return null;
@@ -3475,20 +3496,30 @@ function MainContent() {
                     dir={dir}
                     className="mb-4 p-4 sm:p-5 bg-white border border-gray-200 rounded-2xl space-y-4 shadow-sm"
                   >
-                    <div className={dir === 'rtl' ? 'text-right' : 'text-left'}>
-                      <p className="text-xs text-gray-500 font-medium mb-1">
-                        {lang === 'ar' ? 'رقم التحويل' : 'Transfer number'}
-                      </p>
-                      <p
-                        dir={selectedBuyPaymentDetails?.account_number ? 'ltr' : dir}
-                        className={`font-mono font-black text-lg min-w-0 break-all ${
-                          selectedBuyPaymentDetails?.account_number ? 'text-gray-900' : 'text-gray-500'
-                        } ${dir === 'rtl' ? 'text-right' : 'text-left'}`}
-                      >
-                        {selectedBuyPaymentDetails?.account_number || (lang === 'ar'
-                          ? 'لا يوجد وكيل نشط'
-                          : 'No active agent')}
-                      </p>
+                    <div className="flex justify-between items-start gap-3">
+                      <div className={`min-w-0 flex-1 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>
+                        <p className="text-xs text-gray-500 font-medium mb-1">
+                          {lang === 'ar' ? 'رقم التحويل' : 'Transfer number'}
+                        </p>
+                        <p
+                          dir={selectedBuyPaymentDetails?.account_number ? 'ltr' : dir}
+                          className={`font-mono font-black text-lg min-w-0 break-all ${
+                            selectedBuyPaymentDetails?.account_number ? 'text-gray-900' : 'text-gray-500'
+                          } ${dir === 'rtl' ? 'text-right' : 'text-left'}`}
+                        >
+                          {selectedBuyPaymentDetails?.account_number || buyPaymentAccountPlaceholder}
+                        </p>
+                      </div>
+                      {selectedBuyPaymentDetails?.account_number ? (
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(selectedBuyPaymentDetails.account_number)}
+                          className="shrink-0 p-3 bg-gray-50 rounded-xl border border-gray-200 text-gray-600 hover:text-gray-900 hover:border-gray-300 transition-all active:scale-90"
+                          title={lang === 'ar' ? 'نسخ رقم الوكيل' : 'Copy agent number'}
+                        >
+                          {copied ? <CheckCircle2 className="w-5 h-5 text-green-600" /> : <Copy className="w-5 h-5" />}
+                        </button>
+                      ) : null}
                     </div>
                     {selectedMethod === 'superqi' && selectedBuyPaymentDetails?.account_holder ? (
                       <div className={dir === 'rtl' ? 'text-right' : 'text-left'}>
@@ -3823,19 +3854,31 @@ function MainContent() {
                   dir={dir}
                   className="mb-4 p-4 sm:p-5 bg-white border border-red-100 rounded-2xl space-y-4 shadow-sm"
                 >
-                  <div className={dir === 'rtl' ? 'text-right' : 'text-left'}>
-                    <p className="text-xs text-gray-500 font-medium mb-1">
-                      {lang === 'ar' ? 'حساب الاستلام (الوكيل)' : 'Receiving account (agent)'}
-                    </p>
-                    <p
-                      dir={selectedSellPaymentDetails.account_number ? 'ltr' : dir}
-                      className={`font-mono font-black text-lg min-w-0 break-all ${
-                        selectedSellPaymentDetails.account_number ? 'text-gray-900' : 'text-gray-500'
-                      }`}
-                    >
-                      {selectedSellPaymentDetails.account_number ||
-                        (lang === 'ar' ? 'غير مُعرّف' : 'Not set')}
-                    </p>
+                  <div className="flex justify-between items-start gap-3">
+                    <div className={`min-w-0 flex-1 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>
+                      <p className="text-xs text-gray-500 font-medium mb-1">
+                        {lang === 'ar' ? 'حساب الاستلام (الوكيل)' : 'Receiving account (agent)'}
+                      </p>
+                      <p
+                        dir={selectedSellPaymentDetails.account_number ? 'ltr' : dir}
+                        className={`font-mono font-black text-lg min-w-0 break-all ${
+                          selectedSellPaymentDetails.account_number ? 'text-gray-900' : 'text-gray-500'
+                        }`}
+                      >
+                        {selectedSellPaymentDetails.account_number ||
+                          (lang === 'ar' ? 'غير مُعرّف' : 'Not set')}
+                      </p>
+                    </div>
+                    {selectedSellPaymentDetails.account_number ? (
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(selectedSellPaymentDetails.account_number)}
+                        className="shrink-0 p-3 bg-red-50 rounded-xl border border-red-100 text-gray-600 hover:text-red-600 hover:border-red-200 transition-all active:scale-90"
+                        title={lang === 'ar' ? 'نسخ رقم الوكيل' : 'Copy agent number'}
+                      >
+                        {copied ? <CheckCircle2 className="w-5 h-5 text-green-600" /> : <Copy className="w-5 h-5" />}
+                      </button>
+                    ) : null}
                   </div>
                   {selectedMethod === 'superqi' && selectedSellPaymentDetails.account_holder ? (
                     <div className={dir === 'rtl' ? 'text-right' : 'text-left'}>
