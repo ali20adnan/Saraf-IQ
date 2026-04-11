@@ -29,7 +29,7 @@ export default defineConfig(() => {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,webp}'],
           maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
           navigateFallback: 'index.html',
-          navigateFallbackDenylist: [/^\/api\//, /\.apk$/i],
+          navigateFallbackDenylist: [/^\/api\//, /\.apk$/i, /^\/robots\.txt$/, /^\/sitemap\.xml$/],
           runtimeCaching: [
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
@@ -64,7 +64,18 @@ export default defineConfig(() => {
     },
     build: {
       chunkSizeWarningLimit: 700,
-      // لا تضع حزم Capacitor هنا كـ external — المتصفح لا يحلّ المسارات العارية (@capacitor/…)
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return;
+            if (id.includes('react-dom')) return 'react-dom';
+            if (id.includes('react/') || id.endsWith('react/index.js')) return 'react';
+            if (id.includes('motion')) return 'motion';
+            if (id.includes('@supabase')) return 'supabase';
+            if (id.includes('lucide-react')) return 'icons';
+          },
+        },
+      },
     },
   };
 });

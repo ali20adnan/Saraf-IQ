@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap');
+/* الخطوط تُحمَّل من index.html لتقليل حظر الرسم (أداء الجوال/سطح المكتب) */
 @import "tailwindcss";
 
 @theme {

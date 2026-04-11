@@ -2564,6 +2564,26 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), "dist");
 
+    /** يجب أن يعيد robots.txt و sitemap.xml نصاً/XML وليس SPA — وإلا تفشل أدوات SEO */
+    app.get("/robots.txt", (_req, res) => {
+      const p = path.join(distPath, "robots.txt");
+      if (existsSync(p)) {
+        res.setHeader("Content-Type", "text/plain; charset=utf-8");
+        res.setHeader("Cache-Control", "public, max-age=86400");
+        return res.sendFile(p);
+      }
+      res.type("text/plain; charset=utf-8").send("User-agent: *\nAllow: /\n");
+    });
+    app.get("/sitemap.xml", (_req, res) => {
+      const p = path.join(distPath, "sitemap.xml");
+      if (existsSync(p)) {
+        res.setHeader("Content-Type", "application/xml; charset=utf-8");
+        res.setHeader("Cache-Control", "public, max-age=86400");
+        return res.sendFile(p);
+      }
+      res.status(404).type("text/plain").send("Not found");
+    });
+
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
