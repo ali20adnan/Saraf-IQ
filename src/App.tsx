@@ -41,6 +41,12 @@ function parseClampedSellIqdInput(rawInput: string): number {
   return Math.min(n, SELL_IQD_MAX);
 }
 
+/** سعر شراء بطاقة 100 ألف (دينار) من حقل العرض الرئيسي — نفس الرقم في «شراء 100 ألف اسيا بـ …» */
+function parseHeroBuyPriceIqdFor100k(display: string): number | null {
+  const n = Number(String(display).replace(/[\s,]/g, ''));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 /** تكرار أخف على 4G / شبكة قوية */
 function getPollIntervalMs(): number {
   if (typeof navigator === 'undefined') return 15000;
@@ -3326,7 +3332,11 @@ function MainContent() {
 
     if (txType === 'buy') {
       const cardValues = [2000, 5000, 10000, 15000, 25000, 50000, 100000];
-      const pricePerCard = cardValue * 0.98; // 2% discount for buying
+      const hero100kIqd = parseHeroBuyPriceIqdFor100k(siteContent.heroBuyAmountDisplay);
+      const pricePerCard =
+        hero100kIqd != null
+          ? Math.round((hero100kIqd / 100_000) * cardValue)
+          : Math.round(cardValue * 0.98);
       const totalPrice = pricePerCard * quantity;
       const isBuyCardMethod = selectedMethod === 'creditcard';
       const cardExpiryYearStart = new Date().getFullYear();
