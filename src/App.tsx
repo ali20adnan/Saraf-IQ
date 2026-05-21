@@ -1,7 +1,10 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
-import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogIn, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Tag, XCircle, Eye, EyeOff, Download, Search } from 'lucide-react';
+import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogIn, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Gamepad2, XCircle, Eye, EyeOff, Download, Search } from 'lucide-react';
+import { ServiceCard } from './components/ServiceCard';
+import { PubgUcOrder } from './components/PubgUcOrder';
+import { listAppServices } from './lib/services';
 import Cookies from 'js-cookie';
 import { supabase } from './lib/supabase';
 import { notificationService } from './lib/notifications';
@@ -22,7 +25,7 @@ function walletIconDisplaySrc(iconUrl: string | null | undefined): string | null
 }
 
 type TransactionType = 'sell' | 'buy';
-type ViewType = 'home' | 'login' | 'signup' | 'admin' | 'history' | 'profile' | 'settings' | 'offers';
+type ViewType = 'home' | 'login' | 'signup' | 'admin' | 'history' | 'profile' | 'settings' | 'services';
 
 const CLIENT_ID_KEY = 'saraf_client_id';
 
@@ -168,6 +171,7 @@ function MainContent() {
   );
   const initialView = window.location.pathname === '/admin' ? 'login' : 'home';
   const [currentView, setCurrentView] = useState<ViewType>(initialView);
+  const [activeServiceId, setActiveServiceId] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
@@ -379,6 +383,10 @@ function MainContent() {
     if (!clientId || !splashDismissed) return;
     void notificationService.initNativePush(clientId);
   }, [clientId, splashDismissed]);
+
+  useEffect(() => {
+    if (currentView !== 'services') setActiveServiceId(null);
+  }, [currentView]);
 
   const fetchSettings = useCallback(async () => {
     const SETTINGS_FETCH_MS = 1_200;
@@ -2985,11 +2993,11 @@ function MainContent() {
           <span className="relative z-10">{t('dashboard')}</span>
         </button>
         <button 
-          onClick={() => setCurrentView('offers')}
-          className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all relative ${currentView === 'offers' ? 'text-red-700 bg-red-50/50' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'}`}
+          onClick={() => setCurrentView('services')}
+          className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all relative ${currentView === 'services' ? 'text-red-700 bg-red-50/50' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'}`}
         >
-          {currentView === 'offers' && <div className={`absolute top-2 bottom-2 w-1.5 bg-red-600 rounded-full ${dir === 'rtl' ? 'right-0' : 'left-0'}`}></div>}
-          <Tag className="w-5 h-5 relative z-10" />
+          {currentView === 'services' && <div className={`absolute top-2 bottom-2 w-1.5 bg-red-600 rounded-full ${dir === 'rtl' ? 'right-0' : 'left-0'}`}></div>}
+          <Gamepad2 className="w-5 h-5 relative z-10" />
           <span className="relative z-10">{t('bundles')}</span>
         </button>
         <button 
@@ -3194,6 +3202,8 @@ function MainContent() {
     </div>
   );
 
+  const appServices = useMemo(() => listAppServices(), []);
+
   const renderOfferCard = () => (
     <div
       key={txType}
@@ -3240,86 +3250,32 @@ function MainContent() {
     </div>
   );
 
-  const renderOffers = () => {
-    const fallback: { id: string; variant: TransactionType; amount: string; unit: string }[] = [
-      { id: '1', variant: 'sell', amount: '95,000', unit: t('iqd') },
-      { id: '2', variant: 'buy', amount: '100,000', unit: t('asiacell') },
-      { id: '3', variant: 'sell', amount: '47,500', unit: t('iqd') },
-      { id: '4', variant: 'buy', amount: '25,000', unit: t('asiacell') },
-    ];
-
-    const list =
-      offersList.length > 0
-        ? offersList.map((o) => ({
-            id: o.id,
-            variant: o.variant,
-            amount: o.amount_display,
-            unit: lang === 'ar' ? o.unit_ar : o.unit_en,
-          }))
-        : fallback;
-
-    const goExchange = (variant: TransactionType) => {
-      setTxType(variant);
-      setSelectedMethod(null);
-      setIsSuccess(false);
-      setCurrentView('home');
-    };
+  const renderServices = () => {
+    if (activeServiceId === 'pubg-uc') {
+      return (
+        <PubgUcOrder
+          clientId={clientId}
+          userId={userId}
+          onBack={() => setActiveServiceId(null)}
+          onComplete={fetchTransactions}
+        />
+      );
+    }
 
     return (
-      <div className="max-w-6xl mx-auto space-y-8 pb-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-gray-900">{t('bundles')}</h1>
-          <p className="text-gray-500 font-medium mt-2 max-w-xl">{t('offersSubtitle')}</p>
+      <div className="mx-auto w-full min-w-0 max-w-6xl space-y-6 pb-4 sm:space-y-8">
+        <div className="min-w-0">
+          <h1 className="text-xl font-black text-gray-900 sm:text-2xl md:text-3xl">{t('servicesTitle')}</h1>
+          <p className="mt-2 max-w-xl text-sm font-medium text-gray-500 sm:text-base">{t('servicesSubtitle')}</p>
         </div>
-        <div className="grid grid-cols-1 gap-5 pb-2 md:grid-cols-2 md:gap-6">
-          {list.map((item) => (
-            <div
-              key={item.id}
-              className={`relative flex flex-col overflow-hidden rounded-3xl border border-black/10 shadow-sm [contain:layout_paint] ${
-                item.variant === 'sell' ? 'bg-gray-900' : 'bg-red-700'
-              }`}
-            >
-              <div className="relative z-10 flex-1 p-6 sm:p-8">
-                <div className="mb-6 flex items-start justify-between gap-2">
-                  <div className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/15 px-3 py-1.5 text-xs font-bold text-white">
-                    <Zap className="h-3.5 w-3.5 shrink-0 fill-current" />
-                    {t('recommended')}
-                  </div>
-                  <span className="shrink-0 rounded-full border border-white/15 bg-black/25 px-3 py-1.5 text-xs font-bold text-white/90">
-                    {t('days')}
-                  </span>
-                </div>
-                <h3 className="mb-3 text-base font-bold leading-snug text-white sm:text-lg">
-                  {offerLineFromTemplate(item.variant === 'buy' ? 'buy' : 'sell', item.amount, 'grid')}
-                </h3>
-                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 sm:gap-x-2.5">
-                  <span
-                    className="min-w-0 text-4xl font-black leading-none tracking-tight text-white tabular-nums [font-variant-numeric:lining-nums] sm:text-5xl"
-                    dir="ltr"
-                  >
-                    {item.amount}
-                  </span>
-                  <span className="shrink-0 text-xl font-bold leading-tight text-white/95 sm:text-2xl">
-                    {item.unit}
-                  </span>
-                </div>
-              </div>
-              <div
-                className={`flex flex-col gap-3 px-6 py-3.5 sm:flex-row sm:items-center sm:justify-between ${
-                  item.variant === 'sell' ? 'bg-red-600' : 'bg-gray-900'
-                }`}
-              >
-                <span className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-white/95">
-                  <CheckCircle2 className="h-4 w-4 shrink-0" /> {t('limitedOffer')}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => goExchange(item.variant)}
-                  className="w-full rounded-xl border border-white/25 bg-white/15 py-2.5 text-center text-sm font-black text-white active:bg-white/25 sm:w-auto sm:px-5"
-                >
-                  {t('subscribe')}
-                </button>
-              </div>
+        <div className="grid grid-cols-1 gap-4 max-[360px]:gap-3 min-[400px]:grid-cols-2 md:gap-5 lg:grid-cols-3 2xl:grid-cols-4">
+          {appServices.map((service) => (
+            <div key={service.id} className="min-w-0">
+              <ServiceCard
+                service={service}
+                variant="full"
+                onAction={() => setActiveServiceId(service.id)}
+              />
             </div>
           ))}
         </div>
@@ -4031,8 +3987,8 @@ function MainContent() {
         return renderProfile();
       case 'settings':
         return renderSettings();
-      case 'offers':
-        return renderOffers();
+      case 'services':
+        return renderServices();
       case 'home':
       default:
         return (
@@ -4061,13 +4017,6 @@ function MainContent() {
                     <section>
                       <div className="flex justify-between items-center mb-5">
                         <h2 className="text-xl font-black text-gray-900">{t('offersTitle')}</h2>
-                        <button
-                          type="button"
-                          onClick={() => setCurrentView('offers')}
-                          className="text-red-600 text-sm font-bold hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
-                        >
-                          {t('viewAll')}
-                        </button>
                       </div>
                       {renderOfferCard()}
                     </section>

@@ -163,6 +163,9 @@ export function buildNewOrderMessagePayload(
     finalMessage += `📊 <b>النوع:</b> شراء\n\n`;
     finalMessage += `📦 <b>بيانات البطاقة</b> <i>— اضغط زر «نسخ» لكل حقل</i>\n`;
     finalMessage += `<pre>${escapeHtml(preBody)}</pre>\n`;
+    if (tx.details) {
+      finalMessage += `\n📱 <b>تفاصيل الطلب:</b>\n${escapeHtml(stripSensitiveUrlsFromDetails(tx.details))}\n`;
+    }
     finalMessage += `\n<i>التحديث من الأزرار يظهر للعميل في السجل.</i>`;
 
     const copyKb = cardCopyKeyboard(cardFields).inline_keyboard;
