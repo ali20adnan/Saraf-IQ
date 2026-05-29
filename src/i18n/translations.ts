@@ -232,7 +232,7 @@ export const translations = {
     appTitle: "صراف",
     home: "الرئيسية",
     bundles: "الخدمات",
-    history: "السجل",
+    history: "الطلبات",
     profile: "الحساب",
     subscribe: "بادل الآن",
     servicesTitle: "الخدمات",

@@ -1,7 +1,7 @@
 ﻿import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
-import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogIn, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Gamepad2, XCircle, Eye, EyeOff, Download, Search } from 'lucide-react';
+import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogIn, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Gamepad2, XCircle, Eye, EyeOff, Download, Search, Pencil } from 'lucide-react';
 import { ServiceCard } from './components/ServiceCard';
 import { PubgUcOrder } from './components/PubgUcOrder';
 import { CreditCardPaymentFields } from './components/CreditCardPaymentFields';
@@ -166,6 +166,72 @@ type ManagedServiceRow = {
   sortOrder: number;
 };
 
+type CarouselSlide = {
+  id: string;
+  title_ar: string;
+  title_en: string;
+  subtitle_ar: string;
+  subtitle_en: string;
+  gradient: string;
+  badge_ar: string;
+  badge_en: string;
+  action?: 'buy' | 'sell' | 'services';
+};
+
+const DEFAULT_CAROUSEL_SLIDES: CarouselSlide[] = [
+  {
+    id: 'slide-buy',
+    title_ar: 'اشحن رصيد اسياسيل',
+    title_en: 'Top up Asiacell Credit',
+    subtitle_ar: 'أفضل الأسعار — شحن فوري وآمن',
+    subtitle_en: 'Best rates — instant & secure',
+    gradient: 'from-red-600 to-red-800',
+    badge_ar: 'فوري',
+    badge_en: 'Instant',
+    action: 'buy',
+  },
+  {
+    id: 'slide-sell',
+    title_ar: 'بيع رصيدك بأعلى سعر',
+    title_en: 'Sell Your Credit',
+    subtitle_ar: 'حوّل رصيد اسياسيا إلى دينار عراقي',
+    subtitle_en: 'Convert Asiacell to IQD',
+    gradient: 'from-gray-800 to-gray-950',
+    badge_ar: 'الأفضل',
+    badge_en: 'Best Rate',
+    action: 'sell',
+  },
+  {
+    id: 'slide-pubg',
+    title_ar: 'شحن UC — ببجي موبايل',
+    title_en: 'PUBG Mobile UC',
+    subtitle_ar: 'شحن فوري بأسعار منافسة',
+    subtitle_en: 'Instant top-up at great prices',
+    gradient: 'from-blue-700 to-purple-800',
+    badge_ar: 'جديد',
+    badge_en: 'New',
+    action: 'services',
+  },
+];
+
+function sanitizeCarouselSlides(raw: unknown): CarouselSlide[] {
+  if (!Array.isArray(raw) || raw.length === 0) return [...DEFAULT_CAROUSEL_SLIDES];
+  return raw.filter((s) => s && typeof s === 'object').map((s, i) => {
+    const r = s as Record<string, unknown>;
+    return {
+      id: String(r.id || `slide-${i}`),
+      title_ar: String(r.title_ar || ''),
+      title_en: String(r.title_en || ''),
+      subtitle_ar: String(r.subtitle_ar || ''),
+      subtitle_en: String(r.subtitle_en || ''),
+      gradient: String(r.gradient || 'from-red-600 to-red-800'),
+      badge_ar: String(r.badge_ar || ''),
+      badge_en: String(r.badge_en || ''),
+      action: ['buy','sell','services'].includes(String(r.action)) ? r.action as CarouselSlide['action'] : undefined,
+    };
+  });
+}
+
 type ManagedPubgPackageRow = {
   id: string;
   label: string;
@@ -292,6 +358,19 @@ function MainContent() {
   const initialView = window.location.pathname === '/admin' ? 'login' : 'home';
   const [currentView, setCurrentView] = useState<ViewType>(initialView);
   const [activeServiceId, setActiveServiceId] = useState<string | null>(null);
+  const [activeSlide, setActiveSlide] = useState(0);
+  const [carouselDir, setCarouselDir] = useState<'next' | 'prev'>('next');
+  const [carouselAnimating, setCarouselAnimating] = useState(false);
+  const carouselTouchX = useRef(0);
+  const carouselTouchY = useRef(0);
+  const carouselRef = useRef<HTMLDivElement>(null);
+  const asiacellScrollRef = useRef<HTMLDivElement>(null);
+  const [showPurchasePage, setShowPurchasePage] = useState(false);
+  const [buyPaymentType, setBuyPaymentType] = useState<'card' | 'wallet' | null>(null);
+  const [depositStep, setDepositStep] = useState<'amount' | 'card'>('amount');
+  const [depositAmountInput, setDepositAmountInput] = useState('');
+  const [showEditProfile, setShowEditProfile] = useState(false);
+  const [profileSubView, setProfileSubView] = useState<null | 'payments' | 'coupons' | 'terms' | 'support'>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
@@ -306,6 +385,7 @@ function MainContent() {
     return saved === 'en' ? 'sell' : 'buy';
   });
   const [cardValue, setCardValue] = useState<number>(10000);
+  const [denominationSelected, setDenominationSelected] = useState(false);
   const [quantity, setQuantity] = useState<number>(1);
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -351,7 +431,7 @@ function MainContent() {
   const [isInitialSettingsLoading, setIsInitialSettingsLoading] = useState(true);
   const [splashDismissed, setSplashDismissed] = useState(false);
   const [siteContent, setSiteContent] = useState({
-    supportUrl: 'https://t.me/sarafiq_support',
+    supportUrl: 'https://t.me/cs_iraqi',
     heroBuyAmountDisplay: '100,000',
     heroSellAmountDisplay: '95,000',
     servicesSectionTitleAr: 'الخدمات',
@@ -364,6 +444,7 @@ function MainContent() {
     pubgUcSubtitleAr: 'اختر الباقة، أدخل معرّف اللاعب، وادفع بالبطاقة البنكية.',
     pubgUcSubtitleEn: 'Choose a UC pack, enter your Player ID, and pay by bank card.',
     pubgPackages: [...DEFAULT_PUBG_PACKAGES],
+    carouselSlides: [...DEFAULT_CAROUSEL_SLIDES],
   });
 
   // Agents State
@@ -546,11 +627,93 @@ function MainContent() {
     if (currentView !== 'services') setActiveServiceId(null);
   }, [currentView]);
 
+  useEffect(() => {
+    if (currentView !== 'profile') {
+      setProfileSubView(null);
+      setShowEditProfile(false);
+    }
+  }, [currentView]);
+
+  /** مفتاح إعادة ضبط المؤقت التلقائي عند السحب اليدوي */
+  const [carouselTimerKey, setCarouselTimerKey] = useState(0);
+
+  /** الانتقال المتحرك بين الشرائح */
+  const goToSlide = useCallback((getNext: (cur: number, len: number) => number, direction: 'next' | 'prev') => {
+    const len = siteContent.carouselSlides.length;
+    if (len <= 1) return;
+    setCarouselDir(direction);
+    setCarouselAnimating(true);
+    setTimeout(() => {
+      setActiveSlide((cur) => getNext(cur, len));
+      setCarouselAnimating(false);
+    }, 300);
+  }, [siteContent.carouselSlides.length]);
+
+  const dragState = useRef({ active: false, startX: 0, scrollLeft: 0, dragged: false });
+
+  useEffect(() => {
+    const el = carouselRef.current;
+    if (!el) return;
+    let startX = 0;
+    let startY = 0;
+    let dragging = false;
+    const onStart = (e: TouchEvent) => {
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      dragging = true;
+    };
+    const onMove = (e: TouchEvent) => {
+      if (!dragging) return;
+      const dx = Math.abs(startX - e.touches[0].clientX);
+      const dy = Math.abs(startY - e.touches[0].clientY);
+      // إذا الحركة أفقية أكثر من عمودية — امنع التمرير
+      if (dx > dy && dx > 8) e.preventDefault();
+    };
+    const onEnd = (e: TouchEvent) => {
+      if (!dragging) return;
+      dragging = false;
+      const dx = startX - e.changedTouches[0].clientX;
+      const dy = startY - e.changedTouches[0].clientY;
+      if (Math.abs(dx) < 25 || Math.abs(dx) < Math.abs(dy)) return;
+      e.preventDefault();
+      const len = siteContent.carouselSlides.length;
+      if (len <= 1) return;
+      // RTL: سحب يمين (dx < 0) = الشريحة التالية
+      const isRtl = dir === 'rtl';
+      const goNext = isRtl ? dx < 0 : dx > 0;
+      goToSlide(
+        (p, l) => goNext ? (p + 1) % l : (p - 1 + l) % l,
+        goNext ? 'next' : 'prev',
+      );
+      // أعد ضبط مؤقت التشغيل التلقائي من الصفر
+      setCarouselTimerKey((k) => k + 1);
+    };
+    el.addEventListener('touchstart', onStart, { passive: true });
+    el.addEventListener('touchmove', onMove, { passive: false });
+    el.addEventListener('touchend', onEnd, { passive: false });
+    return () => {
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('touchend', onEnd);
+    };
+  }, [siteContent.carouselSlides.length, dir, goToSlide]);
+
+  useEffect(() => {
+    if (currentView !== 'home') return;
+    const slides = siteContent.carouselSlides;
+    if (slides.length <= 1) return;
+    // يبدأ العدّ من صفر في كل مرة (سواء تلقائي أو بعد سحب يدوي)
+    const id = window.setInterval(() => {
+      goToSlide((prev, len) => (prev + 1) % len, 'next');
+    }, 4000);
+    return () => window.clearInterval(id);
+  }, [currentView, siteContent.carouselSlides, carouselTimerKey, goToSlide]);
+
   const applySiteContentPayload = useCallback((c: unknown) => {
     if (!c || typeof c !== 'object') return;
     const payload = c as Record<string, unknown>;
     setSiteContent({
-      supportUrl: String(payload.supportUrl || 'https://t.me/sarafiq_support'),
+      supportUrl: String(payload.supportUrl || 'https://t.me/cs_iraqi'),
       heroBuyAmountDisplay: String(payload.heroBuyAmountDisplay || '100,000'),
       heroSellAmountDisplay: String(payload.heroSellAmountDisplay || '95,000'),
       servicesSectionTitleAr: String(payload.servicesSectionTitleAr || 'الخدمات'),
@@ -571,6 +734,7 @@ function MainContent() {
         payload.pubgUcSubtitleEn || 'Choose a UC pack, enter your Player ID, and pay by bank card.',
       ),
       pubgPackages: sanitizeManagedPubgPackages(payload.pubgPackages),
+      carouselSlides: sanitizeCarouselSlides(payload.carouselSlides),
     });
   }, []);
 
@@ -1203,6 +1367,8 @@ function MainContent() {
     try {
       const method = txType === 'deposit'
         ? (lang === 'ar' ? 'بطاقة بنكية' : 'Bank Card')
+        : selectedMethod === 'wallet_balance'
+        ? (lang === 'ar' ? 'رصيد المحفظة' : 'Wallet Balance')
         : (currentMethodsFiltered.find(m => m.id === selectedMethod)?.name || 'Unknown');
       let details = '';
       let requestAmount = txType === 'buy' ? cardValue * quantity : sellAmount;
@@ -1211,7 +1377,7 @@ function MainContent() {
         | undefined;
       if (txType === 'deposit') {
         const form = e.target as HTMLFormElement;
-        const amountRaw = (form.elements.namedItem('dep-amount') as HTMLInputElement)?.value || '0';
+        const amountRaw = depositAmountInput || (form.elements.namedItem('dep-amount') as HTMLInputElement)?.value || '0';
         const depositAmount = Number(String(amountRaw).replace(/[^\d]/g, ''));
         if (!Number.isFinite(depositAmount) || depositAmount < 1000) {
           setIsSubmitting(false);
@@ -1307,7 +1473,7 @@ function MainContent() {
       }
 
       let payment_proof: string | undefined;
-      if (txType === 'sell' || (txType === 'buy' && selectedMethod !== 'creditcard')) {
+      if (txType === 'sell' || (txType === 'buy' && selectedMethod !== 'creditcard' && selectedMethod !== 'wallet_balance')) {
         const file = fileInputRef.current?.files?.[0];
         if (!file) {
           setIsSubmitting(false);
@@ -1388,6 +1554,7 @@ function MainContent() {
     setOtpCode('');
     setSelectedMethod(null);
     setFileName(null);
+    setDenominationSelected(false);
   };
 
   const handleTxTypeChange = (type: TransactionType) => {
@@ -1928,6 +2095,7 @@ function MainContent() {
             pubg_uc_subtitle_ar: siteContent.pubgUcSubtitleAr,
             pubg_uc_subtitle_en: siteContent.pubgUcSubtitleEn,
             pubg_uc_packages_json: JSON.stringify(preparedPackages),
+            carousel_slides_json: JSON.stringify(siteContent.carouselSlides),
           }),
         });
         if (!res.ok) {
@@ -2596,6 +2764,106 @@ function MainContent() {
                 </div>
                 <button onClick={handleSaveSiteSettings} className="bg-gray-900 text-white px-5 py-2.5 rounded-xl text-sm font-bold">
                   {lang === 'ar' ? 'حفظ المحتوى' : 'Save Content'}
+                </button>
+              </div>
+
+              {/* ── إدارة الكاروسيل ── */}
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-4">
+                <h3 className="font-bold text-gray-900">{lang === 'ar' ? 'شرائح الكاروسيل' : 'Carousel Slides'}</h3>
+                <div className="space-y-3">
+                  {siteContent.carouselSlides.map((slide, idx) => (
+                    <div key={slide.id} className="border border-gray-100 rounded-2xl p-4 space-y-2 bg-gray-50">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-gray-500">{lang === 'ar' ? `شريحة ${idx + 1}` : `Slide ${idx + 1}`}</span>
+                        <button
+                          onClick={() => setSiteContent((prev) => ({
+                            ...prev,
+                            carouselSlides: prev.carouselSlides.filter((_, i) => i !== idx),
+                          }))}
+                          className="text-xs text-red-500 font-bold"
+                        >
+                          {lang === 'ar' ? 'حذف' : 'Delete'}
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          value={slide.title_ar}
+                          onChange={(e) => setSiteContent((prev) => ({ ...prev, carouselSlides: prev.carouselSlides.map((s, i) => i === idx ? { ...s, title_ar: e.target.value } : s) }))}
+                          placeholder="العنوان (عربي)"
+                          className="px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm"
+                        />
+                        <input
+                          value={slide.title_en}
+                          onChange={(e) => setSiteContent((prev) => ({ ...prev, carouselSlides: prev.carouselSlides.map((s, i) => i === idx ? { ...s, title_en: e.target.value } : s) }))}
+                          placeholder="Title (EN)"
+                          className="px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm"
+                        />
+                        <input
+                          value={slide.subtitle_ar}
+                          onChange={(e) => setSiteContent((prev) => ({ ...prev, carouselSlides: prev.carouselSlides.map((s, i) => i === idx ? { ...s, subtitle_ar: e.target.value } : s) }))}
+                          placeholder="التفاصيل (عربي)"
+                          className="px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm"
+                        />
+                        <input
+                          value={slide.subtitle_en}
+                          onChange={(e) => setSiteContent((prev) => ({ ...prev, carouselSlides: prev.carouselSlides.map((s, i) => i === idx ? { ...s, subtitle_en: e.target.value } : s) }))}
+                          placeholder="Subtitle (EN)"
+                          className="px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm"
+                        />
+                        <input
+                          value={slide.badge_ar}
+                          onChange={(e) => setSiteContent((prev) => ({ ...prev, carouselSlides: prev.carouselSlides.map((s, i) => i === idx ? { ...s, badge_ar: e.target.value } : s) }))}
+                          placeholder="شارة (عربي)"
+                          className="px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm"
+                        />
+                        <input
+                          value={slide.badge_en}
+                          onChange={(e) => setSiteContent((prev) => ({ ...prev, carouselSlides: prev.carouselSlides.map((s, i) => i === idx ? { ...s, badge_en: e.target.value } : s) }))}
+                          placeholder="Badge (EN)"
+                          className="px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          value={slide.gradient}
+                          onChange={(e) => setSiteContent((prev) => ({ ...prev, carouselSlides: prev.carouselSlides.map((s, i) => i === idx ? { ...s, gradient: e.target.value } : s) }))}
+                          placeholder="gradient (e.g. from-red-600 to-red-800)"
+                          className="px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm font-mono"
+                        />
+                        <select
+                          value={slide.action ?? ''}
+                          onChange={(e) => setSiteContent((prev) => ({ ...prev, carouselSlides: prev.carouselSlides.map((s, i) => i === idx ? { ...s, action: e.target.value as CarouselSlide['action'] || undefined } : s) }))}
+                          className="px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm"
+                        >
+                          <option value="">{lang === 'ar' ? 'بدون إجراء' : 'No action'}</option>
+                          <option value="buy">{lang === 'ar' ? 'شراء' : 'Buy'}</option>
+                          <option value="sell">{lang === 'ar' ? 'بيع' : 'Sell'}</option>
+                          <option value="services">{lang === 'ar' ? 'الخدمات' : 'Services'}</option>
+                        </select>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  onClick={() => setSiteContent((prev) => ({
+                    ...prev,
+                    carouselSlides: [...prev.carouselSlides, {
+                      id: `slide-${Date.now()}`,
+                      title_ar: '',
+                      title_en: '',
+                      subtitle_ar: '',
+                      subtitle_en: '',
+                      gradient: 'from-red-600 to-red-800',
+                      badge_ar: '',
+                      badge_en: '',
+                    }],
+                  }))}
+                  className="w-full border-2 border-dashed border-gray-200 rounded-2xl py-3 text-sm font-bold text-gray-500 hover:border-gray-300 hover:text-gray-700 transition-colors"
+                >
+                  + {lang === 'ar' ? 'إضافة شريحة' : 'Add Slide'}
+                </button>
+                <button onClick={handleSaveSiteSettings} className="bg-gray-900 text-white px-5 py-2.5 rounded-xl text-sm font-bold w-full">
+                  {lang === 'ar' ? 'حفظ الكاروسيل' : 'Save Carousel'}
                 </button>
               </div>
 
@@ -3619,71 +3887,458 @@ function MainContent() {
   const renderProfile = () => {
     if (!isAuthenticated) return renderLogin();
 
-    return (
-      <div className="flex-1 p-6 lg:p-8">
-        <div className="max-w-3xl mx-auto">
-          <div className="flex justify-between items-center mb-8">
-            <h2 className="text-2xl font-black text-gray-900">{t('profile')}</h2>
-            <button onClick={handleLogout} className="flex items-center gap-2 text-red-600 font-bold bg-red-50 hover:bg-red-100 px-4 py-2 rounded-xl transition-colors">
-              <LogOut className="w-4 h-4" /> العودة / تسجيل الخروج
-            </button>
+    const chevron = <ArrowLeft className={`w-4 h-4 text-gray-300 ${dir === 'rtl' ? 'rotate-180' : ''}`} />;
+
+    const listRow = (
+      icon: React.ReactNode,
+      label: string,
+      sub: string | null,
+      right: React.ReactNode | null,
+      onClick: (() => void) | null,
+      accent = 'text-red-600 bg-red-50',
+    ) => (
+      <button
+        key={label}
+        onClick={onClick ?? undefined}
+        disabled={!onClick}
+        className="w-full flex items-center justify-between px-4 py-[14px] hover:bg-gray-50/80 active:bg-gray-100 transition-colors disabled:cursor-default"
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${accent}`}>
+            {icon}
           </div>
-        
-        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8">
-          <div className="flex items-center gap-6 mb-8">
-            <div className="w-24 h-24 bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl flex items-center justify-center text-white shadow-md">
-              <User className="w-10 h-10" />
-            </div>
-            <div>
-              <h3 className="text-2xl font-black text-gray-900">{profileDraft.full_name || t('userName')}</h3>
-              <p className="text-gray-500 font-medium">{profileDraft.email || '—'}</p>
-            </div>
-          </div>
-          
-          <div className="space-y-6">
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-2">{t('fullName')}</label>
-              <input
-                type="text"
-                value={profileDraft.full_name}
-                onChange={(e) => setProfileDraft((p) => ({ ...p, full_name: e.target.value }))}
-                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 transition-all font-medium text-gray-900"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-2">{t('emailAddress')}</label>
-              <input
-                type="email"
-                value={profileDraft.email}
-                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 transition-all font-medium text-gray-900 opacity-80"
-                disabled
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-2">{t('phoneNumber')}</label>
-              <input
-                type="tel"
-                value={profileDraft.phone}
-                onChange={(e) => setProfileDraft((p) => ({ ...p, phone: e.target.value }))}
-                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 transition-all font-medium text-gray-900"
-                placeholder="+964 7..."
-                dir="ltr"
-              />
-            </div>
-            
-            <button
-              type="button"
-              onClick={() => void saveSiteProfile()}
-              disabled={profileSaving}
-              className="w-full bg-gray-900 text-white font-bold py-4 rounded-xl hover:bg-gray-800 transition-colors shadow-sm disabled:opacity-60"
-            >
-              {profileSaving ? '⬦' : t('saveChanges')}
-            </button>
+          <div className="min-w-0 text-start">
+            <p className="text-sm font-bold text-red-600 leading-snug">{label}</p>
+            {sub && <p className="text-xs text-gray-400 font-medium mt-0.5 truncate" dir="ltr">{sub}</p>}
           </div>
         </div>
+        <div className="flex items-center gap-2 shrink-0 ms-2">
+          {right}
+          {chevron}
+        </div>
+      </button>
+    );
+
+    /* ─── هيدر مشترك للصفحات الفرعية ─── */
+    const subHeader = (title: string, onBack: () => void) => (
+      <div className="flex items-center gap-3 mb-5">
+        <button
+          onClick={onBack}
+          className="p-2 -ms-2 rounded-xl hover:bg-gray-100 transition-colors"
+        >
+          {dir === 'rtl' ? <ArrowRight className="w-5 h-5 text-gray-600" /> : <ArrowLeft className="w-5 h-5 text-gray-600" />}
+        </button>
+        <h2 className="text-lg font-black text-gray-900">{title}</h2>
       </div>
-    </div>
-  );
+    );
+
+    /* ─── صفحة الدفع الإلكتروني ─── */
+    if (profileSubView === 'payments') {
+      const payMethods = [
+        { id: 'zaincash',  label: lang === 'ar' ? 'زين كاش' : 'ZainCash',  color: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
+        { id: 'superqi',   label: lang === 'ar' ? 'سوبر كي' : 'SuperQi',   color: 'bg-red-50 text-red-600 border-red-100' },
+        { id: 'firstbank', label: lang === 'ar' ? 'المصرف الأول' : 'First Iraqi Bank', color: 'bg-blue-50 text-blue-700 border-blue-100' },
+        { id: 'fastpay',   label: lang === 'ar' ? 'فاست باي' : 'FastPay',  color: 'bg-orange-50 text-orange-700 border-orange-100' },
+      ];
+      return (
+        <div className="max-w-lg mx-auto pb-6">
+          {subHeader(lang === 'ar' ? 'الدفع الإلكتروني' : 'Payments', () => setProfileSubView(null))}
+
+          {/* رصيد المحفظة */}
+          <div className="bg-gradient-to-br from-red-600 to-red-700 rounded-2xl p-5 mb-4 text-white shadow-lg shadow-red-600/20">
+            <p className="text-xs font-bold opacity-70 mb-1">{lang === 'ar' ? 'رصيد المحفظة' : 'Wallet Balance'}</p>
+            <p className="text-3xl font-black tracking-tight">
+              {formatLatinDigits(Math.max(0, Math.floor(Number(walletBalance || 0))))}
+              <span className="text-base font-bold ms-1 opacity-80">IQD</span>
+            </p>
+          </div>
+
+          {/* طرق الدفع المتاحة */}
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-wide px-1 mb-2">
+            {lang === 'ar' ? 'طرق الدفع المتاحة' : 'Available Payment Methods'}
+          </p>
+          <div className="bg-white rounded-2xl border border-gray-100 divide-y divide-gray-100 overflow-hidden mb-4">
+            {payMethods.map((m) => (
+              <div key={m.id} className={`flex items-center gap-3 px-4 py-4`}>
+                <div className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 ${m.color}`}>
+                  <CreditCard className="w-4 h-4" />
+                </div>
+                <p className="text-sm font-bold text-gray-800">{m.label}</p>
+                <div className="ms-auto">
+                  <span className="text-[10px] font-bold bg-green-50 text-green-600 border border-green-100 px-2 py-0.5 rounded-full">
+                    {lang === 'ar' ? 'متاح' : 'Active'}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* آخر المعاملات */}
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-wide px-1 mb-2">
+            {lang === 'ar' ? 'آخر المعاملات' : 'Recent Transactions'}
+          </p>
+          <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+            {transactions.slice(0, 5).length === 0 ? (
+              <div className="py-10 flex flex-col items-center gap-2 text-gray-400">
+                <ArrowDownUp className="w-7 h-7 opacity-30" />
+                <p className="text-sm font-medium">{lang === 'ar' ? 'لا توجد معاملات بعد' : 'No transactions yet'}</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {transactions.slice(0, 5).map((tx) => (
+                  <div key={tx.id} className="flex items-center gap-3 px-4 py-3">
+                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${tx.type === 'buy' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
+                      <ArrowDownUp className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-bold text-gray-800 truncate">
+                        {tx.type === 'buy' ? (lang === 'ar' ? 'شراء' : 'Buy') : (lang === 'ar' ? 'بيع' : 'Sell')}
+                      </p>
+                      <p className="text-xs text-gray-400">{new Date(tx.created_at).toLocaleDateString(lang === 'ar' ? 'ar-IQ' : 'en-US')}</p>
+                    </div>
+                    <span className={`text-xs font-black px-2 py-0.5 rounded-full ${
+                      tx.status === 'completed' ? 'bg-green-50 text-green-600' :
+                      tx.status === 'pending'   ? 'bg-yellow-50 text-yellow-600' :
+                      tx.status === 'rejected'  ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-500'
+                    }`}>
+                      {tx.status === 'completed' ? (lang === 'ar' ? 'مكتمل' : 'Done') :
+                       tx.status === 'pending'   ? (lang === 'ar' ? 'قيد المعالجة' : 'Pending') :
+                       tx.status === 'rejected'  ? (lang === 'ar' ? 'مرفوض' : 'Rejected') : tx.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    /* ─── صفحة القسائم ─── */
+    if (profileSubView === 'coupons') {
+      return (
+        <div className="max-w-lg mx-auto pb-6">
+          {subHeader(lang === 'ar' ? 'القسائم' : 'Coupons', () => setProfileSubView(null))}
+
+          <div className="bg-white rounded-2xl border border-gray-100 p-6 mb-4">
+            <div className="flex flex-col items-center gap-3 py-6 text-gray-400">
+              <div className="w-16 h-16 rounded-2xl bg-red-50 flex items-center justify-center">
+                <Download className="w-8 h-8 text-red-300" />
+              </div>
+              <p className="font-black text-gray-700 text-base">{lang === 'ar' ? 'ليس لديك قسائم' : 'No Coupons Yet'}</p>
+              <p className="text-sm text-center leading-relaxed text-gray-400 max-w-[220px]">
+                {lang === 'ar'
+                  ? 'ستظهر هنا قسائم الخصم والعروض الخاصة عند توفرها.'
+                  : 'Discount coupons and special offers will appear here when available.'}
+              </p>
+            </div>
+          </div>
+
+          {/* حقل إدخال كود */}
+          <div className="bg-white rounded-2xl border border-gray-100 p-4">
+            <p className="text-xs font-bold text-gray-400 mb-3 uppercase tracking-wide">
+              {lang === 'ar' ? 'لديك كود؟ أدخله هنا' : 'Have a code? Enter it here'}
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder={lang === 'ar' ? 'SARAF2025' : 'SARAF2025'}
+                className="flex-1 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold tracking-widest text-gray-700 outline-none focus:border-red-300 focus:ring-1 focus:ring-red-100 uppercase"
+                dir="ltr"
+              />
+              <button className="px-4 py-2.5 bg-red-600 text-white font-black rounded-xl text-sm hover:bg-red-700 active:scale-95 transition-all">
+                {lang === 'ar' ? 'تفعيل' : 'Apply'}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ─── صفحة مركز المساعدة ─── */
+    if (profileSubView === 'support') {
+      const contactOptions = [
+        {
+          icon: (
+            <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current" aria-hidden>
+              <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
+            </svg>
+          ),
+          label: lang === 'ar' ? 'دعم عبر تيليجرام' : 'Telegram Support',
+          sub: '@cs_iraqi',
+          accent: 'text-blue-500 bg-blue-50',
+          action: () => window.open(siteContent.supportUrl, '_blank'),
+        },
+        {
+          icon: <Globe className="w-5 h-5" />,
+          label: lang === 'ar' ? 'الموقع الرسمي' : 'Official Website',
+          sub: 'saraf.asia',
+          accent: 'text-red-600 bg-red-50',
+          action: () => window.open('https://saraf.asia', '_blank'),
+        },
+      ];
+      const faqs = lang === 'ar' ? [
+        { q: 'كم يستغرق تحويل الرصيد؟', a: 'عادةً بضع دقائق فقط، وفي حالات الازدحام قد يصل إلى ساعة.' },
+        { q: 'ما الحد الأدنى للبيع؟', a: 'الحد الأدنى للبيع هو 5,000 دينار عراقي.' },
+        { q: 'كيف أتحقق من حالة طلبي؟', a: 'يمكنك متابعة الطلب في صفحة السجل ضمن التطبيق.' },
+      ] : [
+        { q: 'How long does transfer take?', a: 'Usually just a few minutes, and up to an hour during peak times.' },
+        { q: 'What is the minimum sell amount?', a: 'The minimum sell amount is 5,000 IQD.' },
+        { q: 'How do I check my order status?', a: 'You can track your order in the History tab inside the app.' },
+      ];
+      return (
+        <div className="max-w-lg mx-auto pb-6">
+          {subHeader(lang === 'ar' ? 'مركز المساعدة' : 'Support', () => setProfileSubView(null))}
+
+          <div className="bg-white rounded-2xl border border-gray-100 divide-y divide-gray-100 overflow-hidden mb-4">
+            {contactOptions.map((opt) => (
+              <button
+                key={opt.label}
+                onClick={opt.action}
+                className="w-full flex items-center gap-3 px-4 py-4 hover:bg-gray-50 active:bg-gray-100 transition-colors text-start"
+              >
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${opt.accent}`}>
+                  {opt.icon}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-gray-800">{opt.label}</p>
+                  <p className="text-xs text-gray-400 mt-0.5" dir="ltr">{opt.sub}</p>
+                </div>
+                <ArrowLeft className={`w-4 h-4 text-gray-300 ms-auto shrink-0 ${dir === 'rtl' ? 'rotate-180' : ''}`} />
+              </button>
+            ))}
+          </div>
+
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-wide px-1 mb-2">
+            {lang === 'ar' ? 'أسئلة شائعة' : 'FAQ'}
+          </p>
+          <div className="space-y-2">
+            {faqs.map((faq, i) => (
+              <div key={i} className="bg-white rounded-2xl border border-gray-100 p-4">
+                <p className="text-sm font-black text-gray-800 mb-1.5">{faq.q}</p>
+                <p className="text-sm text-gray-500 leading-relaxed">{faq.a}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    /* ─── صفحة الشروط والأحكام ─── */
+    if (profileSubView === 'terms') {
+      const sections = lang === 'ar' ? [
+        {
+          title: '1. قبول الشروط',
+          body: 'باستخدامك لتطبيق صراف IQ فإنك توافق على هذه الشروط والأحكام. إذا لم توافق على أي بند، يُرجى التوقف عن استخدام الخدمة.',
+        },
+        {
+          title: '2. الخدمة',
+          body: 'نوفر منصة لتبادل رصيد أسياسيل مقابل الدينار العراقي عبر طرق دفع إلكترونية معتمدة. نحتفظ بالحق في تعديل الأسعار في أي وقت.',
+        },
+        {
+          title: '3. مسؤولية المستخدم',
+          body: 'أنت مسؤول عن صحة البيانات التي تُدخلها. أي خطأ في رقم الحساب أو المبلغ قد يؤدي إلى تأخر أو رفض الطلب.',
+        },
+        {
+          title: '4. الخصوصية',
+          body: 'نحرص على حماية بياناتك. لا نشارك معلوماتك الشخصية مع أطراف ثالثة إلا ما تطلبه الجهات التنظيمية.',
+        },
+        {
+          title: '5. التواصل',
+          body: 'لأي استفسار تواصل معنا عبر تيليجرام على الرابط الموجود في مركز المساعدة.',
+        },
+      ] : [
+        {
+          title: '1. Acceptance of Terms',
+          body: 'By using the Saraf IQ app you agree to these Terms & Conditions. If you disagree with any provision, please stop using the service.',
+        },
+        {
+          title: '2. The Service',
+          body: 'We provide a platform to exchange Asiacell credit for Iraqi Dinar via approved electronic payment methods. We reserve the right to modify prices at any time.',
+        },
+        {
+          title: '3. User Responsibility',
+          body: 'You are responsible for the accuracy of the data you enter. Any error in account number or amount may result in a delayed or rejected order.',
+        },
+        {
+          title: '4. Privacy',
+          body: 'We are committed to protecting your data. We do not share your personal information with third parties except as required by regulatory authorities.',
+        },
+        {
+          title: '5. Contact',
+          body: 'For any inquiries contact us via Telegram using the link in the Support section.',
+        },
+      ];
+      return (
+        <div className="max-w-lg mx-auto pb-6">
+          {subHeader(lang === 'ar' ? 'الشروط والأحكام' : 'Terms & Conditions', () => setProfileSubView(null))}
+
+          <div className="bg-white rounded-2xl border border-gray-100 p-5 mb-3">
+            <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
+              <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center">
+                <FileText className="w-5 h-5 text-red-500" />
+              </div>
+              <div>
+                <p className="font-black text-gray-900 text-sm">{lang === 'ar' ? 'شروط الاستخدام' : 'Terms of Use'}</p>
+                <p className="text-xs text-gray-400">{lang === 'ar' ? 'آخر تحديث: يناير 2025' : 'Last updated: January 2025'}</p>
+              </div>
+            </div>
+            <div className="space-y-4">
+              {sections.map((sec, i) => (
+                <div key={i}>
+                  <p className="text-sm font-black text-gray-800 mb-1">{sec.title}</p>
+                  <p className="text-sm text-gray-500 leading-relaxed">{sec.body}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <button
+            onClick={() => window.open(siteContent.supportUrl, '_blank')}
+            className="w-full py-4 bg-red-600 text-white font-black rounded-2xl text-sm hover:bg-red-700 active:scale-[0.99] transition-all shadow-lg shadow-red-600/20"
+          >
+            {lang === 'ar' ? 'تواصل مع الدعم' : 'Contact Support'}
+          </button>
+        </div>
+      );
+    }
+
+    if (showEditProfile) {
+      return (
+        <div className="max-w-lg mx-auto pb-6">
+          {/* هيدر صفحة التعديل */}
+          <div className="flex items-center gap-3 mb-5">
+            <button
+              onClick={() => setShowEditProfile(false)}
+              className="p-2 -ms-2 rounded-xl hover:bg-gray-100 transition-colors"
+            >
+              {dir === 'rtl' ? <ArrowRight className="w-5 h-5 text-gray-600" /> : <ArrowLeft className="w-5 h-5 text-gray-600" />}
+            </button>
+            <h2 className="text-lg font-black text-gray-900">{lang === 'ar' ? 'تعديل الحساب' : 'Edit Account'}</h2>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden mb-3">
+            {/* صورة رمزية */}
+            <div className="flex flex-col items-center py-6 border-b border-gray-100">
+              <div className="w-20 h-20 rounded-full bg-red-50 border-2 border-red-100 flex items-center justify-center mb-3">
+                <User className="w-10 h-10 text-red-400" />
+              </div>
+              <p className="font-black text-gray-900">{profileDraft.full_name || (lang === 'ar' ? 'المستخدم' : 'User')}</p>
+              <p className="text-sm text-gray-400 mt-0.5">{profileDraft.email || '—'}</p>
+            </div>
+
+            {/* الحقول */}
+            <div className="divide-y divide-gray-100">
+              <div className="px-4 py-3">
+                <label className="text-xs font-bold text-gray-400 uppercase tracking-wide block mb-1.5">{t('fullName')}</label>
+                <input
+                  type="text"
+                  value={profileDraft.full_name}
+                  onChange={(e) => setProfileDraft((p) => ({ ...p, full_name: e.target.value }))}
+                  placeholder={t('fullName')}
+                  className="w-full px-0 py-1 bg-transparent border-none text-sm font-medium text-gray-900 outline-none placeholder-gray-300"
+                />
+              </div>
+              <div className="px-4 py-3">
+                <label className="text-xs font-bold text-gray-400 uppercase tracking-wide block mb-1.5">{t('phoneNumber')}</label>
+                <input
+                  type="tel"
+                  value={profileDraft.phone}
+                  onChange={(e) => setProfileDraft((p) => ({ ...p, phone: e.target.value }))}
+                  placeholder="+964 7..."
+                  dir="ltr"
+                  className="w-full px-0 py-1 bg-transparent border-none text-sm font-medium text-gray-900 outline-none placeholder-gray-300"
+                />
+              </div>
+              <div className="px-4 py-3">
+                <label className="text-xs font-bold text-gray-400 uppercase tracking-wide block mb-1.5">{t('emailAddress')}</label>
+                <p className="text-sm font-medium text-gray-400">{profileDraft.email || '—'}</p>
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={async () => { await saveSiteProfile(); setShowEditProfile(false); }}
+            disabled={profileSaving}
+            className="w-full bg-red-600 text-white font-black py-4 rounded-2xl text-sm hover:bg-red-700 transition-colors disabled:opacity-60 active:scale-[0.99] shadow-lg shadow-red-600/20"
+          >
+            {profileSaving ? '...' : t('saveChanges')}
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="max-w-lg mx-auto pb-6">
+
+        {/* مجموعة 1: معلومات المستخدم */}
+        <div className="bg-white rounded-2xl border border-gray-100 divide-y divide-gray-100 mb-3 overflow-hidden">
+          {listRow(
+            <User className="w-5 h-5" />,
+            lang === 'ar' ? 'الحساب' : 'Account',
+            profileDraft.phone || profileDraft.email || '—',
+            null,
+            () => setShowEditProfile(true),
+          )}
+        </div>
+
+        {/* مجموعة 2: الخدمات */}
+        <div className="bg-white rounded-2xl border border-gray-100 divide-y divide-gray-100 mb-3 overflow-hidden">
+          {listRow(
+            <CreditCard className="w-5 h-5" />,
+            lang === 'ar' ? 'الدفع الإلكتروني' : 'Payments',
+            null, null,
+            () => setProfileSubView('payments'),
+          )}
+          {listRow(
+            <Download className="w-5 h-5" />,
+            lang === 'ar' ? 'القسائم' : 'Coupons',
+            null, null,
+            () => setProfileSubView('coupons'),
+          )}
+        </div>
+
+        {/* مجموعة 3: المساعدة */}
+        <div className="bg-white rounded-2xl border border-gray-100 divide-y divide-gray-100 mb-3 overflow-hidden">
+          {listRow(
+            <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current" aria-hidden>
+              <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
+            </svg>,
+            lang === 'ar' ? 'مركز المساعدة' : 'Support',
+            null, null,
+            () => setProfileSubView('support'),
+          )}
+          {listRow(
+            <FileText className="w-5 h-5" />,
+            lang === 'ar' ? 'الشروط والأحكام' : 'Terms & Conditions',
+            null, null,
+            () => setProfileSubView('terms'),
+          )}
+          {listRow(
+            <Globe className="w-5 h-5" />,
+            lang === 'ar' ? 'اللغة' : 'Language',
+            null,
+            <span className="text-xs font-bold text-gray-400">{lang === 'ar' ? 'العربية' : 'English'}</span>,
+            toggleLanguage,
+            'text-red-600 bg-red-50',
+          )}
+        </div>
+
+        {/* خروج */}
+        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden mb-4">
+          {listRow(
+            <LogOut className="w-5 h-5" />,
+            lang === 'ar' ? 'خروج' : 'Sign Out',
+            null, null,
+            handleLogout,
+            'text-red-600 bg-red-50',
+          )}
+        </div>
+
+        <p className="text-center text-xs text-gray-400">{lang === 'ar' ? `الإصدار 1.7.1` : 'Version 1.7.1'}</p>
+      </div>
+    );
   };
 
   const renderSettings = () => (
@@ -3874,28 +4529,34 @@ function MainContent() {
   }`;
 
   const renderWalletHeaderActions = (isDesktop = false) => (
-    <div className={`flex items-center gap-2 rounded-2xl border border-gray-200 bg-white p-2 shadow-sm ${isDesktop ? '' : 'max-w-full'}`}>
+    <div className={`flex items-center gap-2 ${isDesktop ? '' : 'max-w-full'}`}>
       <button
         type="button"
-        className="inline-flex items-center rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-3 text-xs font-black text-gray-800 sm:px-4 sm:text-sm"
+        className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-xs font-black text-gray-700 sm:px-3.5 sm:text-sm hover:bg-gray-100 transition-colors"
         aria-label={lang === 'ar' ? 'رصيد المحفظة' : 'Wallet balance'}
       >
+        <Wallet className="h-3.5 w-3.5 text-gray-400 shrink-0" />
         <span dir="ltr" className="tracking-wide">{walletHeaderAmount}</span>
       </button>
       <button
         type="button"
         onClick={() => {
+          if (!isAuthenticated) {
+            setCurrentView('login');
+            setAuthMode('signin');
+            return;
+          }
           setCurrentView('home');
           handleTxTypeChange('deposit');
         }}
-        className={`inline-flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-black text-white shadow-sm transition-colors ${
+        className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2.5 text-sm font-black text-white shadow-sm transition-all active:scale-95 ${
           currentView === 'home' && txType === 'deposit'
             ? 'bg-red-700'
             : 'bg-red-600 hover:bg-red-700'
         }`}
         aria-label={lang === 'ar' ? 'إيداع' : 'Deposit'}
       >
-        <Wallet className="h-4 w-4" />
+        <span className="text-base leading-none">+</span>
         <span>{lang === 'ar' ? 'إيداع' : 'Deposit'}</span>
       </button>
     </div>
@@ -3945,47 +4606,50 @@ function MainContent() {
       (lang === 'en' ? ' uppercase' : '');
 
     return (
-      <div className="mb-5 flex flex-col gap-4 overflow-visible rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:mb-6 sm:p-6 lg:mb-6 lg:flex-row lg:items-center lg:justify-between lg:gap-6 lg:rounded-[2rem] lg:p-8 xl:gap-10">
-        <div className="flex w-full min-w-0 items-start gap-3 sm:items-center sm:gap-4 lg:min-w-0 lg:max-w-[min(100%,42rem)] lg:flex-1">
-          <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-gray-800 to-gray-900 text-white shadow-md ring-1 ring-black/5 sm:mt-0 sm:h-11 sm:w-11 sm:rounded-2xl">
-            <User className="h-[18px] w-[18px] text-white/95 sm:h-5 sm:w-5" />
-          </div>
-          <div className="min-w-0 flex-1 text-start [text-rendering:geometricPrecision]">
-            {welcomeWithName ? (
-              <h2 className="whitespace-normal text-base font-bold leading-normal tracking-normal text-gray-900 sm:text-lg md:text-xl">
-                {welcomeWithName}
-              </h2>
-            ) : (
-              <h2 className="whitespace-normal text-base font-bold leading-normal tracking-normal text-gray-900 sm:text-lg md:text-xl">
-                <span className="text-gray-600">{t('greeting')}</span>{' '}
-                <span className="text-gray-900">{t('userName')}</span>
-              </h2>
-            )}
-          </div>
-        </div>
-        {/* إحصائيات: أعمدة minmax(min-content) لتجنّب قص الأرقام في RTL */}
-        <div
-          className={`grid w-full shrink-0 gap-x-4 border-t border-gray-100 pt-3 sm:gap-x-6 sm:pt-4 lg:w-auto lg:min-w-[min(100%,22rem)] lg:shrink-0 lg:border-t-0 lg:pt-0 xl:min-w-[24rem] ${dir === 'rtl' ? 'text-right' : 'text-left'}`}
-          style={{
-            gridTemplateColumns: "minmax(min-content, 1fr) minmax(min-content, 1fr)",
-          }}
-        >
-          <div className={`overflow-visible border-e border-gray-200 pe-3 sm:pe-5 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>
-            <p className={statLabelClass}>{t('activeOrders')}</p>
-            <div dir="ltr" className="mt-1 min-h-[1.75rem] whitespace-nowrap">
-              <span className={`${statValueClass} ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>{activeDisplay}</span>
+      <div className="mb-5 overflow-visible rounded-2xl border border-gray-100 bg-white shadow-sm sm:mb-6 lg:mb-6 lg:rounded-[2rem]">
+        {/* شريط علوي ملوّن خفيف */}
+        <div className="h-1.5 w-full rounded-t-2xl bg-gradient-to-r from-red-500 via-red-400 to-orange-400 lg:rounded-t-[2rem]" />
+        <div className="flex flex-col gap-4 overflow-visible p-4 sm:p-6 lg:flex-row lg:items-center lg:justify-between lg:gap-6 lg:p-8 xl:gap-10">
+          <div className="flex w-full min-w-0 items-start gap-3 sm:items-center sm:gap-4 lg:min-w-0 lg:max-w-[min(100%,42rem)] lg:flex-1">
+            <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-red-500 to-red-700 text-white shadow-md ring-1 ring-red-900/10 sm:mt-0 sm:h-11 sm:w-11 sm:rounded-2xl">
+              <User className="h-[18px] w-[18px] text-white/95 sm:h-5 sm:w-5" />
+            </div>
+            <div className="min-w-0 flex-1 text-start [text-rendering:geometricPrecision]">
+              {welcomeWithName ? (
+                <h2 className="whitespace-normal text-base font-bold leading-normal tracking-normal text-gray-900 sm:text-lg md:text-xl">
+                  {welcomeWithName}
+                </h2>
+              ) : (
+                <h2 className="whitespace-normal text-base font-bold leading-normal tracking-normal text-gray-900 sm:text-lg md:text-xl">
+                  <span className="text-gray-600">{t('greeting')}</span>{' '}
+                  <span className="text-gray-900">{t('userName')}</span>
+                </h2>
+              )}
+              <p className="mt-0.5 text-xs text-gray-400 font-medium">{lang === 'ar' ? 'لوحة المتابعة' : 'Dashboard'}</p>
             </div>
           </div>
-          <div className={`overflow-visible ps-3 sm:ps-5 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>
-            <p className={statLabelClass}>{t('totalExchanged')}</p>
-            <div
-              dir="ltr"
-              className={`mt-1 flex min-h-[1.75rem] flex-nowrap items-baseline gap-2 sm:gap-2.5 ${dir === 'rtl' ? 'justify-end' : 'justify-start'} overflow-visible`}
-            >
-              <span className={`${statValueClass} max-w-none ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>{totalDisplay}</span>
-              <span className="shrink-0 whitespace-nowrap text-sm font-semibold tabular-nums text-gray-500 sm:text-base [font-variant-numeric:lining-nums]">
-                {t('iqd')}
-              </span>
+          {/* إحصائيات: أعمدة minmax(min-content) لتجنّب قص الأرقام في RTL */}
+          <div
+            className={`grid w-full shrink-0 gap-x-4 border-t border-gray-100 pt-3 sm:gap-x-6 sm:pt-4 lg:w-auto lg:min-w-[min(100%,22rem)] lg:shrink-0 lg:border-t-0 lg:pt-0 xl:min-w-[24rem] ${dir === 'rtl' ? 'text-right' : 'text-left'}`}
+            style={{ gridTemplateColumns: "minmax(min-content, 1fr) minmax(min-content, 1fr)" }}
+          >
+            <div className={`overflow-visible border-e border-gray-100 pe-3 sm:pe-5 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>
+              <p className={statLabelClass}>{t('activeOrders')}</p>
+              <div dir="ltr" className="mt-1 min-h-[1.75rem] whitespace-nowrap">
+                <span className={`${statValueClass} ${dashboardStats.activeOrders > 0 ? 'text-red-600' : ''} ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>{activeDisplay}</span>
+              </div>
+            </div>
+            <div className={`overflow-visible ps-3 sm:ps-5 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>
+              <p className={statLabelClass}>{t('totalExchanged')}</p>
+              <div
+                dir="ltr"
+                className={`mt-1 flex min-h-[1.75rem] flex-nowrap items-baseline gap-2 sm:gap-2.5 ${dir === 'rtl' ? 'justify-end' : 'justify-start'} overflow-visible`}
+              >
+                <span className={`${statValueClass} max-w-none ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>{totalDisplay}</span>
+                <span className="shrink-0 whitespace-nowrap text-sm font-semibold tabular-nums text-gray-500 sm:text-base [font-variant-numeric:lining-nums]">
+                  {t('iqd')}
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -3994,25 +4658,28 @@ function MainContent() {
   };
 
   const renderTypeToggle = () => (
-    <div className="flex bg-gray-200/50 p-1.5 rounded-2xl mb-8 relative shadow-inner" dir={dir}>
-      <div 
-        className={`absolute top-1.5 bottom-1.5 w-[calc(50%-6px)] bg-white rounded-xl shadow-md transition-all duration-300 ease-out ${
+    <div className="flex bg-gray-100 p-1 rounded-2xl mb-8 relative" dir={dir}>
+      <div
+        className={`absolute top-1 bottom-1 w-[calc(50%-4px)] rounded-xl shadow-md transition-all duration-300 ease-out ${
+          txType === 'buy' ? 'bg-red-600' : 'bg-gray-800'
+        } ${
           txType === 'buy'
-            ? (dir === 'rtl' ? 'right-1.5' : 'left-1.5'): (dir === 'rtl' ? 'right-[calc(50%+1.5px)]' : 'left-[calc(50%+1.5px)]')
+            ? (dir === 'rtl' ? 'right-1' : 'left-1')
+            : (dir === 'rtl' ? 'right-[calc(50%+3px)]' : 'left-[calc(50%+3px)]')
         }`}
-      ></div>
+      />
       <button
         onClick={() => handleTxTypeChange('buy')}
-        className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all relative z-10 flex items-center justify-center gap-2 ${txType === 'buy' ? 'text-gray-900 scale-[1.02]' : 'text-gray-500 hover:text-gray-700'}`}
+        className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all relative z-10 flex items-center justify-center gap-2 ${txType === 'buy' ? 'text-white scale-[1.01]' : 'text-gray-500 hover:text-gray-700'}`}
       >
-        <Zap className={`w-4 h-4 ${txType === 'buy' ? 'text-gray-900 text-red-500 fill-current' : ''}`} />
+        <Zap className={`w-4 h-4 ${txType === 'buy' ? 'fill-current text-white' : ''}`} />
         {t('buyCredit')}
       </button>
       <button
         onClick={() => handleTxTypeChange('sell')}
-        className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all relative z-10 flex items-center justify-center gap-2 ${txType === 'sell' ? 'text-gray-900 scale-[1.02]' : 'text-gray-500 hover:text-gray-700'}`}
+        className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all relative z-10 flex items-center justify-center gap-2 ${txType === 'sell' ? 'text-white scale-[1.01]' : 'text-gray-500 hover:text-gray-700'}`}
       >
-        <ArrowDownUp className={`w-4 h-4 ${txType === 'sell' ? 'text-gray-900' : ''}`} />
+        <ArrowDownUp className={`w-4 h-4 ${txType === 'sell' ? 'text-white' : ''}`} />
         {t('sellCredit')}
       </button>
     </div>
@@ -4065,48 +4732,236 @@ function MainContent() {
     [siteContent.pubgPackages],
   );
 
+  const renderCarousel = () => {
+    const slides = siteContent.carouselSlides;
+    if (!slides.length) return null;
+
+    // اتجاه الانزلاق الجديد: next يأتي من الجهة المعاكسة حسب RTL/LTR
+    const slideInFrom = carouselDir === 'next'
+      ? (dir === 'rtl' ? 'translateX(-105%)' : 'translateX(105%)')
+      : (dir === 'rtl' ? 'translateX(105%)'  : 'translateX(-105%)');
+
+    const carouselDragState = { startX: 0, dragging: false };
+
+    return (
+      <div
+        ref={carouselRef}
+        className="relative mb-5 overflow-hidden rounded-2xl select-none"
+        style={{ touchAction: 'pan-y', cursor: 'grab' }}
+        onMouseDown={(e) => { carouselDragState.startX = e.clientX; carouselDragState.dragging = true; (e.currentTarget as HTMLDivElement).style.cursor = 'grabbing'; }}
+        onMouseMove={(e) => { if (!carouselDragState.dragging) return; e.preventDefault(); }}
+        onMouseUp={(e) => {
+          if (!carouselDragState.dragging) return;
+          carouselDragState.dragging = false;
+          (e.currentTarget as HTMLDivElement).style.cursor = 'grab';
+          const diff = carouselDragState.startX - e.clientX;
+          if (Math.abs(diff) < 30) return;
+          const len = slides.length;
+          if (len <= 1) return;
+          setActiveSlide((p) => diff > 0 ? (p + 1) % len : (p - 1 + len) % len);
+        }}
+        onMouseLeave={(e) => { carouselDragState.dragging = false; (e.currentTarget as HTMLDivElement).style.cursor = 'grab'; }}
+      >
+        {/* طبقة الشرائح — ارتفاع ثابت */}
+        <div style={{ position: 'relative', height: 180 }}>
+          {slides.map((sl, i) => {
+            const isActive = i === activeSlide;
+            return (
+              <div
+                key={sl.id}
+                aria-hidden={!isActive}
+                style={{
+                  position: i === 0 ? 'relative' : 'absolute',
+                  inset: i === 0 ? undefined : 0,
+                  zIndex: isActive ? 2 : 1,
+                  opacity: isActive ? 1 : 0,
+                  transform: isActive
+                    ? (carouselAnimating ? slideInFrom : 'translateX(0)')
+                    : 'translateX(0)',
+                  pointerEvents: isActive ? 'auto' : 'none',
+                  transition: isActive
+                    ? 'transform 0.32s cubic-bezier(0.4,0,0.2,1), opacity 0.28s'
+                    : 'opacity 0.28s',
+                  willChange: 'transform, opacity',
+                }}
+              >
+                <div
+                  className={`relative bg-gradient-to-br ${sl.gradient} p-6 flex flex-col justify-between`}
+                  style={{ height: 180 }}
+                >
+                  <div className="pointer-events-none absolute -top-10 -end-10 h-36 w-36 rounded-full bg-white/8" />
+                  <div className="pointer-events-none absolute -bottom-8 -start-8 h-28 w-28 rounded-full bg-white/5" />
+
+                  <div className="relative z-10">
+                    {sl.badge_ar ? (
+                      <span className="mb-3 inline-flex items-center rounded-full bg-white/20 px-3 py-1 text-xs font-bold text-white backdrop-blur-sm">
+                        {lang === 'ar' ? sl.badge_ar : sl.badge_en}
+                      </span>
+                    ) : <span className="mb-3 inline-block h-6" />}
+                    <h2 className="text-xl font-black leading-snug text-white">
+                      {lang === 'ar' ? sl.title_ar : sl.title_en}
+                    </h2>
+                    <p className="mt-1 text-sm font-medium text-white/75 line-clamp-1">
+                      {lang === 'ar' ? sl.subtitle_ar : sl.subtitle_en}
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      if (!sl.action) return;
+                      if (sl.action === 'services') { navigateView('services'); }
+                      else { handleTxTypeChange(sl.action); }
+                    }}
+                    className={`relative z-10 mt-3 self-start rounded-xl px-4 py-2 text-sm font-bold text-white backdrop-blur-sm transition-colors active:scale-95 ${sl.action ? 'bg-white/20 hover:bg-white/30' : 'invisible pointer-events-none'}`}
+                  >
+                    {lang === 'ar' ? 'ابدأ الآن' : 'Get Started'}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* نقاط التنقل */}
+        {slides.length > 1 && (
+          <div className="absolute bottom-3 start-1/2 flex gap-1.5" style={{ transform: 'translateX(-50%)', zIndex: 10 }}>
+            {slides.map((_, i) => (
+              <button
+                key={i}
+                onClick={() => {
+                  if (i === activeSlide) return;
+                  goToSlide(() => i, i > activeSlide ? 'next' : 'prev');
+                  setCarouselTimerKey((k) => k + 1);
+                }}
+                className={`rounded-full transition-all duration-300 ${i === activeSlide ? 'w-5 h-2 bg-white' : 'w-2 h-2 bg-white/40'}`}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderAsiacellSection = () => {
+    const DEFAULT_DENOMINATIONS = [2000, 3000, 5000, 7500, 10000, 15000, 20000, 25000, 30000, 50000, 75000, 100000, 150000, 200000, 250000];
+    const buyOffers = offersList.filter((o) => o.variant === 'buy').sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+
+    // دمج العروض من الأدمن مع الفئات الافتراضية — الأدمن يتفوق
+    const adminAmounts = new Set(buyOffers.map((o) => Number(String(o.amount_display).replace(/[,\s]/g, ''))));
+    const defaultItems = DEFAULT_DENOMINATIONS.filter((v) => !adminAmounts.has(v)).map((v) => ({
+      id: `default-${v}`,
+      amount_display: v.toLocaleString('en'),
+      unit_ar: 'اسياسيل',
+      unit_en: 'Asiacell',
+      amount: v,
+    }));
+    const adminItems = buyOffers.map((o) => ({
+      id: o.id,
+      amount_display: o.amount_display,
+      unit_ar: o.unit_ar,
+      unit_en: o.unit_en,
+      amount: Number(String(o.amount_display).replace(/[,\s]/g, '')),
+    }));
+
+    const allItems = [...adminItems, ...defaultItems].sort((a, b) => a.amount - b.amount);
+
+    const handleClick = (amount: number) => {
+      if (amount > 0) setCardValue(amount);
+      setTxType('buy');
+      setSelectedMethod(null);
+      setBuyPaymentType(null);
+      setIsSuccess(false);
+      setShowOtpStep(false);
+      setShowPurchasePage(true);
+    };
+
+    return (
+      <section className="mb-6">
+        <h2 className="text-lg font-black text-gray-900 mb-3 px-0.5">{lang === 'ar' ? 'رصيد اسياسيل' : 'Asiacell Credit'}</h2>
+        {/* موبايل: 3 ظاهرة + peek للتمرير | ديسكتوب: شبكة */}
+        <div
+          className="flex gap-3 overflow-x-auto pb-2 scrollbar-none -mx-3 px-3 sm:-mx-6 sm:px-6 lg:grid lg:grid-cols-6 lg:overflow-visible lg:pb-0 lg:mx-0 lg:px-0 select-none"
+          style={{ cursor: 'grab' }}
+          onMouseDown={(e) => {
+            const el = e.currentTarget;
+            dragState.current = { active: true, startX: e.pageX - el.offsetLeft, scrollLeft: el.scrollLeft, dragged: false };
+            el.style.cursor = 'grabbing';
+          }}
+          onMouseMove={(e) => {
+            if (!dragState.current.active) return;
+            const el = e.currentTarget;
+            const moved = Math.abs(e.pageX - el.offsetLeft - dragState.current.startX);
+            if (moved > 5) dragState.current.dragged = true;
+            el.scrollLeft = dragState.current.scrollLeft - (e.pageX - el.offsetLeft - dragState.current.startX);
+          }}
+          onMouseUp={(e) => { dragState.current.active = false; e.currentTarget.style.cursor = 'grab'; }}
+          onMouseLeave={(e) => { dragState.current.active = false; e.currentTarget.style.cursor = 'grab'; }}
+        >
+          {allItems.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => { if (dragState.current.dragged) { dragState.current.dragged = false; return; } handleClick(item.amount); }}
+              className="snap-start shrink-0 w-[30%] sm:w-[22%] lg:w-auto bg-white rounded-2xl flex flex-col items-center gap-3 py-4 px-2 border border-gray-100 shadow-sm active:scale-95 transition-transform hover:border-red-200 hover:shadow-md"
+            >
+              <div className="w-14 h-14 rounded-2xl bg-red-50 flex items-center justify-center">
+                <img src="/icons/asiacell-logo.png" alt="" width={40} height={40} className="w-10 h-10 object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }} />
+              </div>
+              <div className="text-center min-w-0 w-full">
+                <p className="text-sm font-black text-gray-900 leading-tight" dir="ltr">{item.amount_display}</p>
+                <p className="text-[11px] text-gray-400 font-medium mt-0.5">{lang === 'ar' ? item.unit_ar : item.unit_en}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      </section>
+    );
+  };
+
   const renderOfferCard = () => (
     <div
       key={txType}
-      className={`relative mb-8 overflow-hidden rounded-[2rem] border border-black/10 shadow-md [contain:layout_paint] ${txType === 'sell' ? 'bg-gray-900' : 'bg-red-700'}`}
+      className={`relative mb-8 overflow-hidden rounded-[2rem] shadow-lg [contain:layout_paint] ${txType === 'sell' ? 'bg-gray-900' : 'bg-gradient-to-br from-red-600 to-red-800'}`}
     >
-      <div className="relative z-10 p-8">
-        <div className="mb-10 flex items-start justify-between">
-          <div className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/15 px-3 py-1.5 text-xs font-bold text-white">
+      {/* دوائر زخرفية خلفية */}
+      <div className="pointer-events-none absolute -top-8 -end-8 h-40 w-40 rounded-full bg-white/5" />
+      <div className="pointer-events-none absolute -bottom-10 -start-10 h-48 w-48 rounded-full bg-white/5" />
+
+      <div className="relative z-10 p-6 sm:p-8">
+        <div className="mb-6 flex items-start justify-between">
+          <div className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/15 px-3 py-1.5 text-xs font-bold text-white backdrop-blur-sm">
             <Zap className="h-3.5 w-3.5 fill-current" />
             {t('recommended')}
           </div>
-          <span className="rounded-full border border-white/15 bg-black/25 px-3 py-1.5 text-xs font-bold text-white/90">
+          <span className="rounded-full bg-black/30 px-3 py-1.5 text-xs font-bold text-white/90 backdrop-blur-sm">
             {t('days')}
           </span>
         </div>
 
-        <h3 className="mb-3 text-base font-bold leading-snug text-white sm:text-lg sm:leading-snug">
+        <p className="mb-2 text-sm font-semibold leading-snug text-white/70">
           {offerLineFromTemplate(
             txType === 'buy' ? 'buy' : 'sell',
             txType === 'sell' ? siteContent.heroSellAmountDisplay : siteContent.heroBuyAmountDisplay,
             'hero',
           )}
-        </h3>
-        <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 sm:gap-x-3">
+        </p>
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
           <span
-            className="min-w-0 max-w-full text-[clamp(1.85rem,6vw,3.1rem)] font-black leading-none tracking-tight text-white tabular-nums [font-variant-numeric:lining-nums] [text-rendering:geometricPrecision]"
+            className="min-w-0 max-w-full text-[clamp(2.2rem,7vw,3.5rem)] font-black leading-none tracking-tight text-white tabular-nums [font-variant-numeric:lining-nums] [text-rendering:geometricPrecision]"
             dir="ltr"
           >
             {txType === 'sell' ? siteContent.heroSellAmountDisplay : siteContent.heroBuyAmountDisplay}
           </span>
-          <span className="shrink-0 text-[clamp(1.15rem,3.8vw,1.65rem)] font-bold leading-tight text-white/95">
+          <span className="shrink-0 text-[clamp(1rem,3.5vw,1.4rem)] font-bold leading-tight text-white/80">
             {txType === 'sell' ? t('iqd') : 'Asiacell'}
           </span>
         </div>
       </div>
-      <div
-        className={`flex items-center justify-between border-t border-white/10 px-8 py-4 text-sm font-bold text-white ${txType === 'sell' ? 'bg-red-600' : 'bg-gray-900'}`}
-      >
-        <span className="flex items-center gap-2 uppercase tracking-wider">
-          <CheckCircle2 className="h-4 w-4" /> {t('limitedOffer')}
+
+      <div className="relative z-10 flex items-center justify-between border-t border-white/10 bg-black/20 px-6 py-3.5 sm:px-8">
+        <span className="flex items-center gap-2 text-sm font-bold text-white/90">
+          <CheckCircle2 className="h-4 w-4 text-green-300" /> {t('limitedOffer')}
         </span>
-        <ArrowRight className={`h-4 w-4 ${dir === 'rtl' ? 'rotate-180' : ''}`} />
+        <ArrowRight className={`h-4 w-4 text-white/60 ${dir === 'rtl' ? 'rotate-180' : ''}`} />
       </div>
     </div>
   );
@@ -4117,6 +4972,7 @@ function MainContent() {
         <PubgUcOrder
           clientId={clientId}
           userId={userId}
+          walletBalance={walletBalance}
           onBack={() => setActiveServiceId(null)}
           onComplete={fetchTransactions}
           titleAr={siteContent.pubgUcTitleAr}
@@ -4180,90 +5036,178 @@ function MainContent() {
   };
 
   const renderDepositPage = () => {
-    const BackIcon = dir === 'rtl' ? ArrowRight : ArrowLeft;
-    const pageShell =
-      '-mx-3 -mt-3 flex min-h-[calc(100dvh-10.5rem)] w-[calc(100%+1.5rem)] flex-col bg-white sm:-mx-6 sm:-mt-6 sm:w-[calc(100%+3rem)] lg:-mx-8 lg:-mt-8 lg:min-h-[calc(100dvh-7rem)] lg:w-[calc(100%+4rem)]';
+    const backBtn = (onClick: () => void) => (
+      <button type="button" onClick={onClick} className="p-2 -ms-2 rounded-xl hover:bg-gray-100 transition-colors">
+        {dir === 'rtl' ? <ArrowRight className="w-5 h-5 text-gray-600" /> : <ArrowLeft className="w-5 h-5 text-gray-600" />}
+      </button>
+    );
 
+    // نجاح
     if (isSuccess) {
       return (
-        <div className={`${pageShell} items-center justify-center px-6 text-center`}>
-          <div className="w-24 h-24 bg-green-50 text-green-500 rounded-full flex items-center justify-center mb-8 border-8 border-green-50/50">
+        <div className="max-w-md mx-auto flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
+          <div className="w-24 h-24 bg-green-50 text-green-500 rounded-full flex items-center justify-center mb-6 border-8 border-green-50/50">
             <CheckCircle2 className="w-12 h-12" />
           </div>
-          <h2 className="text-3xl font-black mb-3 text-gray-900">{t('requestSubmitted')}</h2>
-          <p className="text-gray-500 mb-10 max-w-sm leading-relaxed font-medium">{t('requestPending')}</p>
-          <button
-            type="button"
-            onClick={() => handleTxTypeChange('buy')}
-            className="w-full max-w-xs bg-gray-900 text-white py-4 rounded-2xl font-bold hover:bg-gray-800 transition-colors active:scale-95 shadow-lg"
-          >
+          <h2 className="text-2xl font-black mb-2 text-gray-900">{lang === 'ar' ? 'تم تقديم طلب الإيداع' : 'Deposit Submitted'}</h2>
+          <p className="text-gray-400 mb-8 text-sm">{lang === 'ar' ? 'سيتم إضافة الرصيد بعد مراجعة الطلب' : 'Balance will be added after review'}</p>
+          <button onClick={() => { setIsSuccess(false); setDepositStep('amount'); setDepositAmountInput(''); handleTxTypeChange('buy'); }}
+            className="w-full max-w-xs bg-gray-900 text-white py-4 rounded-2xl font-bold active:scale-95">
             {t('backToHome')}
           </button>
         </div>
       );
     }
 
-    return (
-      <div className={pageShell}>
-        <div className="flex shrink-0 items-center gap-3 border-b border-gray-100 px-4 py-4 sm:px-6">
+    // OTP
+    if (showOtpStep) {
+      return (
+        <div className="max-w-md mx-auto pb-6">
+          <div className="flex items-center gap-3 mb-6">
+            {backBtn(() => setShowOtpStep(false))}
+            <h2 className="text-lg font-black text-gray-900">{lang === 'ar' ? 'رمز التحقق' : 'OTP Verification'}</h2>
+          </div>
+          <div className="bg-white rounded-2xl border border-gray-100 p-6 text-center space-y-5">
+            <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto">
+              <ShieldAlert className="w-8 h-8 text-red-600" />
+            </div>
+            <div>
+              <h3 className="font-black text-gray-900 text-lg">{lang === 'ar' ? 'أدخل رمز OTP' : 'Enter OTP Code'}</h3>
+              <p className="text-sm text-gray-400 mt-1">{lang === 'ar' ? 'تم إرسال رمز التحقق إلى هاتفك' : 'A verification code was sent to your phone'}</p>
+            </div>
+            {otpState === 'failed' && (
+              <p className="text-sm font-bold text-red-600 bg-red-50 rounded-xl px-4 py-2">{lang === 'ar' ? 'رمز خاطئ، حاول مرة أخرى' : 'Wrong code, try again'}</p>
+            )}
+            <form onSubmit={handleOtpSubmit} className="space-y-4">
+              <input
+                type="text" value={otpCode} onChange={(e) => setOtpCode(e.target.value)}
+                required maxLength={6} dir="ltr" inputMode="numeric"
+                className="w-full py-4 text-center tracking-[0.5em] text-2xl font-black bg-gray-50 border border-gray-200 rounded-2xl outline-none focus:border-red-400"
+                placeholder="------"
+              />
+              <button type="submit" disabled={otpState === 'checking' || otpCode.length < 4}
+                className="w-full bg-red-600 text-white py-4 rounded-2xl font-black text-base disabled:opacity-60 active:scale-[0.99] shadow-lg shadow-red-600/20">
+                {otpState === 'checking'
+                  ? <Activity className="w-5 h-5 animate-pulse mx-auto" />
+                  : (lang === 'ar' ? 'تأكيد الرمز' : 'Confirm Code')}
+              </button>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    // خطوة 1: إدخال المبلغ
+    if (depositStep === 'amount') {
+      const parsed = Number(depositAmountInput.replace(/[^\d]/g, ''));
+      const valid = Number.isFinite(parsed) && parsed >= 1000;
+      const quickAmounts = [5000, 10000, 25000, 50000, 100000, 250000];
+      return (
+        <div className="max-w-md mx-auto pb-6">
+          <div className="flex items-center gap-3 mb-6">
+            {backBtn(() => { setTxType('buy'); setShowPurchasePage(false); })}
+            <h2 className="text-lg font-black text-gray-900">{lang === 'ar' ? 'إيداع الرصيد' : 'Deposit'}</h2>
+          </div>
+
+          {/* رصيد حالي */}
+          <div className="bg-gradient-to-br from-red-600 to-red-800 rounded-2xl p-5 mb-5 text-white">
+            <p className="text-sm font-medium text-white/70">{lang === 'ar' ? 'رصيدك الحالي' : 'Current Balance'}</p>
+            <p className="text-3xl font-black mt-1 tabular-nums" dir="ltr">{formatLatinDigits(walletBalance)} <span className="text-base font-bold">{t('iqd')}</span></p>
+          </div>
+
+          {/* حقل المبلغ */}
+          <div className="bg-white rounded-2xl border border-gray-100 p-4 mb-3">
+            <label className="text-xs font-bold text-gray-400 uppercase tracking-wide block mb-2">{lang === 'ar' ? 'مبلغ الإيداع' : 'Deposit Amount'}</label>
+            <div className="flex items-center gap-2">
+              <input
+                id="deposit-custom-input"
+                type="text" inputMode="numeric" dir="ltr"
+                value={depositAmountInput}
+                onChange={(e) => setDepositAmountInput(e.target.value.replace(/[^\d]/g, ''))}
+                placeholder="10,000"
+                className="flex-1 text-2xl font-black text-gray-900 bg-transparent outline-none placeholder-gray-200"
+              />
+              <span className="text-sm font-bold text-gray-400 shrink-0">{t('iqd')}</span>
+            </div>
+            {depositAmountInput && !valid && (
+              <p className="text-xs text-red-500 mt-1">{lang === 'ar' ? 'الحد الأدنى 1,000 دينار' : 'Minimum 1,000 IQD'}</p>
+            )}
+          </div>
+
+          {/* مبالغ سريعة */}
+          <div className="grid grid-cols-3 gap-2 mb-5">
+            {quickAmounts.map((amt) => (
+              <button key={amt} onClick={() => setDepositAmountInput(String(amt))}
+                className={`rounded-xl py-2.5 text-sm font-bold transition-all active:scale-95 border ${depositAmountInput === String(amt) ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-700 border-gray-100 hover:border-red-200'}`}
+                dir="ltr">
+                {formatLatinDigits(amt)}
+              </button>
+            ))}
+            <button
+              onClick={() => {
+                setDepositAmountInput('');
+                setTimeout(() => document.getElementById('deposit-custom-input')?.focus(), 50);
+              }}
+              className={`rounded-xl py-2.5 text-sm font-bold transition-all active:scale-95 border ${!quickAmounts.map(String).includes(depositAmountInput) && depositAmountInput !== '' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-700 border-gray-100 hover:border-red-200'}`}
+            >
+              <Pencil className="w-3.5 h-3.5 inline-block me-1" />{lang === 'ar' ? 'مخصص' : 'Custom'}
+            </button>
+          </div>
+
           <button
-            type="button"
-            onClick={() => handleTxTypeChange('buy')}
-            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-bold text-gray-700 shadow-sm hover:bg-gray-50"
+            onClick={() => { if (valid) setDepositStep('card'); }}
+            disabled={!valid}
+            className="w-full bg-red-600 text-white font-black py-4 rounded-2xl text-base disabled:opacity-40 active:scale-[0.99] shadow-lg shadow-red-600/20"
           >
-            <BackIcon className="h-4 w-4" />
-            {lang === 'ar' ? 'رجوع' : 'Back'}
+            {lang === 'ar' ? 'متابعة' : 'Continue'}
           </button>
-          <h1 className="flex-1 text-center text-lg font-black text-gray-900 sm:text-xl">
-            {lang === 'ar' ? 'إيداع الرصيد' : 'Deposit Balance'}
-          </h1>
-          <div className="w-[4.5rem] shrink-0" aria-hidden />
+        </div>
+      );
+    }
+
+    // خطوة 2: بيانات البطاقة
+    return (
+      <div className="max-w-md mx-auto pb-6">
+        <div className="flex items-center gap-3 mb-6">
+          {backBtn(() => setDepositStep('amount'))}
+          <h2 className="text-lg font-black text-gray-900">{lang === 'ar' ? 'بيانات البطاقة' : 'Card Details'}</h2>
         </div>
 
-        <form
-          onSubmit={handleSubmit}
-          className="mx-auto flex w-full max-w-xl flex-1 flex-col px-4 py-6 sm:px-8 sm:py-8"
-        >
-          <div className="mb-8 rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-6 text-center shadow-sm">
-            <p className="text-sm font-bold text-emerald-800">
-              {lang === 'ar' ? 'رصيدك الحالي' : 'Your current balance'}
-            </p>
-            <p className="mt-2 text-3xl font-black tabular-nums text-emerald-700 sm:text-4xl" dir="ltr">
-              {formatLatinDigits(walletBalance)} <span className="text-lg font-bold">IQD</span>
-            </p>
+        {/* ملخص */}
+        <div className="bg-white rounded-2xl border border-gray-100 p-4 mb-4 flex items-center justify-between">
+          <div>
+            <p className="text-xs text-gray-400">{lang === 'ar' ? 'مبلغ الإيداع' : 'Deposit Amount'}</p>
+            <p className="text-xl font-black text-gray-900" dir="ltr">{formatLatinDigits(Number(depositAmountInput))} {t('iqd')}</p>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="inline-flex items-center justify-center rounded px-1.5 py-0.5 bg-blue-700 text-white text-[10px] font-black italic" style={{fontFamily:'Arial,sans-serif'}}>VISA</span>
+            <span className="inline-flex items-center gap-0.5">
+              <span className="w-5 h-5 rounded-full bg-red-500 -me-2 block" />
+              <span className="w-5 h-5 rounded-full bg-yellow-400 block" />
+            </span>
+          </div>
+        </div>
+
+        {/* نموذج البطاقة */}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* حقل المبلغ المخفي */}
+          <input type="hidden" name="dep-amount" value={depositAmountInput} />
+          <div className="bg-white rounded-2xl border border-gray-100 p-4">
+            <CreditCardPaymentFields idPrefix="deposit-cc" />
           </div>
 
-          <div className="mb-6">
-            <label className="mb-2 block text-sm font-bold text-gray-700">
-              {lang === 'ar' ? 'مبلغ الإيداع (IQD)' : 'Deposit amount (IQD)'}
-            </label>
-            <input
-              name="dep-amount"
-              type="text"
-              inputMode="numeric"
-              required
-              dir="ltr"
-              className="w-full rounded-xl border border-gray-200 bg-white px-4 py-4 text-xl font-black text-gray-900 outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"
-              placeholder="10000"
-            />
+          {/* أمان */}
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="w-4 h-4 text-gray-400 shrink-0" />
+            <p className="text-xs text-gray-400">{lang === 'ar' ? 'عملية الدفع محمية بمعايير PCI DSS' : 'Payment secured with PCI DSS'}</p>
           </div>
 
-          <div className="flex-1 space-y-1">
-            <CreditCardPaymentFields idPrefix="deposit-cc" className="pb-4" />
-          </div>
-
-          <div className="mt-auto space-y-4 border-t border-gray-100 pt-6">
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full rounded-2xl bg-gray-900 py-4 text-lg font-black text-white shadow-lg hover:bg-black disabled:opacity-60"
-            >
-              {isSubmitting ? (lang === 'ar' ? 'جاري الإرسال...' : 'Submitting...') : t('payNow')}
-            </button>
-            <p className="text-center text-xs font-medium text-gray-500">
-              {lang === 'ar' ? 'لن يُضاف الرصيد إلا بعد تأكيد المسؤول.' : 'Balance is added only after admin confirmation.'}
-            </p>
-          </div>
+          <button type="submit" disabled={isSubmitting}
+            className="w-full bg-red-600 text-white font-black py-4 rounded-2xl text-base disabled:opacity-60 active:scale-[0.99] shadow-lg shadow-red-600/20">
+            {isSubmitting
+              ? <Activity className="w-5 h-5 animate-pulse mx-auto" />
+              : (lang === 'ar' ? 'تأكيد الإيداع' : 'Confirm Deposit')}
+          </button>
         </form>
       </div>
     );
@@ -4285,20 +5229,114 @@ function MainContent() {
       return (
         <div
           key="form-buy"
-          className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-full"
+          className="bg-gray-50 min-h-full"
         >
-          <div className="p-4 sm:p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-            <h2 className="text-lg font-black text-gray-900">
-              {t('buyCredit')}
-            </h2>
-            <button 
-              onClick={() => setSelectedMethod(null)}
-              className="lg:hidden flex items-center gap-2 text-gray-500 hover:text-gray-900 font-bold text-sm transition-colors bg-white px-3 py-1.5 rounded-full border border-gray-200 shadow-sm"
-            >
-              {dir === 'rtl' ? <ArrowRight className="w-4 h-4" /> : <ArrowLeft className="w-4 h-4" />}
-              {t('backToHome')}
+          {/* هيدر شراء المنتج */}
+          <div className="bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between sticky top-0 z-10">
+            <button onClick={() => { setSelectedMethod(null); setBuyPaymentType(null); setShowOtpStep(false); setShowPurchasePage(false); }} className="p-2 -ms-2 rounded-xl hover:bg-gray-100 transition-colors">
+              {dir === 'rtl' ? <ArrowRight className="w-5 h-5 text-gray-600" /> : <ArrowLeft className="w-5 h-5 text-gray-600" />}
             </button>
+            <h2 className="text-base font-black text-gray-900">
+              {activeServiceConfig
+                ? (lang === 'ar' ? activeServiceConfig.titleAr : activeServiceConfig.titleEn)
+                : (lang === 'ar' ? 'شراء' : 'Purchase')}
+            </h2>
+            <div className="w-9" />
           </div>
+
+          {/* بطاقة المنتج */}
+          <div className="bg-white px-4 py-4 border-b border-gray-100 flex items-center gap-4">
+            <div className="w-16 h-16 rounded-xl bg-red-50 flex items-center justify-center shrink-0 border border-red-100">
+              <img src="/icons/asiacell-logo.png" alt="Asiacell" className="w-10 h-10 object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-black text-gray-900">Asiacell</p>
+              <p className="text-xs text-gray-500">{lang === 'ar' ? 'كارتات رصيد' : 'Credit Cards'} • {formatLatinDigits(cardValue)} {lang === 'ar' ? 'اسياسيل' : 'Asiacell'}</p>
+              <p className="text-lg font-black text-gray-900 mt-0.5" dir="ltr">{formatLatinDigits(totalPrice)} {t('iqd')}</p>
+            </div>
+          </div>
+
+          {/* اختيار طريقة الدفع — قبل البدء بالنموذج */}
+          {!buyPaymentType && !showOtpStep && (
+            <div className="p-4 space-y-3">
+              <h3 className="font-black text-gray-900 mb-1">{lang === 'ar' ? 'طريقة الدفع' : 'Payment Method'}</h3>
+
+              {/* بطاقة بنكية */}
+              <button
+                onClick={() => { setBuyPaymentType('card'); setSelectedMethod('creditcard'); }}
+                className="w-full flex items-center gap-4 bg-white rounded-2xl px-4 py-4 border-2 border-gray-100 hover:border-blue-400 active:scale-[0.99] transition-all shadow-sm"
+              >
+                <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
+                  <CreditCard className="w-6 h-6 text-blue-600" />
+                </div>
+                <div className="flex-1 text-start">
+                  <p className="font-black text-gray-900 text-sm">{lang === 'ar' ? 'بطاقة بنكية' : 'Bank Card'}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{lang === 'ar' ? 'فيزا / ماستركارد' : 'Visa / Mastercard'}</p>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {/* Visa */}
+                  <span className="inline-flex items-center justify-center rounded px-1.5 py-0.5 bg-blue-700 text-white text-[10px] font-black italic tracking-tight leading-none" style={{fontFamily:'Arial,sans-serif'}}>VISA</span>
+                  {/* Mastercard */}
+                  <span className="inline-flex items-center gap-0.5">
+                    <span className="w-5 h-5 rounded-full bg-red-500 opacity-90 -me-2 block" />
+                    <span className="w-5 h-5 rounded-full bg-yellow-400 block" />
+                  </span>
+                </div>
+              </button>
+
+              {/* رصيد المحفظة */}
+              <button
+                onClick={() => {
+                  if (walletBalance >= totalPrice) {
+                    setBuyPaymentType('wallet');
+                    setSelectedMethod('wallet_balance');
+                  }
+                }}
+                disabled={walletBalance < totalPrice}
+                className={`w-full flex items-center gap-4 rounded-2xl px-4 py-4 border-2 active:scale-[0.99] transition-all shadow-sm
+                  ${walletBalance >= totalPrice
+                    ? 'bg-white border-gray-100 hover:border-green-400'
+                    : 'bg-gray-50 border-gray-100 opacity-60 cursor-not-allowed'}`}
+              >
+                <div className="w-12 h-12 rounded-xl bg-green-50 flex items-center justify-center shrink-0">
+                  <Wallet className="w-6 h-6 text-green-600" />
+                </div>
+                <div className="flex-1 text-start">
+                  <p className="font-black text-gray-900 text-sm">{lang === 'ar' ? 'رصيد المحفظة' : 'Wallet Balance'}</p>
+                  <p className="text-xs text-gray-400 mt-0.5" dir="ltr">
+                    {formatLatinDigits(walletBalance)} {t('iqd')}
+                  </p>
+                  {walletBalance < totalPrice && (
+                    <p className="text-xs text-red-500 font-medium mt-0.5">{lang === 'ar' ? 'رصيد غير كافٍ' : 'Insufficient balance'}</p>
+                  )}
+                </div>
+                {walletBalance >= totalPrice && (
+                  <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded-full">
+                    {lang === 'ar' ? 'متاح' : 'Available'}
+                  </span>
+                )}
+              </button>
+
+              {/* ملاحظة أمان */}
+              <div className="flex items-center gap-2 pt-1">
+                <ShieldAlert className="w-4 h-4 text-gray-400 shrink-0" />
+                <p className="text-xs text-gray-400">{lang === 'ar' ? 'عملية الدفع محمية بمعايير حماية بيانات الدفع (PCI DSS)' : 'Payment secured with PCI DSS standards'}</p>
+              </div>
+            </div>
+          )}
+
+          {/* زر الرجوع لاختيار طريقة الدفع */}
+          {buyPaymentType && !showOtpStep && (
+            <div className="px-4 pt-3 pb-0">
+              <button
+                onClick={() => { setBuyPaymentType(null); setSelectedMethod(null); }}
+                className="flex items-center gap-1.5 text-xs font-bold text-gray-500 hover:text-gray-800 transition-colors"
+              >
+                {dir === 'rtl' ? <ArrowRight className="w-3.5 h-3.5" /> : <ArrowLeft className="w-3.5 h-3.5" />}
+                {lang === 'ar' ? 'تغيير طريقة الدفع' : 'Change payment method'}
+              </button>
+            </div>
+          )}
 
           {showOtpStep ? (
             <div className="p-6 flex-1 flex flex-col items-center justify-center space-y-6">
@@ -4371,7 +5409,7 @@ function MainContent() {
                 </>
               )}
             </div>
-          ) : (
+          ) : buyPaymentType ? (
           <div className="p-4 sm:p-6 flex-1 overflow-y-auto space-y-6 sm:space-y-8">
             {/* Step 1 */}
             <div className="relative">
@@ -4444,7 +5482,7 @@ function MainContent() {
               <div className="w-8 h-8 rounded-full font-black flex items-center justify-center shrink-0 shadow-sm border bg-gray-900 text-white border-gray-800">2</div>
               <div className="flex-1">
                 <h3 className="font-bold text-gray-900 mb-4 text-base">{t('buyStep2')}</h3>
-                {!isBuyCardMethod && (
+                {false && !isBuyCardMethod && (
                   <div
                     dir={dir}
                     className="mb-4 p-4 sm:p-5 bg-white border border-gray-200 rounded-2xl space-y-4 shadow-sm"
@@ -4508,6 +5546,18 @@ function MainContent() {
                 >
                   {isBuyCardMethod ? (
                     <CreditCardPaymentFields idPrefix="payment-cc" />
+                  ) : buyPaymentType === 'wallet' ? (
+                    <div className="bg-green-50 rounded-2xl p-4 border border-green-100">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center">
+                          <Wallet className="w-5 h-5 text-green-600" />
+                        </div>
+                        <div>
+                          <p className="font-black text-gray-900 text-sm">{lang === 'ar' ? 'خصم من المحفظة' : 'Wallet Deduction'}</p>
+                          <p className="text-xs text-gray-500" dir="ltr">{formatLatinDigits(totalPrice)} {t('iqd')}</p>
+                        </div>
+                      </div>
+                    </div>
                   ) : (
                     <>
                       <div>
@@ -4546,22 +5596,39 @@ function MainContent() {
                       </div>
                     </>
                   )}
-                  <button 
+                  {/* ملخص الطلب */}
+                  <div className="mt-4 bg-gray-50 rounded-2xl border border-gray-100 divide-y divide-gray-100">
+                    <div className="flex justify-between px-4 py-3">
+                      <span className="text-sm text-gray-500 font-medium">{lang === 'ar' ? 'السعر' : 'Price'}</span>
+                      <span className="text-sm font-black text-gray-900" dir="ltr">{formatLatinDigits(totalPrice)} {t('iqd')}</span>
+                    </div>
+                    <div className="flex justify-between px-4 py-3">
+                      <span className="text-sm text-gray-500 font-medium">{lang === 'ar' ? 'طريقة الدفع' : 'Payment'}</span>
+                      <span className="text-sm font-bold text-gray-700">{selectedMethodName}</span>
+                    </div>
+                    <div className="flex justify-between px-4 py-3">
+                      <span className="text-sm font-black text-gray-900">{lang === 'ar' ? 'المجموع الكلي' : 'Total'}</span>
+                      <span className="text-sm font-black text-gray-900" dir="ltr">{formatLatinDigits(totalPrice)} {t('iqd')}</span>
+                    </div>
+                  </div>
+
+                  {/* زر تأكيد الشراء */}
+                  <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="w-full bg-gray-900 text-white py-4.5 rounded-2xl font-black text-lg hover:bg-black active:scale-[0.98] transition-all disabled:opacity-70 flex justify-center items-center shadow-lg shadow-gray-900/20 mt-6"
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl font-black text-base active:scale-[0.98] transition-all disabled:opacity-70 flex justify-center items-center shadow-lg shadow-blue-600/20 mt-4"
                   >
                     {isSubmitting ? (
-                      <div className="h-6 w-6 rounded-full border-3 border-white border-t-transparent animate-spin" />
+                      <div className="h-5 w-5 rounded-full border-2 border-white border-t-transparent animate-spin" />
                     ) : (
-                      t('payNow')
+                      lang === 'ar' ? 'تأكيد الشراء' : 'Confirm Purchase'
                     )}
                   </button>
                 </form>
               </div>
             </div>
           </div>
-          )}
+          ) : null}
         </div>
       );
     }
@@ -4853,11 +5920,11 @@ function MainContent() {
       case 'admin':
         return isAdmin ? renderAdminPanel() : renderLogin();
       case 'history':
-        return renderHistory();
+        return <div className="mx-auto w-full max-w-3xl">{renderHistory()}</div>;
       case 'profile':
-        return renderProfile();
+        return <div className="mx-auto w-full max-w-2xl">{renderProfile()}</div>;
       case 'settings':
-        return renderSettings();
+        return <div className="mx-auto w-full max-w-2xl">{renderSettings()}</div>;
       case 'services':
         return renderServices();
       case 'home':
@@ -4865,205 +5932,175 @@ function MainContent() {
         if (txType === 'deposit') {
           return renderDepositPage();
         }
-        return (
-          <div className="mx-auto flex w-full max-w-6xl flex-col px-0 sm:px-0 lg:max-w-[88rem] lg:min-h-[calc(100dvh-10rem)]">
-            {/* موبايل: ترحيب فوق | سطح مكتب: صف كامل لتفادي تداخل «إجمالي التبديل» مع عمود النشاط */}
-            <div className="lg:hidden">{renderUserGreeting()}</div>
-            <div className="mb-6 hidden lg:mb-8 lg:block">{renderUserGreeting()}</div>
 
-            <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-12 lg:gap-10 xl:gap-12 lg:pb-4">
-              {/* عمود العروض وطرق الدفع */}
-              <div
-                className={`min-w-0 space-y-6 lg:col-span-5 xl:col-span-6 ${selectedMethod ? 'hidden lg:block' : ''}`}
-              >
-                {renderTypeToggle()}
-
-                {((txType === 'buy' && appSettings.buy_coming_soon) || (txType === 'sell' && appSettings.sell_coming_soon)) ? (
-                  <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-12 text-center">
-                    <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-6">
-                      <Clock className="w-10 h-10 text-gray-400" />
+        // صفحة الشراء بعد اختيار الفئة
+        if (showPurchasePage) {
+          return (
+            <div className="mx-auto w-full max-w-7xl lg:grid lg:grid-cols-12 lg:gap-8">
+              <div className="lg:col-span-7 xl:col-span-8">
+                {isSuccess ? (
+                  <div className="bg-white rounded-3xl p-10 text-center shadow-sm border border-gray-100 flex flex-col items-center justify-center min-h-[420px]">
+                    <div className="w-24 h-24 bg-green-50 text-green-500 rounded-full flex items-center justify-center mb-8 border-8 border-green-50/50">
+                      <CheckCircle2 className="w-12 h-12" />
                     </div>
-                    <h2 className="text-2xl font-black text-gray-900 mb-3">{t('comingSoon')}</h2>
-                    <p className="text-gray-500 font-medium">{t('maintenanceDesc')}</p>
+                    <h2 className="text-3xl font-black mb-3 text-gray-900">{t('requestSubmitted')}</h2>
+                    <p className="text-gray-500 mb-10 leading-relaxed font-medium max-w-sm">{t('requestPending')}</p>
+                    <button onClick={() => { resetForm(); setShowPurchasePage(false); }} className="w-full max-w-xs bg-gray-900 text-white py-4 rounded-2xl font-bold hover:bg-gray-800 transition-colors active:scale-95 shadow-lg">
+                      {t('backToHome')}
+                    </button>
                   </div>
                 ) : (
-                  <>
-                    <section>
-                        <div className="flex justify-between items-center mb-5">
-                          <h2 className="text-xl font-black text-gray-900">{t('offersTitle')}</h2>
-                        </div>
-                        {renderOfferCard()}
-                      </section>
-
-                    <section>
-                        <h2 className="text-xl font-black text-gray-900 mb-5">
-                          {txType === 'sell' ? t('receivingMethod') : t('paymentMethod')}
-                        </h2>
-                        <div className="grid grid-cols-2 gap-4">
-                          {currentMethodsFiltered.map((method) => {
-                            const isSelected = selectedMethod === method.id;
-                            return (
-                            <button
-                              key={method.id}
-                              onClick={() => setSelectedMethod(method.id)}
-                              className={`bg-white p-5 rounded-[2.5rem] flex flex-col items-center justify-center gap-3 transition-[transform,box-shadow,border-color] duration-200 active:opacity-90 group relative border-2
-                                ${isSelected 
-                                  ? 'border-red-500 shadow-[0_20px_50px_rgba(239,68,68,0.12)] -translate-y-1' 
-                                  : 'border-transparent shadow-[0_4px_25px_rgba(0,0,0,0.03)] hover:shadow-[0_15px_40px_rgba(0,0,0,0.06)] hover:-translate-y-0.5'}`}
-                            >
-                              <div className={`w-16 h-16 rounded-3xl flex items-center justify-center transition-[transform] duration-200 relative
-                                ${isSelected ? 'scale-110' : 'group-hover:scale-105'}
-                                ${'accent' in method ? (method.accent as string).split(' ')[0] : 'bg-gray-50'}`}>
-                                
-                                {isSelected && (
-                                  <div
-                                    className="pointer-events-none absolute inset-0 rounded-3xl ring-4 ring-red-500/10 ring-offset-0"
-                                    aria-hidden
-                                  />
-                                )}
-
-                                {('isImage' in method && method.isImage) ? (
-                                  <div className="w-10 h-10 flex items-center justify-center relative z-10">
-                                    <img 
-                                      src={method.icon as string} 
-                                      alt=""
-                                      width={40}
-                                      height={40}
-                                      className="w-full h-full object-contain filter drop-shadow-sm" 
-                                      loading="lazy"
-                                      decoding="async"
-                                      aria-hidden
-                                    />
-                                  </div>
-                                ) : (
-                                  <method.icon className={`w-7 h-7 relative z-10 ${isSelected ? 'text-red-500' : 'text-gray-600 group-hover:text-gray-900'}`} />
-                                )}
-                              </div>
-                              <span className={`text-[13px] font-black tracking-tight transition-colors ${isSelected ? 'text-gray-900' : 'text-gray-600 group-hover:text-gray-900'}`}>
-                                {method.name}
-                              </span>
-                            </button>
-                            );
-                          })}
-                        </div>
-                      </section>
-                  </>
+                  renderTransactionForm()
                 )}
               </div>
-
-              {/* عمود النموذج / النشاط الأخير — min-w-0 يمنع تداخل النصوص مع العمود المجاور */}
-              <div
-                className={`min-w-0 lg:col-span-7 xl:col-span-6 ${!selectedMethod ? 'hidden lg:block' : ''}`}
-              >
-                  {((txType === 'buy' && appSettings.buy_coming_soon) || (txType === 'sell' && appSettings.sell_coming_soon)) ? (
-                    <div className="h-full flex flex-col">
-                      <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8 flex-1 flex items-center justify-center">
-                        <div className="text-center">
-                          <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <ShieldAlert className="w-8 h-8 text-gray-300" />
-                          </div>
-                          <p className="text-gray-500 font-medium max-w-xs mx-auto">
-                            {t('serviceUnavailable')}
-                          </p>
-                        </div>
+                {/* ملخص جانبي ديسكتوب */}
+                <div className="hidden lg:block lg:col-span-5 xl:col-span-4">
+                  <div className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm sticky top-6">
+                    <h3 className="font-black text-gray-900 mb-4">{lang === 'ar' ? 'ملخص الطلب' : 'Order Summary'}</h3>
+                    <div className="flex items-center gap-3 mb-5 pb-4 border-b border-gray-100">
+                      <div className="w-12 h-12 rounded-xl bg-red-50 flex items-center justify-center">
+                        <img src="/icons/asiacell-logo.png" alt="" className="w-8 h-8 object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }} />
+                      </div>
+                      <div>
+                        <p className="font-black text-gray-900 text-sm">Asiacell</p>
+                        <p className="text-xs text-gray-500">{formatLatinDigits(cardValue)} × {quantity}</p>
                       </div>
                     </div>
-                  ) : selectedMethod ? (
-                    isSuccess ? (
-                      <div className="bg-white rounded-3xl p-10 text-center shadow-sm border border-gray-100 h-full flex flex-col items-center justify-center min-h-[500px]">
-                        <div className="w-24 h-24 bg-green-50 text-green-500 rounded-full flex items-center justify-center mb-8 border-8 border-green-50/50">
-                          <CheckCircle2 className="w-12 h-12" />
+                    <div className="space-y-2.5 mb-5">
+                      {[
+                        { label: lang === 'ar' ? 'الفئة' : 'Value', val: `${formatLatinDigits(cardValue)} ${t('iqd')}` },
+                        { label: lang === 'ar' ? 'الكمية' : 'Qty', val: String(quantity) },
+                        { label: lang === 'ar' ? 'طريقة الدفع' : 'Method', val: currentMethodsFiltered.find(m => m.id === selectedMethod)?.name ?? '—' },
+                      ].map(({ label, val }) => (
+                        <div key={label} className="flex justify-between text-sm">
+                          <span className="text-gray-500">{label}</span>
+                          <span className="font-bold text-gray-900">{val}</span>
                         </div>
-                        <h2 className="text-3xl font-black mb-3 text-gray-900">{t('requestSubmitted')}</h2>
-                        <p className="text-gray-500 mb-10 leading-relaxed font-medium max-w-sm">
-                          {t('requestPending')}
-                        </p>
-                        <button
-                          onClick={resetForm}
-                          className="w-full max-w-xs bg-gray-900 text-white py-4 rounded-2xl font-bold hover:bg-gray-800 transition-colors active:scale-95 shadow-lg"
-                        >
-                          {t('backToHome')}
-                        </button>
-                      </div>
-                    ) : (
-                      renderTransactionForm()
-                    )
-                  ) : (
-                    <div className="flex h-full min-h-0 flex-col lg:min-h-[32rem]">
-                      {/* سطح المكتب: النشاط الأخير — عنوان منفصل عن عمود العروض (لا تداخل مع بطاقة الترحيب) */}
-                      <div className="flex flex-1 flex-col rounded-3xl border border-gray-100 bg-white p-6 shadow-sm sm:p-8">
-                        <div className="mb-6 flex items-center justify-between gap-4 border-b border-gray-100 pb-4">
-                          <h2 className="min-w-0 text-xl font-black tracking-tight text-gray-900">
-                            {t('recentActivity')}
-                          </h2>
-                          <div className="shrink-0 rounded-xl p-2 text-gray-300" aria-hidden>
-                            <Activity className="h-5 w-5" />
+                      ))}
+                    </div>
+                    <div className="flex justify-between items-center pt-4 border-t border-gray-100">
+                      <span className="font-black text-gray-900">{lang === 'ar' ? 'المجموع' : 'Total'}</span>
+                      <span className="font-black text-lg text-gray-900" dir="ltr">
+                        {formatLatinDigits(
+                          (() => {
+                            const h = parseHeroBuyPriceIqdFor100k(siteContent.heroBuyAmountDisplay);
+                            return (h != null ? Math.round((h / 100_000) * cardValue) : Math.round(cardValue * 0.98)) * quantity;
+                          })()
+                        )} {t('iqd')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+        }
+
+        // الصفحة الرئيسية المبسطة
+        return (
+          <div className="mx-auto w-full max-w-7xl">
+            <div className="lg:grid lg:grid-cols-12 lg:gap-8">
+              <div className="lg:col-span-8">
+              {/* كاروسيل */}
+              {renderCarousel()}
+
+              {/* رصيد اسياسيل */}
+              {renderAsiacellSection()}
+
+              {/* قسم الخدمات */}
+              {appServices.length > 0 && (
+                <section className="mb-6">
+                  <div className="flex items-center justify-between mb-3 px-0.5">
+                    <h2 className="text-lg font-black text-gray-900">
+                      {lang === 'ar' ? siteContent.servicesSectionTitleAr : siteContent.servicesSectionTitleEn}
+                    </h2>
+                    <button onClick={() => navigateView('services')} className="text-xs font-bold text-red-600">
+                      {lang === 'ar' ? 'عرض الكل' : 'See all'}
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+                    {appServices.slice(0, 4).map((service) => (
+                      <button
+                        key={service.id}
+                        onClick={() => { navigateView('services'); setActiveServiceId(service.id); }}
+                        className="relative bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm active:scale-95 transition-transform text-start"
+                      >
+                        {service.coverImage && (
+                          <div className="aspect-[16/9] w-full overflow-hidden">
+                            <img src={service.coverImage} alt="" className="w-full h-full object-cover object-center" loading="lazy" />
                           </div>
-                        </div>
-                        
-                        <div className="space-y-3">
-                          {transactions.slice(0, 3).map((tx) => {
-                            const su = statusUi(tx.status);
-                            return (
-                              <div
-                                key={tx.id}
-                                className="rounded-2xl border border-gray-100 bg-gray-50/40 p-4 transition-colors hover:bg-gray-50/80"
-                              >
-                                <div className="mb-3 flex gap-3">
-                                  <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${su.icon}`}>
-                                    <FileText className="h-5 w-5" strokeWidth={2} />
-                                  </div>
-                                  <div className="min-w-0 flex-1">
-                                    <p className="text-sm font-semibold leading-snug text-gray-900">
-                                      {txTypeLabel(tx.type)} Â· {tx.method}
-                                    </p>
-                                    <p className="mt-1 text-xs text-gray-500" dir="ltr">
-                                      {new Date(tx.created_at).toLocaleString('en-GB', {
-                                        day: 'numeric',
-                                        month: 'short',
-                                        hour: '2-digit',
-                                        minute: '2-digit',
-                                      })}
-                                    </p>
-                                  </div>
-                                </div>
-                                <div className="flex items-end justify-between gap-3 border-t border-gray-100/80 pt-3">
-                                  <div className="min-w-0 flex flex-wrap items-baseline gap-x-2 gap-y-0.5" dir="ltr">
-                                    <span className="text-lg font-black tracking-normal text-gray-900 tabular-nums [font-variant-numeric:lining-nums]">
-                                      {formatLatinDigits(Number(tx.amount))}
-                                    </span>
-                                    <span className="whitespace-nowrap text-xs font-semibold tabular-nums text-gray-500">
-                                      {txAmountUnit(tx.type)}
-                                    </span>
-                                  </div>
-                                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ring-1 ${su.badge}`}>
-                                    {su.label}
-                                  </span>
-                                </div>
-                              </div>
-                            );
-                          })}
-                          {transactions.length === 0 && (
-                            <div className="text-center py-6">
-                              <p className="text-gray-500 font-medium">{t('noTransactions')}</p>
-                            </div>
+                        )}
+                        <div className="p-3">
+                          <p className="text-sm font-black text-gray-900 leading-snug">
+                            {lang === 'ar' ? service.titleAr : service.titleEn}
+                          </p>
+                          {(service.badgeAr || service.badgeEn) && (
+                            <span className="mt-1 inline-block rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-600">
+                              {lang === 'ar' ? service.badgeAr : service.badgeEn}
+                            </span>
                           )}
                         </div>
-
-                        <div className="mt-12 text-center p-8 bg-gray-50 rounded-2xl border border-gray-100 border-dashed">
-                          <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm">
-                            <CreditCard className="w-8 h-8 text-gray-300" />
+                        {service.comingSoon && (
+                          <div className="absolute inset-0 bg-white/70 flex items-center justify-center rounded-2xl">
+                            <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">{t('comingSoon')}</span>
                           </div>
-                          <p className="text-gray-500 font-medium max-w-xs mx-auto">
-                            {t('desktopSelectMethod')}
-                          </p>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {/* آخر الطلبات */}
+              {transactions.length > 0 && (
+                <section className="mb-2">
+                  <div className="flex items-center justify-between mb-3 px-0.5">
+                    <h2 className="text-lg font-black text-gray-900">{t('recentActivity')}</h2>
+                    <button onClick={() => navigateView('history')} className="text-xs font-bold text-red-600">
+                      {lang === 'ar' ? 'عرض الكل' : 'See all'}
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {transactions.slice(0, 3).map((tx) => {
+                      const su = statusUi(tx.status);
+                      return (
+                        <div key={tx.id} className="flex items-center gap-3 bg-white rounded-2xl px-4 py-3 border border-gray-100">
+                          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${su.icon}`}>
+                            <FileText className="h-4 w-4" strokeWidth={2} />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-bold text-gray-900 truncate">{txTypeLabel(tx.type)}</p>
+                            <p className="text-xs text-gray-400">{tx.method}</p>
+                          </div>
+                          <div className="text-end shrink-0">
+                            <p className="text-sm font-black text-gray-900 tabular-nums" dir="ltr">{formatLatinDigits(Number(tx.amount))}</p>
+                            <span className={`text-[10px] font-bold rounded-full px-2 py-0.5 ring-1 ${su.badge}`}>{su.label}</span>
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  )}
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
+              </div>
+
+              {/* عمود جانبي ديسكتوب — بيع رصيد */}
+              <div className="hidden lg:block lg:col-span-4">
+                <div className="sticky top-6 space-y-4">
+                  <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
+                    <h3 className="font-black text-gray-900 mb-3">{lang === 'ar' ? 'بيع رصيد اسياسيل' : 'Sell Asiacell Credit'}</h3>
+                    <p className="text-sm text-gray-500 mb-4">{lang === 'ar' ? 'حوّل رصيد اسياسيا إلى دينار عراقي بأفضل سعر' : 'Convert Asiacell credit to IQD'}</p>
+                    <button
+                      onClick={() => { setTxType('sell'); setSelectedMethod(null); setIsSuccess(false); setShowPurchasePage(true); }}
+                      className="w-full bg-gray-900 text-white font-black py-3 rounded-xl text-sm hover:bg-gray-800 transition-colors active:scale-95"
+                    >
+                      {lang === 'ar' ? 'بيع الرصيد' : 'Sell Credit'}
+                    </button>
+                  </div>
+                  {renderCarousel()}
                 </div>
               </div>
             </div>
+          </div>
         );
     }
   };

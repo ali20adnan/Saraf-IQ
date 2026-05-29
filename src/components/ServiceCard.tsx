@@ -18,7 +18,7 @@ export function ServiceCard({service, variant = 'full', onAction}: ServiceCardPr
   if (isCompact) {
     return (
       <article className="group flex max-w-md flex-col overflow-hidden rounded-3xl border border-gray-200/80 bg-white shadow-sm">
-        <div className="relative aspect-[16/10] overflow-hidden bg-gray-100">
+        <div className="relative aspect-[16/9] overflow-hidden bg-gray-100">
           <img
             src={service.coverImage}
             alt=""
@@ -51,11 +51,11 @@ export function ServiceCard({service, variant = 'full', onAction}: ServiceCardPr
         service.comingSoon ? '' : 'cursor-pointer'
       }`}
     >
-      <div className="relative aspect-[5/4] shrink-0 overflow-hidden bg-slate-100 sm:aspect-[4/3]">
+      <div className="relative aspect-[16/9] shrink-0 overflow-hidden bg-slate-100">
         <img
           src={service.coverImage}
           alt=""
-          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+          className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-[1.02]"
           loading="lazy"
           decoding="async"
         />

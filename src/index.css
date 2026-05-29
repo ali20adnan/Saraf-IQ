@@ -37,6 +37,15 @@ body {
   min-height: 0;
 }
 
+/* إخفاء scrollbar أفقي في الأقسام الأفقية */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 /* تمرير في WebView — بدون transform يتعارض مع hit-testing على بعض الأجهزة */
 .saraf-main-scroll {
   -webkit-overflow-scrolling: touch;

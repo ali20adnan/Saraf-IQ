@@ -2446,6 +2446,7 @@ async function startServer() {
         pubg_uc_subtitle_ar: string;
         pubg_uc_subtitle_en: string;
         pubg_uc_packages_json: string;
+        carousel_slides_json: string;
       }>;
       if (typeof body.link_support === "string") {
         await store.setSiteStringSetting("link_support", body.link_support);
@@ -2485,6 +2486,9 @@ async function startServer() {
       }
       if (typeof body.pubg_uc_packages_json === "string") {
         await store.setSiteStringSetting("pubg_uc_packages_json", body.pubg_uc_packages_json);
+      }
+      if (typeof body.carousel_slides_json === "string") {
+        await store.setSiteStringSetting("carousel_slides_json", body.carousel_slides_json);
       }
       res.json(await store.getSiteContent());
     } catch (e) {

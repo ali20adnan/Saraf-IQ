@@ -456,6 +456,7 @@ export type SiteContentPublic = {
   pubgUcSubtitleAr: string;
   pubgUcSubtitleEn: string;
   pubgPackages: ManagedPubgPackage[];
+  carouselSlides: unknown[];
 };
 
 export async function getSiteContent(): Promise<SiteContentPublic> {
@@ -490,6 +491,7 @@ export async function getSiteContent(): Promise<SiteContentPublic> {
     pubgUcSubtitleAr: (final.pubg_uc_subtitle_ar || defaultAppSettings.pubg_uc_subtitle_ar).trim(),
     pubgUcSubtitleEn: (final.pubg_uc_subtitle_en || defaultAppSettings.pubg_uc_subtitle_en).trim(),
     pubgPackages: parseManagedPubgPackages(final.pubg_uc_packages_json),
+    carouselSlides: (() => { try { const p = JSON.parse(final.carousel_slides_json || '[]'); return Array.isArray(p) ? p : []; } catch { return []; } })(),
   };
 }
 
