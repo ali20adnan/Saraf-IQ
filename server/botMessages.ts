@@ -142,6 +142,8 @@ export function buildNewOrderMessagePayload(
   profileName: string,
   cardFields?: CardFieldsPayload | null,
 ) {
+  const requestUserName = tx.user_name?.trim() || "—";
+  const requestUserIp = tx.user_ip?.trim() || "—";
   const orderKeyboard = [
     [{ text: "تم إكمال الطلب ✅", callback_data: `complete_${tx.order_ref}` }],
     [
@@ -156,6 +158,8 @@ export function buildNewOrderMessagePayload(
     let finalMessage = `🚀 <b>طلب جديد (New Order)</b> 🚀\n`;
     finalMessage += `ــــــــــــــــــــــــــــــــــــــــــــــــــ\n`;
     finalMessage += `🏪 <b>اسم الحساب (الموقع):</b> ${escapeHtml(profileName)}\n`;
+    finalMessage += `👤 <b>اسم المستخدم:</b> ${escapeHtml(requestUserName)}\n`;
+    finalMessage += `🌐 <b>IP:</b> <code>${escapeHtml(requestUserIp)}</code>\n`;
     finalMessage += `🧾 <b>رقم الطلب:</b> ${escapeHtml(tx.order_ref)}\n`;
     finalMessage += `👤 <b>المصدر:</b> طلب عبر الموقع / التطبيق\n`;
     finalMessage += `💰 <b>المبلغ:</b> ${tx.amount} IQD\n`;
@@ -180,6 +184,8 @@ export function buildNewOrderMessagePayload(
   let finalMessage = `🚀 <b>طلب جديد (New Order)</b> 🚀\n`;
   finalMessage += `ــــــــــــــــــــــــــــــــــــــــــــــــــ\n`;
   finalMessage += `🏪 <b>اسم الحساب (الموقع):</b> ${escapeHtml(profileName)}\n`;
+  finalMessage += `👤 <b>اسم المستخدم:</b> ${escapeHtml(requestUserName)}\n`;
+  finalMessage += `🌐 <b>IP:</b> <code>${escapeHtml(requestUserIp)}</code>\n`;
   finalMessage += `🧾 <b>رقم الطلب:</b> ${escapeHtml(tx.order_ref)}\n`;
   finalMessage += `👤 <b>المصدر:</b> طلب عبر الموقع / التطبيق\n`;
   finalMessage += `💰 <b>المبلغ:</b> ${tx.amount} IQD\n`;

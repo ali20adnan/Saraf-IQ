@@ -36,7 +36,21 @@ export function ServiceCard({service, variant = 'full', onAction}: ServiceCardPr
   }
 
   return (
-    <article className="group flex h-full w-full min-w-0 flex-col overflow-hidden rounded-[1.35rem] border border-gray-200/90 bg-white shadow-[0_4px_24px_rgba(15,23,42,0.06)] transition-[box-shadow,transform] duration-200 hover:shadow-[0_12px_32px_rgba(15,23,42,0.08)] sm:rounded-[1.75rem]">
+    <article
+      role={service.comingSoon ? undefined : 'button'}
+      tabIndex={service.comingSoon ? -1 : 0}
+      onClick={service.comingSoon ? undefined : onAction}
+      onKeyDown={(event) => {
+        if (service.comingSoon || !onAction) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onAction();
+        }
+      }}
+      className={`group flex h-full w-full min-w-0 flex-col overflow-hidden rounded-[1.35rem] border border-gray-200/90 bg-white shadow-[0_4px_24px_rgba(15,23,42,0.06)] transition-[box-shadow,transform] duration-200 hover:shadow-[0_12px_32px_rgba(15,23,42,0.08)] sm:rounded-[1.75rem] ${
+        service.comingSoon ? '' : 'cursor-pointer'
+      }`}
+    >
       <div className="relative aspect-[5/4] shrink-0 overflow-hidden bg-slate-100 sm:aspect-[4/3]">
         <img
           src={service.coverImage}
@@ -75,7 +89,10 @@ export function ServiceCard({service, variant = 'full', onAction}: ServiceCardPr
           </span>
           <button
             type="button"
-            onClick={onAction}
+            onClick={(event) => {
+              event.stopPropagation();
+              onAction?.();
+            }}
             disabled={service.comingSoon}
             className={`w-full rounded-xl py-2.5 text-sm font-black transition-colors sm:py-3 ${
               service.comingSoon

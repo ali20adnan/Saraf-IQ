@@ -14,7 +14,7 @@ export type AppService = {
 export const APP_SERVICES: AppService[] = [
   {
     id: 'pubg-uc',
-    titleAr: 'بيع UC ببجي موبايل',
+    titleAr: 'شحن UC ببجي موبايل',
     titleEn: 'PUBG Mobile UC',
     descriptionAr: 'شحن UC فوري بأفضل الأسعار — أرسل معرّف اللاعب واختر الباقة.',
     descriptionEn: 'Instant UC top-up at competitive rates — enter your Player ID and pick a pack.',

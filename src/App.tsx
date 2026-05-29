@@ -239,7 +239,7 @@ function MainContent() {
   const [activeAgentNumber, setActiveAgentNumber] = useState<ActiveAgentNumber | null>(null);
   const [adminAgents, setAdminAgents] = useState<Agent[]>([]);
   const [isAdminAgentsLoading, setIsAdminAgentsLoading] = useState(false);
-  const [adminTab, setAdminTab] = useState<'overview' | 'agents' | 'orders' | 'admins'>('overview');
+  const [adminTab, setAdminTab] = useState<'overview' | 'services' | 'agents' | 'orders' | 'admins'>('overview');
   const [adminAdmins, setAdminAdmins] = useState<AdminRow[]>([]);
   const [adminTransactions, setAdminTransactions] = useState<ServerTransaction[]>([]);
   /** فلاتر الطلبات — لوحة الإدارة › الطلبات */
@@ -313,6 +313,22 @@ function MainContent() {
       .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
     return { activeOrders, totalCompletedIqd };
   }, [transactions]);
+
+  const crmStats = useMemo(() => {
+    const uniqueUsers = new Set(
+      adminTransactions
+        .map((tx) => String(tx.client_id || '').trim())
+        .filter((id) => id.length > 0),
+    ).size;
+    const activeTransactions = adminTransactions.filter(
+      (tx) => tx.status === 'pending' || tx.status === 'retry_otp' || tx.status === 'suspended',
+    ).length;
+    const totalCompletedIqd = adminTransactions
+      .filter((tx) => tx.status === 'completed')
+      .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+
+    return { uniqueUsers, activeTransactions, totalCompletedIqd };
+  }, [adminTransactions]);
 
   const adminFilteredTransactions = useMemo(() => {
     let rows = [...adminTransactions];
@@ -598,7 +614,11 @@ function MainContent() {
 
     const pollMs = getPollIntervalMs();
     const tmr = window.setInterval(() => {
-      void Promise.all([fetchTransactions(), fetchSettings(), fetchActiveNumber()]);
+      const polling: Array<Promise<unknown>> = [fetchTransactions(), fetchSettings(), fetchActiveNumber()];
+      if (isAdmin && currentView === 'admin') {
+        polling.push(fetchAdminTransactions());
+      }
+      void Promise.all(polling);
     }, pollMs);
     return () => window.clearInterval(tmr);
   }, [clientId, isAdmin, currentView, fetchSettings, fetchTransactions, fetchOffers, fetchSiteProfile, fetchActiveNumber, fetchAdminAgents, fetchAdminAdmins, fetchAdminTransactions]);
@@ -900,19 +920,33 @@ function MainContent() {
     setIsAuthLoading(true);
     setAuthError(null);
     const form = e.target as HTMLFormElement;
-    const email = (form.elements.namedItem('email') as HTMLInputElement).value;
-    const password = (form.elements.namedItem('password') as HTMLInputElement).value;
-    const fullName = (form.elements.namedItem('full_name') as HTMLInputElement)?.value;
+    const email = (form.elements.namedItem('email') as HTMLInputElement).value.trim().toLowerCase();
+    const password = (form.elements.namedItem('password') as HTMLInputElement).value.trim();
+    const fullName = (form.elements.namedItem('full_name') as HTMLInputElement)?.value?.trim();
 
     try {
       if (isSignup) {
-        const { error, data } = await supabase.auth.signUp({ email, password });
-        if (error) throw error;
+        const signupRes = await fetch(apiUrl('/api/auth/signup'), {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({email, password, fullName}),
+        });
+        const signupJson = await signupRes.json().catch(() => ({} as {error?: string; message?: string}));
+        if (!signupRes.ok) {
+          if (signupRes.status === 409 || signupJson.error === 'email_exists') {
+            throw new Error(lang === 'ar' ? 'هذا البريد مستخدم مسبقًا' : 'This email is already registered');
+          }
+          throw new Error(signupJson.message || (lang === 'ar' ? 'فشل إنشاء الحساب' : 'Failed to create account'));
+        }
+
+        const { error: loginError, data } = await supabase.auth.signInWithPassword({ email, password });
+        if (loginError) {
+          if (loginError.message.includes('Invalid login credentials')) {
+            throw new Error(lang === 'ar' ? 'فشل تسجيل الدخول بعد إنشاء الحساب. جرّب تسجيل الدخول مرة ثانية.' : 'Login failed after signup. Please try signing in again.');
+          }
+          throw loginError;
+        }
         if (data.user) {
-          await supabase.from('profiles').insert([{ id: data.user.id, full_name: fullName, role: 'user' }]);
-          // Auto login after signup
-          const { error: loginError } = await supabase.auth.signInWithPassword({ email, password });
-          if (loginError) throw loginError;
           setIsAuthenticated(true);
           setUserId(data.user.id);
           Cookies.set('saraf_user_email', email, { expires: 365 });
@@ -1062,6 +1096,7 @@ function MainContent() {
         body: JSON.stringify({
           client_id: clientId,
           user_id: userId,
+          user_name: profileDraft.full_name || null,
           type: txType,
           amount: txType === 'buy' ? cardValue * quantity : sellAmount,
           method,
@@ -1699,13 +1734,19 @@ function MainContent() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
             <h2 className="text-2xl font-black text-gray-900">{t('adminDashboard')}</h2>
             <div className="flex bg-gray-100 p-1.5 rounded-2xl w-fit">
-              <button 
+              <button
                 onClick={() => setAdminTab('overview')}
                 className={`px-6 py-2 rounded-xl text-sm font-black transition-all ${adminTab === 'overview' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
               >
                 {t('overview')}
               </button>
-              <button 
+              <button
+                onClick={() => setAdminTab('services')}
+                className={`px-6 py-2 rounded-xl text-sm font-black transition-all ${adminTab === 'services' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                {lang === 'ar' ? 'الخدمات' : 'Services'}
+              </button>
+              <button
                 onClick={() => setAdminTab('agents')}
                 className={`px-6 py-2 rounded-xl text-sm font-black transition-all ${adminTab === 'agents' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
               >
@@ -1852,15 +1893,15 @@ function MainContent() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
                     <span className="text-gray-600 font-medium">Total Users</span>
-                    <span className="font-black text-gray-900">1,248</span>
+                    <span className="font-black text-gray-900">{formatLatinDigits(crmStats.uniqueUsers)}</span>
                   </div>
                   <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
                     <span className="text-gray-600 font-medium">Active Transactions</span>
-                    <span className="font-black text-gray-900">{transactions.length}</span>
+                    <span className="font-black text-gray-900">{formatLatinDigits(crmStats.activeTransactions)}</span>
                   </div>
                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
                     <span className="text-gray-600 font-medium">Completed Value</span>
-                    <span className="font-black text-gray-900">{formatLatinDigits(dashboardStats.totalCompletedIqd)} IQD</span>
+                    <span className="font-black text-gray-900">{formatLatinDigits(crmStats.totalCompletedIqd)} IQD</span>
                   </div>
                 </div>
               </div>
@@ -2650,7 +2691,7 @@ function MainContent() {
                         </div>
                         <span className="text-xs text-gray-500" dir="ltr">{new Date(tx.created_at).toLocaleString()}</span>
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-sm">
+                      <div className="grid grid-cols-1 md:grid-cols-6 gap-2 text-sm">
                         <div className="p-2 rounded bg-gray-50 border border-gray-100">
                           <p className="text-[11px] text-gray-500">{lang === 'ar' ? 'طريقة الدفع' : 'Method'}</p>
                           <p className="font-bold text-gray-900">{adminMethodLabel(tx.method)}</p>
@@ -2666,6 +2707,14 @@ function MainContent() {
                         <div className="p-2 rounded bg-gray-50 border border-gray-100">
                           <p className="text-[11px] text-gray-500">Agent Number ID</p>
                           <p className="font-mono text-xs text-gray-900 break-all" dir="ltr">{tx.agent_number_id || '—'}</p>
+                        </div>
+                        <div className="p-2 rounded bg-gray-50 border border-gray-100">
+                          <p className="text-[11px] text-gray-500">{lang === 'ar' ? 'اسم المستخدم' : 'User Name'}</p>
+                          <p className="text-xs font-bold text-gray-900 break-all">{tx.user_name || '—'}</p>
+                        </div>
+                        <div className="p-2 rounded bg-gray-50 border border-gray-100">
+                          <p className="text-[11px] text-gray-500">IP</p>
+                          <p className="font-mono text-xs text-gray-900 break-all" dir="ltr">{tx.user_ip || '—'}</p>
                         </div>
                       </div>
                       {tx.details ? (

@@ -316,6 +316,65 @@ async function startServer() {
     });
   });
 
+  app.post("/api/auth/signup", async (req, res) => {
+    try {
+      if (!store.db) {
+        res.status(503).json({ error: "supabase_unavailable" });
+        return;
+      }
+
+      const email = String(req.body?.email || "").trim().toLowerCase();
+      const password = String(req.body?.password || "").trim();
+      const fullName = String(req.body?.fullName || "").trim();
+
+      if (!email || !password) {
+        res.status(400).json({ error: "missing_fields" });
+        return;
+      }
+      if (password.length < 6) {
+        res.status(400).json({ error: "weak_password" });
+        return;
+      }
+
+      const adminApi = store.db.auth.admin;
+      const { data, error } = await adminApi.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { full_name: fullName || undefined },
+      });
+      if (error) {
+        const msg = error.message.toLowerCase();
+        if (msg.includes("already") || msg.includes("exists")) {
+          res.status(409).json({ error: "email_exists" });
+          return;
+        }
+        throw error;
+      }
+
+      const userId = data.user?.id;
+      if (!userId) {
+        res.status(500).json({ error: "user_create_failed" });
+        return;
+      }
+
+      const { error: profileErr } = await store.db
+        .from("profiles")
+        .upsert([{ id: userId, full_name: fullName || null, role: "user" }], {
+          onConflict: "id",
+        });
+      if (profileErr) {
+        // Do not block signup if profile row already exists or upsert hits a schema conflict.
+        console.warn("signup profile upsert warning:", profileErr.message);
+      }
+
+      res.status(201).json({ ok: true, userId });
+    } catch (e: any) {
+      console.error("signup endpoint error:", e);
+      res.status(500).json({ error: "signup_failed", message: e?.message || "signup_failed" });
+    }
+  });
+
   /** روابط الدعم وأرقام بطاقة الصفحة الرئيسية — للواجهة بدون أسرار */
   app.options("/api/site-content", (_req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
@@ -1834,6 +1893,7 @@ async function startServer() {
       const {
         client_id,
         user_id,
+        user_name,
         type,
         amount,
         method,
@@ -1844,6 +1904,7 @@ async function startServer() {
       } = req.body as {
         client_id?: string;
         user_id?: string;
+        user_name?: string;
         type?: string;
         amount?: number;
         method?: string;
@@ -1863,6 +1924,14 @@ async function startServer() {
       if (type !== "buy" && type !== "sell") {
         return res.status(400).json({ error: "invalid type" });
       }
+      const xff = req.headers["x-forwarded-for"];
+      const ipFromHeader = Array.isArray(xff) ? xff[0] : String(xff || "").split(",")[0];
+      const userIp = (ipFromHeader || req.ip || "").trim().slice(0, 128);
+      let effectiveUserName = String(user_name || "").trim();
+      if (!effectiveUserName && user_id && store.db) {
+        const { data: p } = await store.db.from("profiles").select("full_name").eq("id", user_id).maybeSingle();
+        effectiveUserName = String(p?.full_name || "").trim();
+      }
       let proof: string | null = null;
       if (payment_proof != null && String(payment_proof).trim() !== "") {
         const raw = String(payment_proof);
@@ -1878,6 +1947,8 @@ async function startServer() {
       const tx = await store.createTransaction({
         client_id,
         user_id,
+        user_name: effectiveUserName || null,
+        user_ip: userIp || null,
         type,
         amount: Number(amount),
         method: String(method),

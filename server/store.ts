@@ -131,6 +131,50 @@ export function sellWalletIconPublicPath(walletId: string): string {
 }
 
 const DATA_FILE = path.join(DATA_DIR, "saraf-store.json");
+const TX_META_PREFIX = "\n__saraf_meta__:";
+
+function encodeTxDetails(details: string | undefined, meta: { user_name?: string | null; user_ip?: string | null }): string | null {
+  const base = (details || "").trim();
+  const payload: Record<string, string> = {};
+  if (meta.user_name && meta.user_name.trim()) payload.user_name = meta.user_name.trim();
+  if (meta.user_ip && meta.user_ip.trim()) payload.user_ip = meta.user_ip.trim();
+  if (Object.keys(payload).length === 0) return base || null;
+  return `${base}${TX_META_PREFIX}${JSON.stringify(payload)}`;
+}
+
+function parseTxDetails(raw: string | null | undefined): {
+  cleanDetails: string | null;
+  user_name: string | null;
+  user_ip: string | null;
+} {
+  const text = String(raw ?? "");
+  const idx = text.lastIndexOf(TX_META_PREFIX);
+  if (idx === -1) {
+    return { cleanDetails: text || null, user_name: null, user_ip: null };
+  }
+  const clean = text.slice(0, idx).trim();
+  const metaRaw = text.slice(idx + TX_META_PREFIX.length).trim();
+  try {
+    const meta = JSON.parse(metaRaw) as { user_name?: string; user_ip?: string };
+    return {
+      cleanDetails: clean || null,
+      user_name: meta.user_name?.trim() || null,
+      user_ip: meta.user_ip?.trim() || null,
+    };
+  } catch {
+    return { cleanDetails: text || null, user_name: null, user_ip: null };
+  }
+}
+
+function normalizeTx(tx: ServerTransaction): ServerTransaction {
+  const parsed = parseTxDetails(tx.details);
+  return {
+    ...tx,
+    details: parsed.cleanDetails,
+    user_name: tx.user_name ?? parsed.user_name ?? null,
+    user_ip: tx.user_ip ?? parsed.user_ip ?? null,
+  };
+}
 
 const defaultOffers: ServerOffer[] = [
   {
@@ -597,7 +641,9 @@ function genOrderRef(): string {
 }
 
 export async function listTransactionsByClient(clientId: string): Promise<ServerTransaction[]> {
-  const fromFile = loadFileStore().transactions.filter((t) => t.client_id === clientId);
+  const fromFile = loadFileStore().transactions
+    .filter((t) => t.client_id === clientId)
+    .map((t) => normalizeTx(t));
   const map = new Map<string, ServerTransaction>();
   for (const t of fromFile) map.set(t.id, t);
 
@@ -623,10 +669,13 @@ export async function listTransactionsByClient(clientId: string): Promise<Server
 }
 
 function rowToTx(row: Record<string, unknown>): ServerTransaction {
+  const parsed = parseTxDetails(row.details != null ? String(row.details) : null);
   return {
     id: String(row.id),
     order_ref: String(row.order_ref ?? ""),
     client_id: String(row.client_id ?? ""),
+    user_name: (typeof row.user_name === "string" ? row.user_name : parsed.user_name) ?? null,
+    user_ip: (typeof row.user_ip === "string" ? row.user_ip : parsed.user_ip) ?? null,
     type: row.type === "buy" ? "buy" : "sell",
     amount: Number(row.amount),
     method: String(row.method ?? ""),
@@ -635,7 +684,7 @@ function rowToTx(row: Record<string, unknown>): ServerTransaction {
       typeof row.created_at === "string"
         ? row.created_at
         : new Date(row.created_at as string).toISOString(),
-    details: row.details != null ? String(row.details) : null,
+    details: parsed.cleanDetails,
     agent_number_id: row.agent_number_id != null ? String(row.agent_number_id) : null,
     payment_proof: row.payment_proof != null ? String(row.payment_proof) : null,
   };
@@ -644,6 +693,8 @@ function rowToTx(row: Record<string, unknown>): ServerTransaction {
 export async function createTransaction(input: {
   client_id: string;
   user_id?: string;
+  user_name?: string;
+  user_ip?: string;
   type: "buy" | "sell";
   amount: number;
   method: string;
@@ -658,6 +709,8 @@ export async function createTransaction(input: {
     id,
     order_ref,
     client_id: input.client_id,
+    user_name: input.user_name?.trim() || null,
+    user_ip: input.user_ip?.trim() || null,
     type: input.type,
     amount: input.amount,
     method: input.method,
@@ -667,6 +720,10 @@ export async function createTransaction(input: {
     agent_number_id: input.agent_number_id ?? null,
     payment_proof: input.payment_proof ?? null,
   };
+  const persistedDetails = encodeTxDetails(input.details, {
+    user_name: input.user_name,
+    user_ip: input.user_ip,
+  });
 
   if (db) {
     const { data, error } = await db
@@ -681,7 +738,7 @@ export async function createTransaction(input: {
           amount: input.amount,
           method: input.method,
           status: "pending",
-          details: input.details ?? null,
+          details: persistedDetails,
           agent_number_id: input.agent_number_id ?? null,
           payment_proof: input.payment_proof ?? null,
         },
@@ -695,9 +752,12 @@ export async function createTransaction(input: {
   }
 
   const store = loadFileStore();
-  store.transactions.unshift(row);
+  store.transactions.unshift({
+    ...row,
+    details: persistedDetails,
+  });
   saveFileStore(store);
-  return row;
+  return normalizeTx(row);
 }
 
 /** جميع الطلبات (ملف + قاعدة) لإحصاءات البوت ولوحة التحكم */
@@ -719,7 +779,7 @@ export async function listAllTransactionsMerged(): Promise<ServerTransaction[]> 
     }
   }
 
-  for (const t of loadFileStore().transactions) {
+  for (const t of loadFileStore().transactions.map((x) => normalizeTx(x))) {
     if (!map.has(t.id)) {
       map.set(t.id, t);
     }
