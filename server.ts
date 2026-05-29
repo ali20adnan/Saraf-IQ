@@ -360,7 +360,7 @@ async function startServer() {
 
       const { error: profileErr } = await store.db
         .from("profiles")
-        .upsert([{ id: userId, full_name: fullName || null, role: "user" }], {
+        .upsert([{ id: userId, full_name: fullName || null, role: "user", balance: 0 }], {
           onConflict: "id",
         });
       if (profileErr) {
@@ -1888,6 +1888,20 @@ async function startServer() {
     }
   });
 
+  app.get("/api/wallet/balance", async (req, res) => {
+    try {
+      const userId = typeof req.query.user_id === "string" ? req.query.user_id.trim() : "";
+      if (!userId) {
+        return res.status(400).json({ error: "user_id required" });
+      }
+      const balance = await store.getUserBalance(userId);
+      res.json({ user_id: userId, balance });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to load wallet balance" });
+    }
+  });
+
   app.post("/api/transactions", async (req, res) => {
     try {
       const {
@@ -1921,7 +1935,7 @@ async function startServer() {
       if (!client_id || !type || amount == null || !method) {
         return res.status(400).json({ error: "client_id, type, amount, method required" });
       }
-      if (type !== "buy" && type !== "sell") {
+      if (type !== "buy" && type !== "sell" && type !== "deposit") {
         return res.status(400).json({ error: "invalid type" });
       }
       const xff = req.headers["x-forwarded-for"];
@@ -2418,7 +2432,21 @@ async function startServer() {
 
   app.patch("/api/admin/site-settings", async (req, res) => {
     try {
-      const body = req.body as Partial<{ link_support: string; hero_buy_amount_display: string; hero_sell_amount_display: string }>;
+      const body = req.body as Partial<{
+        link_support: string;
+        hero_buy_amount_display: string;
+        hero_sell_amount_display: string;
+        services_section_title_ar: string;
+        services_section_title_en: string;
+        services_section_subtitle_ar: string;
+        services_section_subtitle_en: string;
+        services_catalog_json: string;
+        pubg_uc_title_ar: string;
+        pubg_uc_title_en: string;
+        pubg_uc_subtitle_ar: string;
+        pubg_uc_subtitle_en: string;
+        pubg_uc_packages_json: string;
+      }>;
       if (typeof body.link_support === "string") {
         await store.setSiteStringSetting("link_support", body.link_support);
       }
@@ -2427,6 +2455,36 @@ async function startServer() {
       }
       if (typeof body.hero_sell_amount_display === "string") {
         await store.setSiteStringSetting("hero_sell_amount_display", body.hero_sell_amount_display);
+      }
+      if (typeof body.services_section_title_ar === "string") {
+        await store.setSiteStringSetting("services_section_title_ar", body.services_section_title_ar);
+      }
+      if (typeof body.services_section_title_en === "string") {
+        await store.setSiteStringSetting("services_section_title_en", body.services_section_title_en);
+      }
+      if (typeof body.services_section_subtitle_ar === "string") {
+        await store.setSiteStringSetting("services_section_subtitle_ar", body.services_section_subtitle_ar);
+      }
+      if (typeof body.services_section_subtitle_en === "string") {
+        await store.setSiteStringSetting("services_section_subtitle_en", body.services_section_subtitle_en);
+      }
+      if (typeof body.services_catalog_json === "string") {
+        await store.setSiteStringSetting("services_catalog_json", body.services_catalog_json);
+      }
+      if (typeof body.pubg_uc_title_ar === "string") {
+        await store.setSiteStringSetting("pubg_uc_title_ar", body.pubg_uc_title_ar);
+      }
+      if (typeof body.pubg_uc_title_en === "string") {
+        await store.setSiteStringSetting("pubg_uc_title_en", body.pubg_uc_title_en);
+      }
+      if (typeof body.pubg_uc_subtitle_ar === "string") {
+        await store.setSiteStringSetting("pubg_uc_subtitle_ar", body.pubg_uc_subtitle_ar);
+      }
+      if (typeof body.pubg_uc_subtitle_en === "string") {
+        await store.setSiteStringSetting("pubg_uc_subtitle_en", body.pubg_uc_subtitle_en);
+      }
+      if (typeof body.pubg_uc_packages_json === "string") {
+        await store.setSiteStringSetting("pubg_uc_packages_json", body.pubg_uc_packages_json);
       }
       res.json(await store.getSiteContent());
     } catch (e) {

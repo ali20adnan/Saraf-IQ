@@ -75,6 +75,32 @@ export type BuyCustomWallet = {
 /** محافظ بيع إضافية — نفس الشكل؛ المفتاح الفني `sell_wallet_<id>` */
 export type SellCustomWallet = BuyCustomWallet;
 
+export type ManagedService = {
+  id: string;
+  titleAr: string;
+  titleEn: string;
+  descriptionAr: string;
+  descriptionEn: string;
+  coverImage: string;
+  badgeAr: string;
+  badgeEn: string;
+  actionType: "pubg_uc" | "coming_soon";
+  enabled: boolean;
+  comingSoon: boolean;
+  sortOrder: number;
+};
+
+export type ManagedPubgPackage = {
+  id: string;
+  label: string;
+  totalUc: number;
+  priceIqd: number;
+  isMinimum: boolean;
+  iconTier: 1 | 2 | 3;
+  enabled: boolean;
+  sortOrder: number;
+};
+
 export type BotUser = {
   id: string; // uuid
   telegram_id: number;
@@ -225,6 +251,38 @@ const defaultProfile: SiteProfile = {
   phone: "",
 };
 
+const defaultManagedServices: ManagedService[] = [
+  {
+    id: "pubg-uc",
+    titleAr: "شحن UC ببجي موبايل",
+    titleEn: "PUBG Mobile UC",
+    descriptionAr: "شحن UC فوري بأفضل الأسعار — أرسل معرّف اللاعب واختر الباقة.",
+    descriptionEn: "Instant UC top-up at competitive rates — enter your Player ID and pick a pack.",
+    coverImage: "/services/pubg-uc-cover.png",
+    badgeAr: "الأكثر طلباً",
+    badgeEn: "Popular",
+    actionType: "pubg_uc",
+    enabled: true,
+    comingSoon: false,
+    sortOrder: 1,
+  },
+];
+
+const defaultManagedPubgPackages: ManagedPubgPackage[] = [
+  { id: "uc-30", label: "30", totalUc: 30, priceIqd: 590, isMinimum: true, iconTier: 1, enabled: true, sortOrder: 1 },
+  { id: "uc-60", label: "60", totalUc: 60, priceIqd: 1180, isMinimum: true, iconTier: 1, enabled: true, sortOrder: 2 },
+  { id: "uc-120", label: "120", totalUc: 120, priceIqd: 2400, isMinimum: false, iconTier: 1, enabled: true, sortOrder: 3 },
+  { id: "uc-180", label: "180", totalUc: 180, priceIqd: 3600, isMinimum: false, iconTier: 1, enabled: true, sortOrder: 4 },
+  { id: "uc-325", label: "25 + 300", totalUc: 325, priceIqd: 5900, isMinimum: false, iconTier: 2, enabled: true, sortOrder: 5 },
+  { id: "uc-336", label: "26 + 310", totalUc: 336, priceIqd: 6200, isMinimum: false, iconTier: 2, enabled: true, sortOrder: 6 },
+  { id: "uc-660", label: "60 + 600", totalUc: 660, priceIqd: 11800, isMinimum: false, iconTier: 2, enabled: true, sortOrder: 7 },
+  { id: "uc-688", label: "63 + 625", totalUc: 688, priceIqd: 12500, isMinimum: false, iconTier: 2, enabled: true, sortOrder: 8 },
+  { id: "uc-1172", label: "107 + 1065", totalUc: 1172, priceIqd: 21300, isMinimum: false, iconTier: 2, enabled: true, sortOrder: 9 },
+  { id: "uc-1800", label: "300 + 1500", totalUc: 1800, priceIqd: 29500, isMinimum: false, iconTier: 3, enabled: true, sortOrder: 10 },
+  { id: "uc-3850", label: "850 + 3000", totalUc: 3850, priceIqd: 59000, isMinimum: false, iconTier: 3, enabled: true, sortOrder: 11 },
+  { id: "uc-8100", label: "2100 + 6000", totalUc: 8100, priceIqd: 118000, isMinimum: false, iconTier: 3, enabled: true, sortOrder: 12 },
+];
+
 const defaultAppSettings: Record<string, string> = {
   maintenance_mode: "false",
 
@@ -249,6 +307,16 @@ const defaultAppSettings: Record<string, string> = {
   link_support: "https://t.me/sarafiq_support",
   hero_buy_amount_display: "100,000",
   hero_sell_amount_display: "95,000",
+  services_section_title_ar: "الخدمات",
+  services_section_title_en: "Services",
+  services_section_subtitle_ar: "شحن ألعاب ومنتجات رقمية — بسرعة وأمان.",
+  services_section_subtitle_en: "Top up games and digital products — fast and secure.",
+  services_catalog_json: JSON.stringify(defaultManagedServices),
+  pubg_uc_title_ar: "شحن UC — ببجي موبايل",
+  pubg_uc_title_en: "PUBG Mobile UC",
+  pubg_uc_subtitle_ar: "اختر الباقة، أدخل معرّف اللاعب، وادفع بالبطاقة البنكية.",
+  pubg_uc_subtitle_en: "Choose a UC pack, enter your Player ID, and pay by bank card.",
+  pubg_uc_packages_json: JSON.stringify(defaultManagedPubgPackages),
   /** JSON array: admin-defined buy payment wallets (method_key wallet_<id>) */
   buy_custom_wallets: "[]",
   /** JSON array: admin-defined sell receiving wallets (method_key sell_wallet_<id>) */
@@ -275,36 +343,153 @@ export function normalizeWalletIconUrl(raw: unknown): string | null {
   return null;
 }
 
+function normalizeServiceId(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9_-]/g, "")
+    .slice(0, 36);
+}
+
+function parseManagedServices(raw: string | undefined): ManagedService[] {
+  if (!raw || !raw.trim()) return [...defaultManagedServices];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [...defaultManagedServices];
+    const out: ManagedService[] = [];
+    const seen = new Set<string>();
+    for (let i = 0; i < parsed.length; i += 1) {
+      const row = parsed[i];
+      if (!row || typeof row !== "object") continue;
+      const r = row as Record<string, unknown>;
+      const id = normalizeServiceId(String(r.id || ""));
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      const sortOrder = Number(r.sort_order ?? r.sortOrder ?? i + 1);
+      const coverRaw = String(r.cover_image ?? r.coverImage ?? "/services/pubg-uc-cover.png").trim();
+      const coverImage = isValidHttpUrl(coverRaw) || coverRaw.startsWith("/") ? coverRaw : "/services/pubg-uc-cover.png";
+      const actionRaw = String(r.action_type ?? r.actionType ?? "coming_soon").trim();
+      out.push({
+        id,
+        titleAr: String(r.title_ar ?? r.titleAr ?? ""),
+        titleEn: String(r.title_en ?? r.titleEn ?? ""),
+        descriptionAr: String(r.description_ar ?? r.descriptionAr ?? ""),
+        descriptionEn: String(r.description_en ?? r.descriptionEn ?? ""),
+        coverImage,
+        badgeAr: String(r.badge_ar ?? r.badgeAr ?? ""),
+        badgeEn: String(r.badge_en ?? r.badgeEn ?? ""),
+        actionType: actionRaw === "pubg_uc" ? "pubg_uc" : "coming_soon",
+        enabled: r.enabled !== false,
+        comingSoon: r.coming_soon === true || r.comingSoon === true,
+        sortOrder: Number.isFinite(sortOrder) ? sortOrder : i + 1,
+      });
+    }
+    return out.sort((a, b) => a.sortOrder - b.sortOrder);
+  } catch {
+    return [...defaultManagedServices];
+  }
+}
+
+function parseManagedPubgPackages(raw: string | undefined): ManagedPubgPackage[] {
+  if (!raw || !raw.trim()) return [...defaultManagedPubgPackages];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [...defaultManagedPubgPackages];
+    const out: ManagedPubgPackage[] = [];
+    const seen = new Set<string>();
+    for (let i = 0; i < parsed.length; i += 1) {
+      const row = parsed[i];
+      if (!row || typeof row !== "object") continue;
+      const r = row as Record<string, unknown>;
+      const id = normalizeServiceId(String(r.id || `pkg-${i + 1}`));
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      const tierRaw = Number(r.icon_tier ?? r.iconTier ?? 1);
+      const iconTier: 1 | 2 | 3 = tierRaw === 2 ? 2 : tierRaw === 3 ? 3 : 1;
+      const sortOrder = Number(r.sort_order ?? r.sortOrder ?? i + 1);
+      out.push({
+        id,
+        label: String(r.label ?? ""),
+        totalUc: Math.max(0, Number(r.total_uc ?? r.totalUc ?? 0)),
+        priceIqd: Math.max(0, Number(r.price_iqd ?? r.priceIqd ?? 0)),
+        isMinimum: r.is_minimum === true || r.isMinimum === true,
+        iconTier,
+        enabled: r.enabled !== false,
+        sortOrder: Number.isFinite(sortOrder) ? sortOrder : i + 1,
+      });
+    }
+    return out.sort((a, b) => a.sortOrder - b.sortOrder);
+  } catch {
+    return [...defaultManagedPubgPackages];
+  }
+}
+
 /** مفاتيح نصية يمكن ضبطها من البوت (لا تُمرّر إلى الواجهة كأنواع boolean) */
 export const SITE_STRING_SETTING_KEYS = [
   "link_support",
   "hero_buy_amount_display",
   "hero_sell_amount_display",
+  "services_section_title_ar",
+  "services_section_title_en",
+  "services_section_subtitle_ar",
+  "services_section_subtitle_en",
+  "services_catalog_json",
+  "pubg_uc_title_ar",
+  "pubg_uc_title_en",
+  "pubg_uc_subtitle_ar",
+  "pubg_uc_subtitle_en",
+  "pubg_uc_packages_json",
 ] as const;
 
 export type SiteContentPublic = {
   supportUrl: string;
   heroBuyAmountDisplay: string;
   heroSellAmountDisplay: string;
+  servicesSectionTitleAr: string;
+  servicesSectionTitleEn: string;
+  servicesSectionSubtitleAr: string;
+  servicesSectionSubtitleEn: string;
+  servicesCatalog: ManagedService[];
+  pubgUcTitleAr: string;
+  pubgUcTitleEn: string;
+  pubgUcSubtitleAr: string;
+  pubgUcSubtitleEn: string;
+  pubgPackages: ManagedPubgPackage[];
 };
 
 export async function getSiteContent(): Promise<SiteContentPublic> {
   const merged: Record<string, string> = { ...defaultAppSettings };
+  const dbSettings: Record<string, string> = {};
   if (db) {
     const { data, error } = await db.from("settings").select("key, value");
     if (!error && data?.length) {
       for (const row of data as { key: string; value: string }[]) {
-        if (row.key && typeof row.value === "string") merged[row.key] = row.value;
+        if (row.key && typeof row.value === "string") {
+          merged[row.key] = row.value;
+          dbSettings[row.key] = row.value;
+        }
       }
     }
   }
   const fileSettings = loadFileStore().app_settings;
-  const final = { ...merged, ...fileSettings };
+  /** ملف محلي ← قاعدة البيانات تتفوّق (كي تُطبَّق تعديلات لوحة الإدارة فعلياً) */
+  const final = { ...merged, ...fileSettings, ...dbSettings };
   const support = (final.link_support || defaultAppSettings.link_support).trim();
   return {
     supportUrl: isValidHttpUrl(support) ? support : defaultAppSettings.link_support,
     heroBuyAmountDisplay: (final.hero_buy_amount_display || defaultAppSettings.hero_buy_amount_display).trim(),
     heroSellAmountDisplay: (final.hero_sell_amount_display || defaultAppSettings.hero_sell_amount_display).trim(),
+    servicesSectionTitleAr: (final.services_section_title_ar || defaultAppSettings.services_section_title_ar).trim(),
+    servicesSectionTitleEn: (final.services_section_title_en || defaultAppSettings.services_section_title_en).trim(),
+    servicesSectionSubtitleAr: (final.services_section_subtitle_ar || defaultAppSettings.services_section_subtitle_ar).trim(),
+    servicesSectionSubtitleEn: (final.services_section_subtitle_en || defaultAppSettings.services_section_subtitle_en).trim(),
+    servicesCatalog: parseManagedServices(final.services_catalog_json),
+    pubgUcTitleAr: (final.pubg_uc_title_ar || defaultAppSettings.pubg_uc_title_ar).trim(),
+    pubgUcTitleEn: (final.pubg_uc_title_en || defaultAppSettings.pubg_uc_title_en).trim(),
+    pubgUcSubtitleAr: (final.pubg_uc_subtitle_ar || defaultAppSettings.pubg_uc_subtitle_ar).trim(),
+    pubgUcSubtitleEn: (final.pubg_uc_subtitle_en || defaultAppSettings.pubg_uc_subtitle_en).trim(),
+    pubgPackages: parseManagedPubgPackages(final.pubg_uc_packages_json),
   };
 }
 
@@ -534,7 +719,10 @@ export async function setSiteStringSetting(key: string, value: string): Promise<
   }
   if (db) {
     const { error } = await db.from("settings").upsert({ key, value: v }, { onConflict: "key" });
-    if (error) console.error("setSiteStringSetting db:", error);
+    if (error) {
+      console.error("setSiteStringSetting db:", error);
+      throw error;
+    }
   }
   const st = loadFileStore();
   st.app_settings = { ...st.app_settings, [key]: v };
@@ -670,13 +858,15 @@ export async function listTransactionsByClient(clientId: string): Promise<Server
 
 function rowToTx(row: Record<string, unknown>): ServerTransaction {
   const parsed = parseTxDetails(row.details != null ? String(row.details) : null);
+  const rawType = String(row.type ?? "");
   return {
     id: String(row.id),
     order_ref: String(row.order_ref ?? ""),
     client_id: String(row.client_id ?? ""),
+    user_id: row.user_id != null ? String(row.user_id) : null,
     user_name: (typeof row.user_name === "string" ? row.user_name : parsed.user_name) ?? null,
     user_ip: (typeof row.user_ip === "string" ? row.user_ip : parsed.user_ip) ?? null,
-    type: row.type === "buy" ? "buy" : "sell",
+    type: rawType === "buy" || rawType === "deposit" ? rawType : "sell",
     amount: Number(row.amount),
     method: String(row.method ?? ""),
     status: String(row.status ?? "pending"),
@@ -695,7 +885,7 @@ export async function createTransaction(input: {
   user_id?: string;
   user_name?: string;
   user_ip?: string;
-  type: "buy" | "sell";
+  type: "buy" | "sell" | "deposit";
   amount: number;
   method: string;
   details?: string;
@@ -709,6 +899,7 @@ export async function createTransaction(input: {
     id,
     order_ref,
     client_id: input.client_id,
+    user_id: input.user_id ?? null,
     user_name: input.user_name?.trim() || null,
     user_ip: input.user_ip?.trim() || null,
     type: input.type,
@@ -815,6 +1006,16 @@ export async function updateTransactionStatusByRef(
   orderRef: string,
   status: string
 ): Promise<boolean> {
+  const before = await getTransactionByOrderRef(orderRef);
+  if (
+    before?.user_id &&
+    before.type === "buy" &&
+    before.status !== "completed" &&
+    status === "completed"
+  ) {
+    const balance = await getUserBalance(before.user_id);
+    if (balance < before.amount) return false;
+  }
   let ok = false;
   if (db) {
     const { error } = await db.from("transactions").update({ status }).eq("order_ref", orderRef);
@@ -828,7 +1029,64 @@ export async function updateTransactionStatusByRef(
     saveFileStore(store);
     ok = true;
   }
+  if (ok && before?.user_id) {
+    const delta = balanceDeltaForStatusChange(before.type, before.amount, before.status, status);
+    if (delta !== 0) {
+      await adjustUserBalance(before.user_id, delta);
+    }
+  }
   return ok;
+}
+
+function balanceDeltaByStatus(type: ServerTransaction["type"], amount: number, status: string): number {
+  if (status !== "completed") return 0;
+  if (type === "deposit") return amount;
+  if (type === "buy") return -amount;
+  return 0;
+}
+
+function balanceDeltaForStatusChange(
+  type: ServerTransaction["type"],
+  amount: number,
+  oldStatus: string,
+  newStatus: string
+): number {
+  return balanceDeltaByStatus(type, amount, newStatus) - balanceDeltaByStatus(type, amount, oldStatus);
+}
+
+async function getTransactionByOrderRef(orderRef: string): Promise<ServerTransaction | null> {
+  if (db) {
+    const { data, error } = await db.from("transactions").select("*").eq("order_ref", orderRef).maybeSingle();
+    if (!error && data) return rowToTx(data as Record<string, unknown>);
+  }
+  const local = loadFileStore().transactions.find((x) => x.order_ref === orderRef);
+  return local ? normalizeTx(local) : null;
+}
+
+export async function getUserBalance(userId: string): Promise<number> {
+  if (!userId.trim()) return 0;
+  if (db) {
+    const { data, error } = await db.from("profiles").select("balance").eq("id", userId).maybeSingle();
+    if (!error && data) {
+      return Number((data as { balance?: number }).balance ?? 0);
+    }
+  }
+  return 0;
+}
+
+export async function adjustUserBalance(userId: string, delta: number): Promise<number> {
+  if (!userId.trim() || delta === 0) return getUserBalance(userId);
+  if (db) {
+    const current = await getUserBalance(userId);
+    const next = Math.max(0, current + delta);
+    const { error } = await db.from("profiles").update({ balance: next }).eq("id", userId);
+    if (error) {
+      console.error("adjustUserBalance:", error);
+      return current;
+    }
+    return next;
+  }
+  return 0;
 }
 
 export async function listOffers(): Promise<ServerOffer[]> {

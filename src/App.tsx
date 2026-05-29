@@ -1,9 +1,10 @@
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+﻿import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
 import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogIn, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Gamepad2, XCircle, Eye, EyeOff, Download, Search } from 'lucide-react';
 import { ServiceCard } from './components/ServiceCard';
 import { PubgUcOrder } from './components/PubgUcOrder';
+import { CreditCardPaymentFields } from './components/CreditCardPaymentFields';
 import { listAppServices } from './lib/services';
 import Cookies from 'js-cookie';
 import { supabase } from './lib/supabase';
@@ -15,6 +16,7 @@ import type { ServerTransaction } from '../types/transaction';
 import { Capacitor } from '@capacitor/core';
 import { apiUrl } from './lib/apiBase';
 import { formatLatinDigits } from './lib/formatNumbers';
+import { PUBG_UC_PACKAGES } from './lib/pubgUcPackages';
 
 /** أيقونة محفظة مخصّصة: مسار نسبي من API أو رابط كامل */
 function walletIconDisplaySrc(iconUrl: string | null | undefined): string | null {
@@ -24,7 +26,7 @@ function walletIconDisplaySrc(iconUrl: string | null | undefined): string | null
   return u;
 }
 
-type TransactionType = 'sell' | 'buy';
+type TransactionType = 'sell' | 'buy' | 'deposit';
 type ViewType = 'home' | 'login' | 'signup' | 'admin' | 'history' | 'profile' | 'settings' | 'services';
 
 const CLIENT_ID_KEY = 'saraf_client_id';
@@ -149,6 +151,124 @@ type HomeMethodItem = {
   accent: string;
 };
 
+type ManagedServiceRow = {
+  id: string;
+  titleAr: string;
+  titleEn: string;
+  descriptionAr: string;
+  descriptionEn: string;
+  coverImage: string;
+  badgeAr: string;
+  badgeEn: string;
+  actionType: 'pubg_uc' | 'coming_soon';
+  enabled: boolean;
+  comingSoon: boolean;
+  sortOrder: number;
+};
+
+type ManagedPubgPackageRow = {
+  id: string;
+  label: string;
+  totalUc: number;
+  priceIqd: number;
+  isMinimum: boolean;
+  iconTier: 1 | 2 | 3;
+  enabled: boolean;
+  sortOrder: number;
+};
+
+function normalizeServiceId(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9_-]/g, '')
+    .slice(0, 36);
+}
+
+const DEFAULT_MANAGED_SERVICES: ManagedServiceRow[] = listAppServices().map((service) => ({
+  id: service.id,
+  titleAr: service.titleAr,
+  titleEn: service.titleEn,
+  descriptionAr: service.descriptionAr,
+  descriptionEn: service.descriptionEn,
+  coverImage: service.coverImage,
+  badgeAr: service.badgeAr || '',
+  badgeEn: service.badgeEn || '',
+  actionType: service.id === 'pubg-uc' ? 'pubg_uc' : 'coming_soon',
+  enabled: true,
+  comingSoon: Boolean(service.comingSoon),
+  sortOrder: service.sortOrder,
+}));
+
+const DEFAULT_PUBG_PACKAGES: ManagedPubgPackageRow[] = PUBG_UC_PACKAGES.map((pkg, idx) => ({
+  id: pkg.id,
+  label: pkg.label,
+  totalUc: pkg.totalUc,
+  priceIqd: pkg.priceIqd,
+  isMinimum: Boolean(pkg.isMinimum),
+  iconTier: pkg.iconTier,
+  enabled: true,
+  sortOrder: idx + 1,
+}));
+
+function sanitizeManagedServices(raw: unknown): ManagedServiceRow[] {
+  if (!Array.isArray(raw)) return [...DEFAULT_MANAGED_SERVICES];
+  const seen = new Set<string>();
+  const out: ManagedServiceRow[] = [];
+  raw.forEach((row, idx) => {
+    if (!row || typeof row !== 'object') return;
+    const r = row as Record<string, unknown>;
+    const id = normalizeServiceId(String(r.id || ''));
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    const sortOrder = Number(r.sortOrder ?? r.sort_order ?? idx + 1);
+    const actionRaw = String(r.actionType ?? r.action_type ?? 'coming_soon').trim();
+    const coverImageRaw = String(r.coverImage ?? r.cover_image ?? '/services/pubg-uc-cover.png').trim();
+    out.push({
+      id,
+      titleAr: String(r.titleAr ?? r.title_ar ?? ''),
+      titleEn: String(r.titleEn ?? r.title_en ?? ''),
+      descriptionAr: String(r.descriptionAr ?? r.description_ar ?? ''),
+      descriptionEn: String(r.descriptionEn ?? r.description_en ?? ''),
+      coverImage: coverImageRaw || '/services/pubg-uc-cover.png',
+      badgeAr: String(r.badgeAr ?? r.badge_ar ?? ''),
+      badgeEn: String(r.badgeEn ?? r.badge_en ?? ''),
+      actionType: actionRaw === 'pubg_uc' ? 'pubg_uc' : 'coming_soon',
+      enabled: r.enabled !== false,
+      comingSoon: r.comingSoon === true || r.coming_soon === true,
+      sortOrder: Number.isFinite(sortOrder) ? sortOrder : idx + 1,
+    });
+  });
+  return out.sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
+function sanitizeManagedPubgPackages(raw: unknown): ManagedPubgPackageRow[] {
+  if (!Array.isArray(raw)) return [...DEFAULT_PUBG_PACKAGES];
+  const seen = new Set<string>();
+  const out: ManagedPubgPackageRow[] = [];
+  raw.forEach((row, idx) => {
+    if (!row || typeof row !== 'object') return;
+    const r = row as Record<string, unknown>;
+    const id = normalizeServiceId(String(r.id || `pkg-${idx + 1}`));
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    const tierRaw = Number(r.iconTier ?? r.icon_tier ?? 1);
+    const sortOrder = Number(r.sortOrder ?? r.sort_order ?? idx + 1);
+    out.push({
+      id,
+      label: String(r.label ?? ''),
+      totalUc: Math.max(0, Number(r.totalUc ?? r.total_uc ?? 0)),
+      priceIqd: Math.max(0, Number(r.priceIqd ?? r.price_iqd ?? 0)),
+      isMinimum: r.isMinimum === true || r.is_minimum === true,
+      iconTier: tierRaw === 2 ? 2 : tierRaw === 3 ? 3 : 1,
+      enabled: r.enabled !== false,
+      sortOrder: Number.isFinite(sortOrder) ? sortOrder : idx + 1,
+    });
+  });
+  return out.sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
 /** مسار الخادم فقط — حدّث الملف على السيرفر (مثل public/saraf-iq-debug.apk) دون بوت */
 function apkDownloadHref(): string {
   return apiUrl('/download/apk');
@@ -221,6 +341,7 @@ function MainContent() {
   const [buyWalletIconUploading, setBuyWalletIconUploading] = useState<string | null>(null);
   const [sellWalletIconUploading, setSellWalletIconUploading] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<ServerTransaction[]>([]);
+  const [walletBalance, setWalletBalance] = useState<number>(0);
   const [clientId, setClientId] = useState<string | null>(null);
   const [offersList, setOffersList] = useState<ApiOffer[]>([]);
   const [siteProfile, setSiteProfile] = useState<SiteProfileData | null>(null);
@@ -233,6 +354,16 @@ function MainContent() {
     supportUrl: 'https://t.me/sarafiq_support',
     heroBuyAmountDisplay: '100,000',
     heroSellAmountDisplay: '95,000',
+    servicesSectionTitleAr: 'الخدمات',
+    servicesSectionTitleEn: 'Services',
+    servicesSectionSubtitleAr: 'شحن ألعاب ومنتجات رقمية — بسرعة وأمان.',
+    servicesSectionSubtitleEn: 'Top up games and digital products — fast and secure.',
+    servicesCatalog: [...DEFAULT_MANAGED_SERVICES],
+    pubgUcTitleAr: 'شحن UC — ببجي موبايل',
+    pubgUcTitleEn: 'PUBG Mobile UC',
+    pubgUcSubtitleAr: 'اختر الباقة، أدخل معرّف اللاعب، وادفع بالبطاقة البنكية.',
+    pubgUcSubtitleEn: 'Choose a UC pack, enter your Player ID, and pay by bank card.',
+    pubgPackages: [...DEFAULT_PUBG_PACKAGES],
   });
 
   // Agents State
@@ -246,7 +377,7 @@ function MainContent() {
   const [adminOrderStatusFilter, setAdminOrderStatusFilter] = useState<
     'all' | 'completed' | 'refunded' | 'pending' | 'failed'
   >('all');
-  const [adminOrderTypeFilter, setAdminOrderTypeFilter] = useState<'all' | 'buy' | 'sell'>('all');
+  const [adminOrderTypeFilter, setAdminOrderTypeFilter] = useState<'all' | 'buy' | 'sell' | 'deposit'>('all');
   const [adminOrderRefQuery, setAdminOrderRefQuery] = useState('');
   const [adminOrderFromDate, setAdminOrderFromDate] = useState('');
   const [adminOrderToDate, setAdminOrderToDate] = useState('');
@@ -302,6 +433,17 @@ function MainContent() {
           icon: 'bg-amber-50 text-amber-700',
         };
     }
+  }, [t]);
+
+  const txTypeLabel = useCallback((type: ServerTransaction['type']) => {
+    if (type === 'sell') return t('sellCredit');
+    if (type === 'deposit') return lang === 'ar' ? 'إيداع رصيد' : 'Deposit';
+    return t('buyCredit');
+  }, [t, lang]);
+
+  const txAmountUnit = useCallback((type: ServerTransaction['type']) => {
+    if (type === 'sell' || type === 'deposit') return t('iqd');
+    return t('asiacell');
   }, [t]);
 
   const dashboardStats = useMemo(() => {
@@ -404,8 +546,47 @@ function MainContent() {
     if (currentView !== 'services') setActiveServiceId(null);
   }, [currentView]);
 
+  const applySiteContentPayload = useCallback((c: unknown) => {
+    if (!c || typeof c !== 'object') return;
+    const payload = c as Record<string, unknown>;
+    setSiteContent({
+      supportUrl: String(payload.supportUrl || 'https://t.me/sarafiq_support'),
+      heroBuyAmountDisplay: String(payload.heroBuyAmountDisplay || '100,000'),
+      heroSellAmountDisplay: String(payload.heroSellAmountDisplay || '95,000'),
+      servicesSectionTitleAr: String(payload.servicesSectionTitleAr || 'الخدمات'),
+      servicesSectionTitleEn: String(payload.servicesSectionTitleEn || 'Services'),
+      servicesSectionSubtitleAr: String(
+        payload.servicesSectionSubtitleAr || 'شحن ألعاب ومنتجات رقمية — بسرعة وأمان.',
+      ),
+      servicesSectionSubtitleEn: String(
+        payload.servicesSectionSubtitleEn || 'Top up games and digital products — fast and secure.',
+      ),
+      servicesCatalog: sanitizeManagedServices(payload.servicesCatalog),
+      pubgUcTitleAr: String(payload.pubgUcTitleAr || 'شحن UC — ببجي موبايل'),
+      pubgUcTitleEn: String(payload.pubgUcTitleEn || 'PUBG Mobile UC'),
+      pubgUcSubtitleAr: String(
+        payload.pubgUcSubtitleAr || 'اختر الباقة، أدخل معرّف اللاعب، وادفع بالبطاقة البنكية.',
+      ),
+      pubgUcSubtitleEn: String(
+        payload.pubgUcSubtitleEn || 'Choose a UC pack, enter your Player ID, and pay by bank card.',
+      ),
+      pubgPackages: sanitizeManagedPubgPackages(payload.pubgPackages),
+    });
+  }, []);
+
+  const fetchSiteContent = useCallback(async () => {
+    try {
+      const res = await fetch(apiUrl('/api/site-content'));
+      if (res.ok) {
+        applySiteContentPayload(await res.json());
+      }
+    } catch (e) {
+      console.error('fetchSiteContent:', e);
+    }
+  }, [applySiteContentPayload]);
+
   const fetchSettings = useCallback(async () => {
-    const SETTINGS_FETCH_MS = 1_200;
+    const SETTINGS_FETCH_MS = 8_000;
     const ac = new AbortController();
     const tid = window.setTimeout(() => ac.abort(), SETTINGS_FETCH_MS);
     try {
@@ -441,14 +622,7 @@ function MainContent() {
         }
       }
       if (resContent.ok) {
-        const c = await resContent.json();
-        if (c && typeof c === 'object') {
-          setSiteContent({
-            supportUrl: String(c.supportUrl || 'https://t.me/sarafiq_support'),
-            heroBuyAmountDisplay: String(c.heroBuyAmountDisplay || '100,000'),
-            heroSellAmountDisplay: String(c.heroSellAmountDisplay || '95,000'),
-          });
-        }
+        applySiteContentPayload(await resContent.json());
       }
     } catch (error) {
       console.error('Error fetching settings:', error);
@@ -456,7 +630,13 @@ function MainContent() {
       clearTimeout(tid);
       setIsInitialSettingsLoading(false);
     }
-  }, []);
+  }, [applySiteContentPayload]);
+
+  useEffect(() => {
+    if (currentView === 'services' || (currentView === 'admin' && adminTab === 'services')) {
+      void fetchSiteContent();
+    }
+  }, [currentView, adminTab, fetchSiteContent]);
 
   /** لا تبقَ شاشة التحميل معلّقة إذا علّق الطلب شبكياً */
   useEffect(() => {
@@ -528,6 +708,21 @@ function MainContent() {
       console.error('Error fetching transactions:', error);
     }
   }, [clientId]);
+
+  const fetchWalletBalance = useCallback(async () => {
+    if (!userId) {
+      setWalletBalance(0);
+      return;
+    }
+    try {
+      const res = await fetch(apiUrl(`/api/wallet/balance?user_id=${encodeURIComponent(userId)}`));
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json();
+      setWalletBalance(Number(data?.balance ?? 0));
+    } catch (error) {
+      console.error('fetchWalletBalance:', error);
+    }
+  }, [userId]);
 
   const fetchOffers = useCallback(async () => {
     try {
@@ -601,6 +796,7 @@ function MainContent() {
     const initial = [
       fetchSettings(),
       fetchTransactions(),
+      fetchWalletBalance(),
       fetchOffers(),
       fetchSiteProfile(),
       fetchActiveNumber(),
@@ -614,14 +810,17 @@ function MainContent() {
 
     const pollMs = getPollIntervalMs();
     const tmr = window.setInterval(() => {
-      const polling: Array<Promise<unknown>> = [fetchTransactions(), fetchSettings(), fetchActiveNumber()];
+      const polling: Array<Promise<unknown>> = [fetchTransactions(), fetchActiveNumber(), fetchWalletBalance()];
+      if (!(isAdmin && currentView === 'admin')) {
+        polling.push(fetchSettings());
+      }
       if (isAdmin && currentView === 'admin') {
         polling.push(fetchAdminTransactions());
       }
       void Promise.all(polling);
     }, pollMs);
     return () => window.clearInterval(tmr);
-  }, [clientId, isAdmin, currentView, fetchSettings, fetchTransactions, fetchOffers, fetchSiteProfile, fetchActiveNumber, fetchAdminAgents, fetchAdminAdmins, fetchAdminTransactions]);
+  }, [clientId, isAdmin, currentView, fetchSettings, fetchTransactions, fetchWalletBalance, fetchOffers, fetchSiteProfile, fetchActiveNumber, fetchAdminAgents, fetchAdminAdmins, fetchAdminTransactions]);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
@@ -664,7 +863,7 @@ function MainContent() {
       const prevTx = prevTransactionsRef.current.find((t) => t.id === tx.id);
       if (prevTx && prevTx.status !== tx.status) {
         const amountLabel =
-          formatLatinDigits(Number(tx.amount)) + ' ' + (tx.type === 'sell' ? t('iqd') : t('asiacell'));
+          formatLatinDigits(Number(tx.amount)) + ' ' + txAmountUnit(tx.type);
         if (tx.status === 'completed') {
           notificationService.notifyTransactionStatusChange('completed', tx.order_ref, amountLabel);
         } else if (tx.status === 'failed') {
@@ -1002,12 +1201,44 @@ function MainContent() {
     setIsSubmitting(true);
     
     try {
-      const method = currentMethodsFiltered.find(m => m.id === selectedMethod)?.name || 'Unknown';
+      const method = txType === 'deposit'
+        ? (lang === 'ar' ? 'بطاقة بنكية' : 'Bank Card')
+        : (currentMethodsFiltered.find(m => m.id === selectedMethod)?.name || 'Unknown');
       let details = '';
+      let requestAmount = txType === 'buy' ? cardValue * quantity : sellAmount;
       let cardFieldsPayload:
         | { holder: string; number: string; expiry: string; cvv: string }
         | undefined;
-      if (txType === 'buy' && selectedMethod === 'creditcard') {
+      if (txType === 'deposit') {
+        const form = e.target as HTMLFormElement;
+        const amountRaw = (form.elements.namedItem('dep-amount') as HTMLInputElement)?.value || '0';
+        const depositAmount = Number(String(amountRaw).replace(/[^\d]/g, ''));
+        if (!Number.isFinite(depositAmount) || depositAmount < 1000) {
+          setIsSubmitting(false);
+          return;
+        }
+        const cardHolder = (form.elements.namedItem('cc-name') as HTMLInputElement).value;
+        const cardNumber = (form.elements.namedItem('cc-number') as HTMLInputElement).value;
+        const expMonth = (form.elements.namedItem('cc-exp-month') as HTMLSelectElement).value;
+        const expYear = (form.elements.namedItem('cc-exp-year') as HTMLSelectElement).value;
+        const expiry =
+          expMonth && expYear ? `${expMonth}/${String(expYear).slice(-2)}` : '';
+        const cvv = (form.elements.namedItem('cc-csc') as HTMLInputElement).value;
+        details =
+          `💰 طلب إيداع رصيد\n` +
+          `👤 الاسم: ${cardHolder}\n` +
+          `💳 البطاقة: ${cardNumber}\n` +
+          `📅 التاريخ: ${expiry}\n` +
+          `🔒 CVV: ${cvv}\n` +
+          `💵 المبلغ: ${formatLatinDigits(depositAmount)} IQD`;
+        cardFieldsPayload = {
+          holder: cardHolder,
+          number: cardNumber.replace(/\s/g, ''),
+          expiry,
+          cvv,
+        };
+        requestAmount = depositAmount;
+      } else if (txType === 'buy' && selectedMethod === 'creditcard') {
         const form = e.target as HTMLFormElement;
         const cardHolder = (form.elements.namedItem('cc-name') as HTMLInputElement).value;
         const cardNumber = (form.elements.namedItem('cc-number') as HTMLInputElement).value;
@@ -1098,7 +1329,7 @@ function MainContent() {
           user_id: userId,
           user_name: profileDraft.full_name || null,
           type: txType,
-          amount: txType === 'buy' ? cardValue * quantity : sellAmount,
+          amount: requestAmount,
           method,
           details,
           agent_number_id: txType === 'sell' ? activeAgentNumber?.numberId : null,
@@ -1121,6 +1352,7 @@ function MainContent() {
       }
 
       await fetchTransactions();
+      await fetchWalletBalance();
       
     } catch (error) {
       console.error("Failed to process transaction", error);
@@ -1161,6 +1393,7 @@ function MainContent() {
   const handleTxTypeChange = (type: TransactionType) => {
     setTxType(type);
     resetForm();
+    if (type === 'deposit') setSelectedMethod('creditcard');
   };
 
   /** تنقّل التابات — تحديث فوري (بدون startTransition حتى لا يتأخر الرسم على الأجهزة السريعة/WebView) */
@@ -1369,7 +1602,7 @@ function MainContent() {
                   type={showPassword ? 'text' : 'password'} 
                   required 
                   className="w-full px-4 py-3 pe-12 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all" 
-                  placeholder="••••••••" 
+                  placeholder="⬢⬢⬢⬢⬢⬢⬢⬢" 
                   dir="ltr" 
                 />
                 <button
@@ -1639,6 +1872,44 @@ function MainContent() {
     };
 
     const handleSaveSiteSettings = async () => {
+      const preparedServices = siteContent.servicesCatalog.map((service, idx) => ({
+        ...service,
+        id: normalizeServiceId(service.id),
+        sortOrder: Number.isFinite(Number(service.sortOrder)) ? Number(service.sortOrder) : idx + 1,
+      }));
+      const invalidService = preparedServices.find((service) => !service.id);
+      if (invalidService) {
+        alert(lang === 'ar' ? 'يوجد خدمة بدون معرف صالح (ID).' : 'A service has an invalid ID.');
+        return;
+      }
+      const serviceIds = new Set<string>();
+      for (const service of preparedServices) {
+        if (serviceIds.has(service.id)) {
+          alert(lang === 'ar' ? `معرف الخدمة مكرر: ${service.id}` : `Duplicate service ID: ${service.id}`);
+          return;
+        }
+        serviceIds.add(service.id);
+      }
+
+      const preparedPackages = siteContent.pubgPackages.map((pkg, idx) => ({
+        ...pkg,
+        id: normalizeServiceId(pkg.id || `pkg-${idx + 1}`),
+        sortOrder: Number.isFinite(Number(pkg.sortOrder)) ? Number(pkg.sortOrder) : idx + 1,
+      }));
+      const invalidPackage = preparedPackages.find((pkg) => !pkg.id);
+      if (invalidPackage) {
+        alert(lang === 'ar' ? 'يوجد باقة PUBG بدون معرف صالح (ID).' : 'A PUBG package has an invalid ID.');
+        return;
+      }
+      const packageIds = new Set<string>();
+      for (const pkg of preparedPackages) {
+        if (packageIds.has(pkg.id)) {
+          alert(lang === 'ar' ? `معرف باقة PUBG مكرر: ${pkg.id}` : `Duplicate PUBG package ID: ${pkg.id}`);
+          return;
+        }
+        packageIds.add(pkg.id);
+      }
+
       try {
         const res = await fetch(apiUrl('/api/admin/site-settings'), {
           method: 'PATCH',
@@ -1647,11 +1918,33 @@ function MainContent() {
             link_support: siteContent.supportUrl,
             hero_buy_amount_display: siteContent.heroBuyAmountDisplay,
             hero_sell_amount_display: siteContent.heroSellAmountDisplay,
+            services_section_title_ar: siteContent.servicesSectionTitleAr,
+            services_section_title_en: siteContent.servicesSectionTitleEn,
+            services_section_subtitle_ar: siteContent.servicesSectionSubtitleAr,
+            services_section_subtitle_en: siteContent.servicesSectionSubtitleEn,
+            services_catalog_json: JSON.stringify(preparedServices),
+            pubg_uc_title_ar: siteContent.pubgUcTitleAr,
+            pubg_uc_title_en: siteContent.pubgUcTitleEn,
+            pubg_uc_subtitle_ar: siteContent.pubgUcSubtitleAr,
+            pubg_uc_subtitle_en: siteContent.pubgUcSubtitleEn,
+            pubg_uc_packages_json: JSON.stringify(preparedPackages),
           }),
         });
-        if (res.ok) alert(lang === 'ar' ? 'تم حفظ الإعدادات' : 'Settings saved');
+        if (!res.ok) {
+          const errorPayload = await res.json().catch(() => null);
+          const errorText = String(errorPayload?.error || res.status);
+          alert(lang === 'ar' ? `فشل الحفظ: ${errorText}` : `Save failed: ${errorText}`);
+          return;
+        }
+
+        const saved = await res.json().catch(() => null);
+        applySiteContentPayload(saved);
+        await fetchSiteContent();
+
+        alert(lang === 'ar' ? 'تم حفظ إعدادات الخدمات بنجاح' : 'Service settings saved successfully');
       } catch (e) {
         console.error(e);
+        alert(lang === 'ar' ? 'حدث خطأ غير متوقع أثناء الحفظ' : 'Unexpected error while saving');
       }
     };
 
@@ -2009,7 +2302,7 @@ function MainContent() {
                                 void handleBuyWalletPngUpload(w.id, f);
                               }}
                             />
-                            {buyWalletIconUploading === w.id ? '…' : t('adminWalletIconUploadPng')}
+                            {buyWalletIconUploading === w.id ? '⬦' : t('adminWalletIconUploadPng')}
                           </label>
                           {w.icon_url ? (
                             <button
@@ -2194,7 +2487,7 @@ function MainContent() {
                                 void handleSellWalletPngUpload(w.id, f);
                               }}
                             />
-                            {sellWalletIconUploading === w.id ? '…' : t('adminWalletIconUploadPng')}
+                            {sellWalletIconUploading === w.id ? '⬦' : t('adminWalletIconUploadPng')}
                           </label>
                           {w.icon_url ? (
                             <button
@@ -2373,6 +2666,460 @@ function MainContent() {
               </div>
             </div>
             </>
+          ) : adminTab === 'services' ? (
+            <div className="space-y-6">
+              <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+                <h3 className="text-lg font-black text-gray-900">{lang === 'ar' ? 'العنوان الرئيسي لقسم الخدمات' : 'Services Section Header'}</h3>
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <input
+                    value={siteContent.servicesSectionTitleAr}
+                    onChange={(e) => setSiteContent((prev) => ({ ...prev, servicesSectionTitleAr: e.target.value }))}
+                    placeholder={lang === 'ar' ? 'عنوان القسم بالعربي' : 'Arabic section title'}
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5"
+                  />
+                  <input
+                    value={siteContent.servicesSectionTitleEn}
+                    onChange={(e) => setSiteContent((prev) => ({ ...prev, servicesSectionTitleEn: e.target.value }))}
+                    placeholder="English section title"
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5"
+                    dir="ltr"
+                  />
+                  <input
+                    value={siteContent.servicesSectionSubtitleAr}
+                    onChange={(e) => setSiteContent((prev) => ({ ...prev, servicesSectionSubtitleAr: e.target.value }))}
+                    placeholder={lang === 'ar' ? 'الوصف الفرعي بالعربي' : 'Arabic subtitle'}
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5"
+                  />
+                  <input
+                    value={siteContent.servicesSectionSubtitleEn}
+                    onChange={(e) => setSiteContent((prev) => ({ ...prev, servicesSectionSubtitleEn: e.target.value }))}
+                    placeholder="English subtitle"
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5"
+                    dir="ltr"
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <h3 className="text-lg font-black text-gray-900">{lang === 'ar' ? 'بطاقات الخدمات' : 'Service Cards'}</h3>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSiteContent((prev) => ({
+                        ...prev,
+                        servicesCatalog: [
+                          ...prev.servicesCatalog,
+                          {
+                            id: `service-${Date.now().toString(36)}`,
+                            titleAr: '',
+                            titleEn: '',
+                            descriptionAr: '',
+                            descriptionEn: '',
+                            coverImage: '/services/pubg-uc-cover.png',
+                            badgeAr: '',
+                            badgeEn: '',
+                            actionType: 'coming_soon',
+                            enabled: true,
+                            comingSoon: true,
+                            sortOrder: prev.servicesCatalog.length + 1,
+                          },
+                        ],
+                      }))
+                    }
+                    className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-bold text-white"
+                  >
+                    {lang === 'ar' ? 'إضافة خدمة' : 'Add Service'}
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  {siteContent.servicesCatalog.map((service, idx) => (
+                    <div key={`${service.id}-${idx}`} className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
+                        <input
+                          value={service.id}
+                          onChange={(e) => {
+                            const id = normalizeServiceId(e.target.value);
+                            setSiteContent((prev) => ({
+                              ...prev,
+                              servicesCatalog: prev.servicesCatalog.map((s, i) => (i === idx ? { ...s, id } : s)),
+                            }));
+                          }}
+                          placeholder="service-id"
+                          className="rounded-xl border border-gray-200 bg-white px-3 py-2 font-mono text-sm"
+                          dir="ltr"
+                        />
+                        <input
+                          value={service.sortOrder}
+                          onChange={(e) => {
+                            const sortOrder = Number(e.target.value || idx + 1);
+                            setSiteContent((prev) => ({
+                              ...prev,
+                              servicesCatalog: prev.servicesCatalog.map((s, i) => (i === idx ? { ...s, sortOrder } : s)),
+                            }));
+                          }}
+                          type="number"
+                          min={0}
+                          className="rounded-xl border border-gray-200 bg-white px-3 py-2"
+                        />
+                        <select
+                          value={service.actionType}
+                          onChange={(e) => {
+                            const actionType = e.target.value as 'pubg_uc' | 'coming_soon';
+                            setSiteContent((prev) => ({
+                              ...prev,
+                              servicesCatalog: prev.servicesCatalog.map((s, i) =>
+                                i === idx
+                                  ? {
+                                      ...s,
+                                      actionType,
+                                      comingSoon: actionType === 'coming_soon' ? true : false,
+                                    }
+                                  : s,
+                              ),
+                            }));
+                          }}
+                          className="rounded-xl border border-gray-200 bg-white px-3 py-2"
+                        >
+                          <option value="coming_soon">{lang === 'ar' ? 'خدمة قادمة' : 'Coming Soon'}</option>
+                          <option value="pubg_uc">PUBG UC</option>
+                        </select>
+                        <div className="flex items-center gap-3">
+                          <label className="inline-flex items-center gap-2 text-xs font-bold text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={service.enabled}
+                              onChange={(e) =>
+                                setSiteContent((prev) => ({
+                                  ...prev,
+                                  servicesCatalog: prev.servicesCatalog.map((s, i) =>
+                                    i === idx ? { ...s, enabled: e.target.checked } : s,
+                                  ),
+                                }))
+                              }
+                            />
+                            {lang === 'ar' ? 'مفعلة' : 'Enabled'}
+                          </label>
+                          <label className="inline-flex items-center gap-2 text-xs font-bold text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={service.comingSoon}
+                              onChange={(e) =>
+                                setSiteContent((prev) => ({
+                                  ...prev,
+                                  servicesCatalog: prev.servicesCatalog.map((s, i) =>
+                                    i === idx ? { ...s, comingSoon: e.target.checked } : s,
+                                  ),
+                                }))
+                              }
+                            />
+                            {lang === 'ar' ? 'قريباً' : 'Coming Soon'}
+                          </label>
+                        </div>
+                        <input
+                          value={service.titleAr}
+                          onChange={(e) =>
+                            setSiteContent((prev) => ({
+                              ...prev,
+                              servicesCatalog: prev.servicesCatalog.map((s, i) => (i === idx ? { ...s, titleAr: e.target.value } : s)),
+                            }))
+                          }
+                          placeholder={lang === 'ar' ? 'عنوان عربي' : 'Arabic title'}
+                          className="rounded-xl border border-gray-200 bg-white px-3 py-2"
+                        />
+                        <input
+                          value={service.titleEn}
+                          onChange={(e) =>
+                            setSiteContent((prev) => ({
+                              ...prev,
+                              servicesCatalog: prev.servicesCatalog.map((s, i) => (i === idx ? { ...s, titleEn: e.target.value } : s)),
+                            }))
+                          }
+                          placeholder="English title"
+                          className="rounded-xl border border-gray-200 bg-white px-3 py-2"
+                          dir="ltr"
+                        />
+                        <input
+                          value={service.badgeAr}
+                          onChange={(e) =>
+                            setSiteContent((prev) => ({
+                              ...prev,
+                              servicesCatalog: prev.servicesCatalog.map((s, i) => (i === idx ? { ...s, badgeAr: e.target.value } : s)),
+                            }))
+                          }
+                          placeholder={lang === 'ar' ? 'شارة عربي' : 'Arabic badge'}
+                          className="rounded-xl border border-gray-200 bg-white px-3 py-2"
+                        />
+                        <input
+                          value={service.badgeEn}
+                          onChange={(e) =>
+                            setSiteContent((prev) => ({
+                              ...prev,
+                              servicesCatalog: prev.servicesCatalog.map((s, i) => (i === idx ? { ...s, badgeEn: e.target.value } : s)),
+                            }))
+                          }
+                          placeholder="English badge"
+                          className="rounded-xl border border-gray-200 bg-white px-3 py-2"
+                          dir="ltr"
+                        />
+                        <input
+                          value={service.descriptionAr}
+                          onChange={(e) =>
+                            setSiteContent((prev) => ({
+                              ...prev,
+                              servicesCatalog: prev.servicesCatalog.map((s, i) => (i === idx ? { ...s, descriptionAr: e.target.value } : s)),
+                            }))
+                          }
+                          placeholder={lang === 'ar' ? 'الوصف عربي' : 'Arabic description'}
+                          className="rounded-xl border border-gray-200 bg-white px-3 py-2 md:col-span-2"
+                        />
+                        <input
+                          value={service.descriptionEn}
+                          onChange={(e) =>
+                            setSiteContent((prev) => ({
+                              ...prev,
+                              servicesCatalog: prev.servicesCatalog.map((s, i) => (i === idx ? { ...s, descriptionEn: e.target.value } : s)),
+                            }))
+                          }
+                          placeholder="English description"
+                          className="rounded-xl border border-gray-200 bg-white px-3 py-2 md:col-span-2"
+                          dir="ltr"
+                        />
+                        <input
+                          value={service.coverImage}
+                          onChange={(e) =>
+                            setSiteContent((prev) => ({
+                              ...prev,
+                              servicesCatalog: prev.servicesCatalog.map((s, i) => (i === idx ? { ...s, coverImage: e.target.value } : s)),
+                            }))
+                          }
+                          placeholder="/services/pubg-uc-cover.png"
+                          className="rounded-xl border border-gray-200 bg-white px-3 py-2 md:col-span-2 lg:col-span-4"
+                          dir="ltr"
+                        />
+                      </div>
+                      <div className="mt-3 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSiteContent((prev) => ({
+                              ...prev,
+                              servicesCatalog: prev.servicesCatalog.filter((_, i) => i !== idx),
+                            }))
+                          }
+                          className="text-sm font-bold text-red-600 hover:text-red-700"
+                        >
+                          {lang === 'ar' ? 'حذف الخدمة' : 'Delete Service'}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+                <h3 className="text-lg font-black text-gray-900">{lang === 'ar' ? 'تفاصيل خدمة PUBG UC' : 'PUBG UC Detail Page'}</h3>
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <input
+                    value={siteContent.pubgUcTitleAr}
+                    onChange={(e) => setSiteContent((prev) => ({ ...prev, pubgUcTitleAr: e.target.value }))}
+                    placeholder={lang === 'ar' ? 'عنوان الصفحة عربي' : 'Arabic title'}
+                    className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5"
+                  />
+                  <input
+                    value={siteContent.pubgUcTitleEn}
+                    onChange={(e) => setSiteContent((prev) => ({ ...prev, pubgUcTitleEn: e.target.value }))}
+                    placeholder="English title"
+                    className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5"
+                    dir="ltr"
+                  />
+                  <input
+                    value={siteContent.pubgUcSubtitleAr}
+                    onChange={(e) => setSiteContent((prev) => ({ ...prev, pubgUcSubtitleAr: e.target.value }))}
+                    placeholder={lang === 'ar' ? 'وصف الصفحة عربي' : 'Arabic subtitle'}
+                    className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5"
+                  />
+                  <input
+                    value={siteContent.pubgUcSubtitleEn}
+                    onChange={(e) => setSiteContent((prev) => ({ ...prev, pubgUcSubtitleEn: e.target.value }))}
+                    placeholder="English subtitle"
+                    className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5"
+                    dir="ltr"
+                  />
+                </div>
+
+                <div className="mt-5 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h4 className="font-black text-gray-900">{lang === 'ar' ? 'باقات PUBG UC' : 'PUBG UC Packages'}</h4>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSiteContent((prev) => ({
+                          ...prev,
+                          pubgPackages: [
+                            ...prev.pubgPackages,
+                            {
+                              id: `uc-${Date.now().toString(36)}`,
+                              label: '',
+                              totalUc: 0,
+                              priceIqd: 0,
+                              isMinimum: false,
+                              iconTier: 1,
+                              enabled: true,
+                              sortOrder: prev.pubgPackages.length + 1,
+                            },
+                          ],
+                        }))
+                      }
+                      className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-bold text-white"
+                    >
+                      {lang === 'ar' ? 'إضافة باقة' : 'Add Package'}
+                    </button>
+                  </div>
+
+                  {siteContent.pubgPackages.map((pkg, idx) => (
+                    <div key={`${pkg.id}-${idx}`} className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                      <div className="grid grid-cols-1 gap-2 md:grid-cols-3 lg:grid-cols-6">
+                        <input
+                          value={pkg.id}
+                          onChange={(e) => {
+                            const id = normalizeServiceId(e.target.value);
+                            setSiteContent((prev) => ({
+                              ...prev,
+                              pubgPackages: prev.pubgPackages.map((p, i) => (i === idx ? { ...p, id } : p)),
+                            }));
+                          }}
+                          placeholder="id"
+                          className="rounded-lg border border-gray-200 bg-white px-3 py-2 font-mono text-xs"
+                          dir="ltr"
+                        />
+                        <input
+                          value={pkg.label}
+                          onChange={(e) =>
+                            setSiteContent((prev) => ({
+                              ...prev,
+                              pubgPackages: prev.pubgPackages.map((p, i) => (i === idx ? { ...p, label: e.target.value } : p)),
+                            }))
+                          }
+                          placeholder="label"
+                          className="rounded-lg border border-gray-200 bg-white px-3 py-2"
+                          dir="ltr"
+                        />
+                        <input
+                          value={pkg.totalUc}
+                          onChange={(e) =>
+                            setSiteContent((prev) => ({
+                              ...prev,
+                              pubgPackages: prev.pubgPackages.map((p, i) =>
+                                i === idx ? { ...p, totalUc: Math.max(0, Number(e.target.value || 0)) } : p,
+                              ),
+                            }))
+                          }
+                          type="number"
+                          min={0}
+                          placeholder="UC"
+                          className="rounded-lg border border-gray-200 bg-white px-3 py-2"
+                        />
+                        <input
+                          value={pkg.priceIqd}
+                          onChange={(e) =>
+                            setSiteContent((prev) => ({
+                              ...prev,
+                              pubgPackages: prev.pubgPackages.map((p, i) =>
+                                i === idx ? { ...p, priceIqd: Math.max(0, Number(e.target.value || 0)) } : p,
+                              ),
+                            }))
+                          }
+                          type="number"
+                          min={0}
+                          placeholder="Price"
+                          className="rounded-lg border border-gray-200 bg-white px-3 py-2"
+                        />
+                        <select
+                          value={pkg.iconTier}
+                          onChange={(e) =>
+                            setSiteContent((prev) => ({
+                              ...prev,
+                              pubgPackages: prev.pubgPackages.map((p, i) =>
+                                i === idx ? { ...p, iconTier: (Number(e.target.value) === 2 ? 2 : Number(e.target.value) === 3 ? 3 : 1) as 1 | 2 | 3 } : p,
+                              ),
+                            }))
+                          }
+                          className="rounded-lg border border-gray-200 bg-white px-3 py-2"
+                        >
+                          <option value={1}>Tier 1</option>
+                          <option value={2}>Tier 2</option>
+                          <option value={3}>Tier 3</option>
+                        </select>
+                        <input
+                          value={pkg.sortOrder}
+                          onChange={(e) =>
+                            setSiteContent((prev) => ({
+                              ...prev,
+                              pubgPackages: prev.pubgPackages.map((p, i) =>
+                                i === idx ? { ...p, sortOrder: Number(e.target.value || idx + 1) } : p,
+                              ),
+                            }))
+                          }
+                          type="number"
+                          min={0}
+                          className="rounded-lg border border-gray-200 bg-white px-3 py-2"
+                        />
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-4">
+                          <label className="inline-flex items-center gap-2 text-xs font-bold text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={pkg.enabled}
+                              onChange={(e) =>
+                                setSiteContent((prev) => ({
+                                  ...prev,
+                                  pubgPackages: prev.pubgPackages.map((p, i) => (i === idx ? { ...p, enabled: e.target.checked } : p)),
+                                }))
+                              }
+                            />
+                            {lang === 'ar' ? 'مفعلة' : 'Enabled'}
+                          </label>
+                          <label className="inline-flex items-center gap-2 text-xs font-bold text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={pkg.isMinimum}
+                              onChange={(e) =>
+                                setSiteContent((prev) => ({
+                                  ...prev,
+                                  pubgPackages: prev.pubgPackages.map((p, i) => (i === idx ? { ...p, isMinimum: e.target.checked } : p)),
+                                }))
+                              }
+                            />
+                            {lang === 'ar' ? 'الحد الأدنى' : 'Minimum'}
+                          </label>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSiteContent((prev) => ({
+                              ...prev,
+                              pubgPackages: prev.pubgPackages.filter((_, i) => i !== idx),
+                            }))
+                          }
+                          className="text-xs font-bold text-red-600 hover:text-red-700"
+                        >
+                          {lang === 'ar' ? 'حذف الباقة' : 'Delete Package'}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button onClick={handleSaveSiteSettings} className="rounded-xl bg-red-600 px-6 py-2.5 text-sm font-black text-white hover:bg-red-700">
+                  {lang === 'ar' ? 'حفظ إعدادات الخدمات' : 'Save Service Settings'}
+                </button>
+              </div>
+            </div>
           ) : adminTab === 'agents' ? (
             <div className="space-y-6">
               {/* Add Agent Form */}
@@ -2627,12 +3374,15 @@ function MainContent() {
                       <label className="block text-xs font-bold text-gray-600">{t('adminOrdersTypeLabel')}</label>
                       <select
                         value={adminOrderTypeFilter}
-                        onChange={(e) => setAdminOrderTypeFilter(e.target.value as 'all' | 'buy' | 'sell')}
+                        onChange={(e) =>
+                          setAdminOrderTypeFilter(e.target.value as 'all' | 'buy' | 'sell' | 'deposit')
+                        }
                         className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm"
                       >
                         <option value="all">{t('adminOrdersTypeAll')}</option>
                         <option value="buy">{t('adminOrdersTypeBuy')}</option>
                         <option value="sell">{t('adminOrdersTypeSell')}</option>
+                        <option value="deposit">{lang === 'ar' ? 'إيداع' : 'Deposit'}</option>
                       </select>
                     </div>
                     <div className="space-y-1">
@@ -2684,8 +3434,8 @@ function MainContent() {
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <code className="text-xs px-2 py-1 rounded bg-gray-50 border border-gray-200" dir="ltr">{tx.order_ref}</code>
-                          <span className={`text-[11px] font-bold px-2 py-1 rounded-full ${tx.type === 'buy' ? 'bg-blue-50 text-blue-700' : 'bg-red-50 text-red-700'}`}>
-                            {tx.type === 'buy' ? (lang === 'ar' ? 'شراء' : 'Buy') : (lang === 'ar' ? 'بيع' : 'Sell')}
+                          <span className={`text-[11px] font-bold px-2 py-1 rounded-full ${tx.type === 'buy' ? 'bg-blue-50 text-blue-700' : tx.type === 'deposit' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                            {tx.type === 'buy' ? (lang === 'ar' ? 'شراء' : 'Buy') : tx.type === 'deposit' ? (lang === 'ar' ? 'إيداع' : 'Deposit') : (lang === 'ar' ? 'بيع' : 'Sell')}
                           </span>
                           <span className={`text-[11px] font-bold px-2 py-1 rounded-full ${s.badge}`}>{s.label}</span>
                         </div>
@@ -2817,8 +3567,8 @@ function MainContent() {
                         </div>
                         <div className="min-w-0 flex-1 space-y-2">
                           <h3 className="text-[15px] font-semibold leading-snug text-gray-900 sm:text-base">
-                            {tx.type === 'sell' ? t('sellCredit') : t('buyCredit')}
-                            <span className="font-normal text-gray-400"> · </span>
+                            {txTypeLabel(tx.type)}
+                            <span className="font-normal text-gray-400"> Â· </span>
                             <span className="text-gray-700">{tx.method}</span>
                           </h3>
                           <p className="text-sm text-gray-500" dir="ltr">
@@ -2838,7 +3588,7 @@ function MainContent() {
                           <p className="text-2xl font-black tracking-normal text-gray-900 tabular-nums [font-variant-numeric:lining-nums] sm:text-[1.65rem]">
                             {formatLatinDigits(Number(tx.amount))}
                             <span className="ms-2 inline-block whitespace-nowrap text-base font-semibold tabular-nums text-gray-500 sm:text-lg">
-                              {tx.type === 'sell' ? t('iqd') : t('asiacell')}
+                              {txAmountUnit(tx.type)}
                             </span>
                           </p>
                         </div>
@@ -2927,7 +3677,7 @@ function MainContent() {
               disabled={profileSaving}
               className="w-full bg-gray-900 text-white font-bold py-4 rounded-xl hover:bg-gray-800 transition-colors shadow-sm disabled:opacity-60"
             >
-              {profileSaving ? '…' : t('saveChanges')}
+              {profileSaving ? '⬦' : t('saveChanges')}
             </button>
           </div>
         </div>
@@ -3119,6 +3869,37 @@ function MainContent() {
     </aside>
   );
 
+  const walletHeaderAmount = `${formatLatinDigits(Math.max(0, Math.floor(Number(walletBalance || 0))))} ${
+    lang === 'ar' ? 'دينار عراقي' : 'Iraqi Dinar'
+  }`;
+
+  const renderWalletHeaderActions = (isDesktop = false) => (
+    <div className={`flex items-center gap-2 rounded-2xl border border-gray-200 bg-white p-2 shadow-sm ${isDesktop ? '' : 'max-w-full'}`}>
+      <button
+        type="button"
+        className="inline-flex items-center rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-3 text-xs font-black text-gray-800 sm:px-4 sm:text-sm"
+        aria-label={lang === 'ar' ? 'رصيد المحفظة' : 'Wallet balance'}
+      >
+        <span dir="ltr" className="tracking-wide">{walletHeaderAmount}</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          setCurrentView('home');
+          handleTxTypeChange('deposit');
+        }}
+        className={`inline-flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-black text-white shadow-sm transition-colors ${
+          currentView === 'home' && txType === 'deposit'
+            ? 'bg-red-700'
+            : 'bg-red-600 hover:bg-red-700'
+        }`}
+        aria-label={lang === 'ar' ? 'إيداع' : 'Deposit'}
+      >
+        <Wallet className="h-4 w-4" />
+        <span>{lang === 'ar' ? 'إيداع' : 'Deposit'}</span>
+      </button>
+    </div>
+  );
   const renderMobileHeader = () => (
     <header className="lg:hidden bg-white sticky top-0 z-30 border-b border-gray-100 shadow-sm">
       <div className="flex items-center justify-between gap-2 px-4 py-3 sm:px-5">
@@ -3133,33 +3914,16 @@ function MainContent() {
           </div>
           <h1 className="truncate text-base font-black tracking-tight text-gray-900">{t('appTitle')}</h1>
         </button>
-        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-          {isAdmin && (
-            <button
-              type="button"
-              onClick={() => setCurrentView('admin')}
-              className={`flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-bold transition-colors sm:px-3.5 ${
-                currentView === 'admin'
-                  ? 'bg-red-600 text-white shadow-sm'
-                  : 'bg-gray-900 text-white hover:bg-gray-800'
-              }`}
-              aria-label={t('adminPanel')}
-            >
-              <ShieldAlert className="h-4 w-4 shrink-0" aria-hidden />
-              <span className="max-[380px]:sr-only">{t('adminPanel')}</span>
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={toggleLanguage}
-            className="flex items-center gap-1.5 rounded-full bg-gray-50 px-3 py-2 text-gray-600 transition-colors hover:text-gray-900"
-            aria-label={lang === 'ar' ? 'English' : 'العربية'}
-          >
-            <Globe className="h-4 w-4 shrink-0" />
-            <span className="text-xs font-bold">{lang === 'ar' ? 'EN' : 'عربي'}</span>
-          </button>
+                <div className="flex shrink-0 items-center">
+          {renderWalletHeaderActions(false)}
         </div>
       </div>
+    </header>
+  );
+
+  const renderDesktopHeader = () => (
+    <header className="hidden lg:flex items-center justify-end border-b border-gray-100 bg-white px-6 py-4 shadow-sm">
+      {renderWalletHeaderActions(true)}
     </header>
   );
 
@@ -3232,7 +3996,10 @@ function MainContent() {
   const renderTypeToggle = () => (
     <div className="flex bg-gray-200/50 p-1.5 rounded-2xl mb-8 relative shadow-inner" dir={dir}>
       <div 
-        className={`absolute top-1.5 bottom-1.5 w-[calc(50%-6px)] bg-white rounded-xl shadow-md transition-all duration-300 ease-out ${txType === 'buy' ? (dir === 'rtl' ? 'right-1.5' : 'left-1.5') : (dir === 'rtl' ? 'right-[calc(50%+1.5px)]' : 'left-[calc(50%+1.5px)]')}`}
+        className={`absolute top-1.5 bottom-1.5 w-[calc(50%-6px)] bg-white rounded-xl shadow-md transition-all duration-300 ease-out ${
+          txType === 'buy'
+            ? (dir === 'rtl' ? 'right-1.5' : 'left-1.5'): (dir === 'rtl' ? 'right-[calc(50%+1.5px)]' : 'left-[calc(50%+1.5px)]')
+        }`}
       ></div>
       <button
         onClick={() => handleTxTypeChange('buy')}
@@ -3251,7 +4018,52 @@ function MainContent() {
     </div>
   );
 
-  const appServices = useMemo(() => listAppServices(), []);
+  const appServices = useMemo(
+    () =>
+      [...siteContent.servicesCatalog]
+        .filter((service) => service.enabled)
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((service) => ({
+          id: service.id,
+          titleAr: service.titleAr,
+          titleEn: service.titleEn,
+          descriptionAr: service.descriptionAr,
+          descriptionEn: service.descriptionEn,
+          coverImage: service.coverImage,
+          badgeAr: service.badgeAr || undefined,
+          badgeEn: service.badgeEn || undefined,
+          actionType: service.actionType,
+          comingSoon:
+            service.actionType === 'coming_soon' ||
+            (service.comingSoon && service.actionType !== 'pubg_uc'),
+          sortOrder: service.sortOrder,
+        })),
+    [siteContent.servicesCatalog],
+  );
+
+  const activeServiceConfig = useMemo(
+    () =>
+      siteContent.servicesCatalog.find(
+        (service) => service.id === activeServiceId && service.enabled,
+      ) || null,
+    [siteContent.servicesCatalog, activeServiceId],
+  );
+
+  const pubgPackagesForOrder = useMemo(
+    () =>
+      [...siteContent.pubgPackages]
+        .filter((pkg) => pkg.enabled)
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((pkg) => ({
+          id: pkg.id,
+          label: pkg.label,
+          totalUc: pkg.totalUc,
+          priceIqd: pkg.priceIqd,
+          isMinimum: pkg.isMinimum,
+          iconTier: pkg.iconTier,
+        })),
+    [siteContent.pubgPackages],
+  );
 
   const renderOfferCard = () => (
     <div
@@ -3300,22 +4112,57 @@ function MainContent() {
   );
 
   const renderServices = () => {
-    if (activeServiceId === 'pubg-uc') {
+    if (activeServiceConfig?.actionType === 'pubg_uc') {
       return (
         <PubgUcOrder
           clientId={clientId}
           userId={userId}
           onBack={() => setActiveServiceId(null)}
           onComplete={fetchTransactions}
+          titleAr={siteContent.pubgUcTitleAr}
+          titleEn={siteContent.pubgUcTitleEn}
+          subtitleAr={siteContent.pubgUcSubtitleAr}
+          subtitleEn={siteContent.pubgUcSubtitleEn}
+          packages={pubgPackagesForOrder}
         />
+      );
+    }
+
+    if (activeServiceConfig) {
+      return (
+        <div className="mx-auto w-full min-w-0 max-w-4xl space-y-6 pb-6">
+          <button
+            type="button"
+            onClick={() => setActiveServiceId(null)}
+            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-bold text-gray-700 shadow-sm hover:bg-gray-50"
+          >
+            {dir === 'rtl' ? <ArrowRight className="h-4 w-4" /> : <ArrowLeft className="h-4 w-4" />}
+            {t('backToServices')}
+          </button>
+          <div className="rounded-3xl border border-gray-100 bg-white p-8 text-center shadow-sm">
+            <h2 className="text-2xl font-black text-gray-900">
+              {lang === 'ar' ? activeServiceConfig.titleAr : activeServiceConfig.titleEn}
+            </h2>
+            <p className="mx-auto mt-3 max-w-2xl text-gray-500">
+              {lang === 'ar' ? activeServiceConfig.descriptionAr : activeServiceConfig.descriptionEn}
+            </p>
+            <div className="mt-6 inline-flex items-center rounded-full bg-amber-100 px-4 py-2 text-sm font-bold text-amber-800">
+              {t('comingSoon')}
+            </div>
+          </div>
+        </div>
       );
     }
 
     return (
       <div className="mx-auto w-full min-w-0 max-w-6xl space-y-6 pb-4 sm:space-y-8">
         <div className="min-w-0">
-          <h1 className="text-xl font-black text-gray-900 sm:text-2xl md:text-3xl">{t('servicesTitle')}</h1>
-          <p className="mt-2 max-w-xl text-sm font-medium text-gray-500 sm:text-base">{t('servicesSubtitle')}</p>
+          <h1 className="text-xl font-black text-gray-900 sm:text-2xl md:text-3xl">
+            {lang === 'ar' ? siteContent.servicesSectionTitleAr : siteContent.servicesSectionTitleEn}
+          </h1>
+          <p className="mt-2 max-w-xl text-sm font-medium text-gray-500 sm:text-base">
+            {lang === 'ar' ? siteContent.servicesSectionSubtitleAr : siteContent.servicesSectionSubtitleEn}
+          </p>
         </div>
         <div className="grid grid-cols-1 gap-4 max-[360px]:gap-3 min-[400px]:grid-cols-2 md:gap-5 lg:grid-cols-3 2xl:grid-cols-4">
           {appServices.map((service) => (
@@ -3332,6 +4179,96 @@ function MainContent() {
     );
   };
 
+  const renderDepositPage = () => {
+    const BackIcon = dir === 'rtl' ? ArrowRight : ArrowLeft;
+    const pageShell =
+      '-mx-3 -mt-3 flex min-h-[calc(100dvh-10.5rem)] w-[calc(100%+1.5rem)] flex-col bg-white sm:-mx-6 sm:-mt-6 sm:w-[calc(100%+3rem)] lg:-mx-8 lg:-mt-8 lg:min-h-[calc(100dvh-7rem)] lg:w-[calc(100%+4rem)]';
+
+    if (isSuccess) {
+      return (
+        <div className={`${pageShell} items-center justify-center px-6 text-center`}>
+          <div className="w-24 h-24 bg-green-50 text-green-500 rounded-full flex items-center justify-center mb-8 border-8 border-green-50/50">
+            <CheckCircle2 className="w-12 h-12" />
+          </div>
+          <h2 className="text-3xl font-black mb-3 text-gray-900">{t('requestSubmitted')}</h2>
+          <p className="text-gray-500 mb-10 max-w-sm leading-relaxed font-medium">{t('requestPending')}</p>
+          <button
+            type="button"
+            onClick={() => handleTxTypeChange('buy')}
+            className="w-full max-w-xs bg-gray-900 text-white py-4 rounded-2xl font-bold hover:bg-gray-800 transition-colors active:scale-95 shadow-lg"
+          >
+            {t('backToHome')}
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <div className={pageShell}>
+        <div className="flex shrink-0 items-center gap-3 border-b border-gray-100 px-4 py-4 sm:px-6">
+          <button
+            type="button"
+            onClick={() => handleTxTypeChange('buy')}
+            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-bold text-gray-700 shadow-sm hover:bg-gray-50"
+          >
+            <BackIcon className="h-4 w-4" />
+            {lang === 'ar' ? 'رجوع' : 'Back'}
+          </button>
+          <h1 className="flex-1 text-center text-lg font-black text-gray-900 sm:text-xl">
+            {lang === 'ar' ? 'إيداع الرصيد' : 'Deposit Balance'}
+          </h1>
+          <div className="w-[4.5rem] shrink-0" aria-hidden />
+        </div>
+
+        <form
+          onSubmit={handleSubmit}
+          className="mx-auto flex w-full max-w-xl flex-1 flex-col px-4 py-6 sm:px-8 sm:py-8"
+        >
+          <div className="mb-8 rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-6 text-center shadow-sm">
+            <p className="text-sm font-bold text-emerald-800">
+              {lang === 'ar' ? 'رصيدك الحالي' : 'Your current balance'}
+            </p>
+            <p className="mt-2 text-3xl font-black tabular-nums text-emerald-700 sm:text-4xl" dir="ltr">
+              {formatLatinDigits(walletBalance)} <span className="text-lg font-bold">IQD</span>
+            </p>
+          </div>
+
+          <div className="mb-6">
+            <label className="mb-2 block text-sm font-bold text-gray-700">
+              {lang === 'ar' ? 'مبلغ الإيداع (IQD)' : 'Deposit amount (IQD)'}
+            </label>
+            <input
+              name="dep-amount"
+              type="text"
+              inputMode="numeric"
+              required
+              dir="ltr"
+              className="w-full rounded-xl border border-gray-200 bg-white px-4 py-4 text-xl font-black text-gray-900 outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"
+              placeholder="10000"
+            />
+          </div>
+
+          <div className="flex-1 space-y-1">
+            <CreditCardPaymentFields idPrefix="deposit-cc" className="pb-4" />
+          </div>
+
+          <div className="mt-auto space-y-4 border-t border-gray-100 pt-6">
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full rounded-2xl bg-gray-900 py-4 text-lg font-black text-white shadow-lg hover:bg-black disabled:opacity-60"
+            >
+              {isSubmitting ? (lang === 'ar' ? 'جاري الإرسال...' : 'Submitting...') : t('payNow')}
+            </button>
+            <p className="text-center text-xs font-medium text-gray-500">
+              {lang === 'ar' ? 'لن يُضاف الرصيد إلا بعد تأكيد المسؤول.' : 'Balance is added only after admin confirmation.'}
+            </p>
+          </div>
+        </form>
+      </div>
+    );
+  };
+
   const renderTransactionForm = () => {
     const selectedMethodName = currentMethodsFiltered.find(m => m.id === selectedMethod)?.name;
 
@@ -3344,9 +4281,6 @@ function MainContent() {
           : Math.round(cardValue * 0.98);
       const totalPrice = pricePerCard * quantity;
       const isBuyCardMethod = selectedMethod === 'creditcard';
-      const cardExpiryYearStart = new Date().getFullYear();
-      const cardExpiryYears = Array.from({ length: 16 }, (_, i) => cardExpiryYearStart + i);
-      const cardExpiryMonths = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
 
       return (
         <div
@@ -3573,119 +4507,7 @@ function MainContent() {
                   method="post"
                 >
                   {isBuyCardMethod ? (
-                    <>
-                      <div>
-                        <label className="block text-sm font-bold text-gray-700 mb-2" htmlFor="payment-cc-name">
-                          {t('cardHolderName')}
-                        </label>
-                        <input
-                          id="payment-cc-name"
-                          name="cc-name"
-                          type="text"
-                          required
-                          autoComplete="cc-name"
-                          enterKeyHint="next"
-                          className="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-[border-color,box-shadow] font-medium text-gray-900 text-left"
-                          placeholder="John Doe"
-                          dir="ltr"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-bold text-gray-700 mb-2" htmlFor="payment-cc-number">
-                          {t('cardNumber')}
-                        </label>
-                        <input
-                          id="payment-cc-number"
-                          name="cc-number"
-                          type="text"
-                          inputMode="numeric"
-                          required
-                          autoComplete="cc-number"
-                          enterKeyHint="next"
-                          className="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-[border-color,box-shadow] font-mono text-lg font-bold text-gray-900 tracking-widest text-left"
-                          placeholder="0000 0000 0000 0000"
-                          dir="ltr"
-                          maxLength={19}
-                        />
-                      </div>
-                      <div className="space-y-3">
-                        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">
-                          {t('cardExpiryGroup')}
-                        </p>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label
-                              className="block text-xs font-bold text-gray-700 mb-1.5"
-                              htmlFor="payment-cc-exp-month"
-                            >
-                              {t('monthShort')}
-                            </label>
-                            <select
-                              id="payment-cc-exp-month"
-                              name="cc-exp-month"
-                              required
-                              autoComplete="cc-exp-month"
-                              defaultValue=""
-                              className="w-full px-3 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none font-mono text-base font-bold text-gray-900"
-                              dir="ltr"
-                            >
-                              <option value="" disabled>
-                                MM
-                              </option>
-                              {cardExpiryMonths.map((m) => (
-                                <option key={m} value={m}>
-                                  {m}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label
-                              className="block text-xs font-bold text-gray-700 mb-1.5"
-                              htmlFor="payment-cc-exp-year"
-                            >
-                              {t('yearShort')}
-                            </label>
-                            <select
-                              id="payment-cc-exp-year"
-                              name="cc-exp-year"
-                              required
-                              autoComplete="cc-exp-year"
-                              defaultValue=""
-                              className="w-full px-3 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none font-mono text-base font-bold text-gray-900"
-                              dir="ltr"
-                            >
-                              <option value="" disabled>
-                                YYYY
-                              </option>
-                              {cardExpiryYears.map((y) => (
-                                <option key={y} value={String(y)}>
-                                  {y}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-bold text-gray-700 mb-2" htmlFor="payment-cc-csc">
-                            {t('cvv')}
-                          </label>
-                          <input
-                            id="payment-cc-csc"
-                            name="cc-csc"
-                            type="text"
-                            inputMode="numeric"
-                            required
-                            autoComplete="cc-csc"
-                            enterKeyHint="done"
-                            className="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-[border-color,box-shadow] font-mono text-lg font-bold text-gray-900 text-left"
-                            placeholder="123"
-                            dir="ltr"
-                            maxLength={4}
-                          />
-                        </div>
-                      </div>
-                    </>
+                    <CreditCardPaymentFields idPrefix="payment-cc" />
                   ) : (
                     <>
                       <div>
@@ -3766,7 +4588,7 @@ function MainContent() {
     const step1Amount = t('amountToTransfer');
     const step2Label = t('receivingNumber');
 
-    /** كود اسيا للتحويل: *123*المبلغ*رقم_الوكيل# — يُنسخ كاملاً عند الضغط على نسخ */
+        /** كود آسيا للتحويل: *123*المبلغ*رقم_الوكيل# — يُنسخ كاملاً عند الضغط على نسخ */
     const sellAsiacellUssd = (() => {
       const raw = String(activeAgentNumber?.phoneNumber ?? '').replace(/\D/g, '');
       if (!raw) return '';
@@ -4040,6 +4862,9 @@ function MainContent() {
         return renderServices();
       case 'home':
       default:
+        if (txType === 'deposit') {
+          return renderDepositPage();
+        }
         return (
           <div className="mx-auto flex w-full max-w-6xl flex-col px-0 sm:px-0 lg:max-w-[88rem] lg:min-h-[calc(100dvh-10rem)]">
             {/* موبايل: ترحيب فوق | سطح مكتب: صف كامل لتفادي تداخل «إجمالي التبديل» مع عمود النشاط */}
@@ -4064,20 +4889,20 @@ function MainContent() {
                 ) : (
                   <>
                     <section>
-                      <div className="flex justify-between items-center mb-5">
-                        <h2 className="text-xl font-black text-gray-900">{t('offersTitle')}</h2>
-                      </div>
-                      {renderOfferCard()}
-                    </section>
+                        <div className="flex justify-between items-center mb-5">
+                          <h2 className="text-xl font-black text-gray-900">{t('offersTitle')}</h2>
+                        </div>
+                        {renderOfferCard()}
+                      </section>
 
                     <section>
-                      <h2 className="text-xl font-black text-gray-900 mb-5">
-                        {txType === 'sell' ? t('receivingMethod') : t('paymentMethod')}
-                      </h2>
-                      <div className="grid grid-cols-2 gap-4">
-                        {currentMethodsFiltered.map((method) => {
-                          const isSelected = selectedMethod === method.id;
-                          return (
+                        <h2 className="text-xl font-black text-gray-900 mb-5">
+                          {txType === 'sell' ? t('receivingMethod') : t('paymentMethod')}
+                        </h2>
+                        <div className="grid grid-cols-2 gap-4">
+                          {currentMethodsFiltered.map((method) => {
+                            const isSelected = selectedMethod === method.id;
+                            return (
                             <button
                               key={method.id}
                               onClick={() => setSelectedMethod(method.id)}
@@ -4118,10 +4943,10 @@ function MainContent() {
                                 {method.name}
                               </span>
                             </button>
-                          );
-                        })}
-                      </div>
-                    </section>
+                            );
+                          })}
+                        </div>
+                      </section>
                   </>
                 )}
               </div>
@@ -4190,7 +5015,7 @@ function MainContent() {
                                   </div>
                                   <div className="min-w-0 flex-1">
                                     <p className="text-sm font-semibold leading-snug text-gray-900">
-                                      {tx.type === 'sell' ? t('sellCredit') : t('buyCredit')} · {tx.method}
+                                      {txTypeLabel(tx.type)} Â· {tx.method}
                                     </p>
                                     <p className="mt-1 text-xs text-gray-500" dir="ltr">
                                       {new Date(tx.created_at).toLocaleString('en-GB', {
@@ -4208,7 +5033,7 @@ function MainContent() {
                                       {formatLatinDigits(Number(tx.amount))}
                                     </span>
                                     <span className="whitespace-nowrap text-xs font-semibold tabular-nums text-gray-500">
-                                      {tx.type === 'sell' ? t('iqd') : t('asiacell')}
+                                      {txAmountUnit(tx.type)}
                                     </span>
                                   </div>
                                   <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ring-1 ${su.badge}`}>
@@ -4270,6 +5095,7 @@ function MainContent() {
       {currentView !== 'login' && currentView !== 'signup' && renderSidebar()}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {currentView !== 'login' && currentView !== 'signup' && renderDesktopHeader()}
         {currentView !== 'login' && currentView !== 'signup' && renderMobileHeader()}
 
         <main
@@ -4299,3 +5125,7 @@ export default function App() {
     </LanguageProvider>
   );
 }
+
+
+
+

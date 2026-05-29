@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID REFERENCES auth.users(id) PRIMARY KEY,
   full_name TEXT,
   role TEXT DEFAULT 'user' CHECK (role IN ('user', 'admin')),
+  balance NUMERIC NOT NULL DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
@@ -27,7 +28,7 @@ ON CONFLICT (key) DO NOTHING;
 CREATE TABLE IF NOT EXISTS public.transactions (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID REFERENCES public.profiles(id),
-  type TEXT CHECK (type IN ('buy', 'sell')),
+  type TEXT CHECK (type IN ('buy', 'sell', 'deposit')),
   amount NUMERIC NOT NULL,
   method TEXT NOT NULL,
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed')),

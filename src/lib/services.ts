@@ -7,6 +7,7 @@ export type AppService = {
   coverImage: string;
   badgeAr?: string;
   badgeEn?: string;
+  actionType?: 'pubg_uc' | 'coming_soon';
   comingSoon?: boolean;
   sortOrder: number;
 };

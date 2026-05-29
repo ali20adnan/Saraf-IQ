@@ -3,9 +3,10 @@ export type ServerTransaction = {
   id: string;
   order_ref: string;
   client_id: string;
+  user_id?: string | null;
   user_name?: string | null;
   user_ip?: string | null;
-  type: "buy" | "sell";
+  type: "buy" | "sell" | "deposit";
   amount: number;
   method: string;
   status: string;
