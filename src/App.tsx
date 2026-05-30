@@ -4,6 +4,7 @@ import { LanguageProvider, useLanguage } from './context/LanguageContext';
 import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogIn, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Gamepad2, XCircle, Eye, EyeOff, Download, Search, Pencil } from 'lucide-react';
 import { ServiceCard } from './components/ServiceCard';
 import { PubgUcOrder } from './components/PubgUcOrder';
+import { CarouselImageCropper } from './components/CarouselImageCropper';
 import { CreditCardPaymentFields } from './components/CreditCardPaymentFields';
 import { listAppServices } from './lib/services';
 import Cookies from 'js-cookie';
@@ -166,6 +167,9 @@ type ManagedServiceRow = {
   sortOrder: number;
 };
 
+/** نسبة أبعاد صورة الكاروسيل (العرض/الارتفاع) — تطابق صندوق العرض على الجوال */
+const CAROUSEL_IMAGE_ASPECT = 2.2;
+
 type CarouselSlide = {
   id: string;
   title_ar: string;
@@ -176,6 +180,8 @@ type CarouselSlide = {
   badge_ar: string;
   badge_en: string;
   action?: 'buy' | 'sell' | 'services';
+  /** صورة الخلفية (data URL) — اختيارية */
+  image?: string;
 };
 
 const DEFAULT_CAROUSEL_SLIDES: CarouselSlide[] = [
@@ -228,6 +234,7 @@ function sanitizeCarouselSlides(raw: unknown): CarouselSlide[] {
       badge_ar: String(r.badge_ar || ''),
       badge_en: String(r.badge_en || ''),
       action: ['buy','sell','services'].includes(String(r.action)) ? r.action as CarouselSlide['action'] : undefined,
+      image: typeof r.image === 'string' ? r.image : '',
     };
   });
 }
@@ -361,6 +368,8 @@ function MainContent() {
   const [activeSlide, setActiveSlide] = useState(0);
   const [carouselDir, setCarouselDir] = useState<'next' | 'prev'>('next');
   const [carouselAnimating, setCarouselAnimating] = useState(false);
+  /** اقتصاص صورة شريحة الكاروسيل: فهرس الشريحة + الصورة الأصلية المختارة */
+  const [carouselCropper, setCarouselCropper] = useState<{ idx: number; src: string } | null>(null);
   const carouselTouchX = useRef(0);
   const carouselTouchY = useRef(0);
   const carouselRef = useRef<HTMLDivElement>(null);
@@ -2841,6 +2850,40 @@ function MainContent() {
                           <option value="services">{lang === 'ar' ? 'الخدمات' : 'Services'}</option>
                         </select>
                       </div>
+
+                      {/* صورة الشريحة: رفع + اقتصاص + معاينة */}
+                      <div className="space-y-2 pt-1">
+                        {slide.image ? (
+                          <div className="relative overflow-hidden rounded-xl border border-gray-200">
+                            <img src={slide.image} alt="" className="w-full object-cover" style={{ aspectRatio: String(CAROUSEL_IMAGE_ASPECT) }} />
+                            <button
+                              type="button"
+                              onClick={() => setSiteContent((prev) => ({ ...prev, carouselSlides: prev.carouselSlides.map((s, i) => i === idx ? { ...s, image: '' } : s) }))}
+                              className="absolute top-1.5 end-1.5 rounded-full bg-black/60 p-1 text-white hover:bg-black/80"
+                              aria-label={lang === 'ar' ? 'حذف الصورة' : 'Remove image'}
+                            >
+                              <XCircle className="h-4 w-4" />
+                            </button>
+                          </div>
+                        ) : null}
+                        <label className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-gray-300 bg-white px-3 py-2.5 text-sm font-bold text-gray-600 hover:border-red-400 hover:text-red-500">
+                          <UploadCloud className="h-4 w-4" />
+                          {slide.image ? (lang === 'ar' ? 'تغيير الصورة' : 'Change image') : (lang === 'ar' ? 'رفع صورة' : 'Upload image')}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              e.currentTarget.value = '';
+                              if (!file) return;
+                              const reader = new FileReader();
+                              reader.onload = () => setCarouselCropper({ idx, src: String(reader.result) });
+                              reader.readAsDataURL(file);
+                            }}
+                          />
+                        </label>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -2856,6 +2899,7 @@ function MainContent() {
                       gradient: 'from-red-600 to-red-800',
                       badge_ar: '',
                       badge_en: '',
+                      image: '',
                     }],
                   }))}
                   className="w-full border-2 border-dashed border-gray-200 rounded-2xl py-3 text-sm font-bold text-gray-500 hover:border-gray-300 hover:text-gray-700 transition-colors"
@@ -2866,6 +2910,23 @@ function MainContent() {
                   {lang === 'ar' ? 'حفظ الكاروسيل' : 'Save Carousel'}
                 </button>
               </div>
+
+              {/* نافذة اقتصاص صورة الكاروسيل */}
+              {carouselCropper && (
+                <CarouselImageCropper
+                  src={carouselCropper.src}
+                  aspect={CAROUSEL_IMAGE_ASPECT}
+                  lang={lang}
+                  onCancel={() => setCarouselCropper(null)}
+                  onCrop={(dataUrl) => {
+                    setSiteContent((prev) => ({
+                      ...prev,
+                      carouselSlides: prev.carouselSlides.map((s, i) => i === carouselCropper.idx ? { ...s, image: dataUrl } : s),
+                    }));
+                    setCarouselCropper(null);
+                  }}
+                />
+              )}
 
               <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-4">
                 <h3 className="font-bold text-gray-900">{lang === 'ar' ? 'الإشعارات والبث' : 'Notifications & Broadcast'}</h3>
@@ -4789,8 +4850,26 @@ function MainContent() {
                   className={`relative bg-gradient-to-br ${sl.gradient} p-6 flex flex-col justify-between`}
                   style={{ height: 180 }}
                 >
-                  <div className="pointer-events-none absolute -top-10 -end-10 h-36 w-36 rounded-full bg-white/8" />
-                  <div className="pointer-events-none absolute -bottom-8 -start-8 h-28 w-28 rounded-full bg-white/5" />
+                  {sl.image ? (
+                    <>
+                      <img
+                        src={sl.image}
+                        alt=""
+                        draggable={false}
+                        className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+                      />
+                      {(lang === 'ar'
+                        ? (sl.title_ar || sl.subtitle_ar || sl.badge_ar)
+                        : (sl.title_en || sl.subtitle_en || sl.badge_en)) ? (
+                        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/65 via-black/25 to-black/10" />
+                      ) : null}
+                    </>
+                  ) : (
+                    <>
+                      <div className="pointer-events-none absolute -top-10 -end-10 h-36 w-36 rounded-full bg-white/8" />
+                      <div className="pointer-events-none absolute -bottom-8 -start-8 h-28 w-28 rounded-full bg-white/5" />
+                    </>
+                  )}
 
                   <div className="relative z-10">
                     {sl.badge_ar ? (

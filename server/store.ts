@@ -440,6 +440,7 @@ export const SITE_STRING_SETTING_KEYS = [
   "pubg_uc_subtitle_ar",
   "pubg_uc_subtitle_en",
   "pubg_uc_packages_json",
+  "carousel_slides_json",
 ] as const;
 
 export type SiteContentPublic = {

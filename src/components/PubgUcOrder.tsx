@@ -267,15 +267,15 @@ export function PubgUcOrder({
         {backBtn(() => setStep('package'))}
 
         {/* ملخص الباقة */}
-        <div className="bg-white rounded-2xl border border-gray-100 p-4 mb-4 flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
+        <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-4 mb-4 flex items-center gap-4">
+          <div className="w-14 h-14 rounded-2xl bg-white/10 flex items-center justify-center shrink-0">
             {selected && <UcIcon tier={selected.iconTier} />}
           </div>
-          <div className="flex-1" dir="ltr">
-            <p className="font-black text-gray-900 text-sm">{selected?.label} UC</p>
-            <p className="text-xs text-gray-400">{selected && formatLatinDigits(selected.priceIqd)} {t('iqd')}</p>
+          <div className="flex-1 min-w-0" dir="ltr">
+            <p className="font-black text-white text-base">{selected?.label} <span className="text-white/70 font-bold">UC</span></p>
+            <p className="text-sm font-black text-yellow-300 mt-1">{selected && formatLatinDigits(selected.priceIqd)} <span className="text-xs font-bold text-white/60">{t('iqd')}</span></p>
           </div>
-          <button onClick={() => setStep('package')} className="text-xs font-bold text-red-500">{lang === 'ar' ? 'تغيير' : 'Change'}</button>
+          <button onClick={() => setStep('package')} className="text-xs font-bold text-white/60 hover:text-white bg-white/10 rounded-xl px-3 py-1.5 shrink-0 transition-colors">{lang === 'ar' ? 'تغيير' : 'Change'}</button>
         </div>
 
         {/* toggle: معرف / كود */}
