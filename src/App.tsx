@@ -4851,19 +4851,12 @@ function MainContent() {
                   style={{ height: 180 }}
                 >
                   {sl.image ? (
-                    <>
-                      <img
-                        src={sl.image}
-                        alt=""
-                        draggable={false}
-                        className="pointer-events-none absolute inset-0 h-full w-full object-cover"
-                      />
-                      {(lang === 'ar'
-                        ? (sl.title_ar || sl.subtitle_ar || sl.badge_ar)
-                        : (sl.title_en || sl.subtitle_en || sl.badge_en)) ? (
-                        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/65 via-black/25 to-black/10" />
-                      ) : null}
-                    </>
+                    <img
+                      src={sl.image}
+                      alt=""
+                      draggable={false}
+                      className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+                    />
                   ) : (
                     <>
                       <div className="pointer-events-none absolute -top-10 -end-10 h-36 w-36 rounded-full bg-white/8" />
@@ -4877,12 +4870,17 @@ function MainContent() {
                         {lang === 'ar' ? sl.badge_ar : sl.badge_en}
                       </span>
                     ) : <span className="mb-3 inline-block h-6" />}
-                    <h2 className="text-xl font-black leading-snug text-white">
-                      {lang === 'ar' ? sl.title_ar : sl.title_en}
-                    </h2>
-                    <p className="mt-1 text-sm font-medium text-white/75 line-clamp-1">
-                      {lang === 'ar' ? sl.subtitle_ar : sl.subtitle_en}
-                    </p>
+                    {/* مع وجود صورة: تُخفى نصوص الواجهة (العنوان/الوصف) لأن الصورة تحمل تصميمها الخاص */}
+                    {!sl.image && (
+                      <>
+                        <h2 className="text-xl font-black leading-snug text-white">
+                          {lang === 'ar' ? sl.title_ar : sl.title_en}
+                        </h2>
+                        <p className="mt-1 text-sm font-medium text-white/75 line-clamp-1">
+                          {lang === 'ar' ? sl.subtitle_ar : sl.subtitle_en}
+                        </p>
+                      </>
+                    )}
                   </div>
 
                   <button
