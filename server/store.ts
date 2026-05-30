@@ -84,7 +84,7 @@ export type ManagedService = {
   coverImage: string;
   badgeAr: string;
   badgeEn: string;
-  actionType: "pubg_uc" | "coming_soon";
+  actionType: "pubg_uc" | "playstation" | "steam" | "xbox" | "cod" | "coming_soon";
   enabled: boolean;
   comingSoon: boolean;
   sortOrder: number;
@@ -357,6 +357,14 @@ function parseManagedServices(raw: string | undefined): ManagedService[] {
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [...defaultManagedServices];
+    const VALID_ACTIONS = new Set<ManagedService["actionType"]>([
+      "pubg_uc",
+      "playstation",
+      "steam",
+      "xbox",
+      "cod",
+      "coming_soon",
+    ]);
     const out: ManagedService[] = [];
     const seen = new Set<string>();
     for (let i = 0; i < parsed.length; i += 1) {
@@ -370,6 +378,9 @@ function parseManagedServices(raw: string | undefined): ManagedService[] {
       const coverRaw = String(r.cover_image ?? r.coverImage ?? "/services/pubg-uc-cover.png").trim();
       const coverImage = isValidHttpUrl(coverRaw) || coverRaw.startsWith("/") ? coverRaw : "/services/pubg-uc-cover.png";
       const actionRaw = String(r.action_type ?? r.actionType ?? "coming_soon").trim();
+      const actionType = VALID_ACTIONS.has(actionRaw as ManagedService["actionType"])
+        ? (actionRaw as ManagedService["actionType"])
+        : "coming_soon";
       out.push({
         id,
         titleAr: String(r.title_ar ?? r.titleAr ?? ""),
@@ -379,7 +390,7 @@ function parseManagedServices(raw: string | undefined): ManagedService[] {
         coverImage,
         badgeAr: String(r.badge_ar ?? r.badgeAr ?? ""),
         badgeEn: String(r.badge_en ?? r.badgeEn ?? ""),
-        actionType: actionRaw === "pubg_uc" ? "pubg_uc" : "coming_soon",
+        actionType,
         enabled: r.enabled !== false,
         comingSoon: r.coming_soon === true || r.comingSoon === true,
         sortOrder: Number.isFinite(sortOrder) ? sortOrder : i + 1,

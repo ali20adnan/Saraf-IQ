@@ -1,5 +1,6 @@
 import "dotenv/config";
 import {existsSync, writeFileSync} from "node:fs";
+import {pathToFileURL} from "node:url";
 import compression from "compression";
 import cors, {type CorsOptions} from "cors";
 import express, {type RequestHandler} from "express";
@@ -1915,6 +1916,7 @@ async function startServer() {
         agent_number_id,
         card_fields,
         payment_proof,
+        pay_from_wallet,
       } = req.body as {
         client_id?: string;
         user_id?: string;
@@ -1925,6 +1927,7 @@ async function startServer() {
         details?: string;
         agent_number_id?: string;
         payment_proof?: string;
+        pay_from_wallet?: boolean;
         card_fields?: {
           holder?: string;
           number?: string;
@@ -1937,6 +1940,17 @@ async function startServer() {
       }
       if (type !== "buy" && type !== "sell" && type !== "deposit") {
         return res.status(400).json({ error: "invalid type" });
+      }
+      // الدفع من الرصيد: شراء فقط + مستخدم مسجّل + رصيد كافٍ — يُخصم فوراً
+      const payFromWallet = pay_from_wallet === true;
+      if (payFromWallet) {
+        if (type !== "buy" || !user_id) {
+          return res.status(400).json({ error: "wallet payment requires buy + signed-in user" });
+        }
+        const bal = await store.getUserBalance(user_id);
+        if (bal < Number(amount)) {
+          return res.status(400).json({ error: "insufficient_balance" });
+        }
       }
       const xff = req.headers["x-forwarded-for"];
       const ipFromHeader = Array.isArray(xff) ? xff[0] : String(xff || "").split(",")[0];
@@ -1970,6 +1984,16 @@ async function startServer() {
         agent_number_id,
         payment_proof: proof,
       });
+
+      // الدفع من الرصيد: أكمل الطلب فوراً ليُخصم المبلغ من المحفظة (لا ينتظر موافقة الأدمن)
+      if (payFromWallet && tx.user_id) {
+        const ok = await store.updateTransactionStatusByRef(tx.order_ref, "completed");
+        if (ok) {
+          tx.status = "completed";
+        } else {
+          return res.status(400).json({ error: "insufficient_balance" });
+        }
+      }
 
       if (bot) {
         try {
@@ -2758,6 +2782,16 @@ async function startServer() {
 
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
+      configFile: false,
+      plugins: [
+        (await import("@vitejs/plugin-react")).default(),
+        (await import("@tailwindcss/vite")).default(),
+        {
+          name: "pwa-stub",
+          resolveId(id: string) { if (id === "virtual:pwa-register") return id; },
+          load(id: string) { if (id === "virtual:pwa-register") return "export const registerSW = () => () => {};"; },
+        },
+      ],
       server: { middlewareMode: true },
       appType: "spa",
     });

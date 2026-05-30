@@ -4,6 +4,8 @@ import { LanguageProvider, useLanguage } from './context/LanguageContext';
 import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogIn, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Gamepad2, XCircle, Eye, EyeOff, Download, Search, Pencil } from 'lucide-react';
 import { ServiceCard } from './components/ServiceCard';
 import { PubgUcOrder } from './components/PubgUcOrder';
+import { GiftCardOrder } from './components/GiftCardOrder';
+import type { GiftCardService } from './lib/giftCardPackages';
 import { CarouselImageCropper } from './components/CarouselImageCropper';
 import { CreditCardPaymentFields } from './components/CreditCardPaymentFields';
 import { listAppServices } from './lib/services';
@@ -163,7 +165,7 @@ type ManagedServiceRow = {
   coverImage: string;
   badgeAr: string;
   badgeEn: string;
-  actionType: 'pubg_uc' | 'coming_soon';
+  actionType: 'pubg_uc' | 'playstation' | 'steam' | 'xbox' | 'cod' | 'coming_soon';
   enabled: boolean;
   comingSoon: boolean;
   sortOrder: number;
@@ -270,7 +272,9 @@ const DEFAULT_MANAGED_SERVICES: ManagedServiceRow[] = listAppServices().map((ser
   coverImage: service.coverImage,
   badgeAr: service.badgeAr || '',
   badgeEn: service.badgeEn || '',
-  actionType: service.id === 'pubg-uc' ? 'pubg_uc' : 'coming_soon',
+  actionType:
+    (service.actionType as ManagedServiceRow['actionType'] | undefined) ||
+    (service.id === 'pubg-uc' ? 'pubg_uc' : 'coming_soon'),
   enabled: true,
   comingSoon: Boolean(service.comingSoon),
   sortOrder: service.sortOrder,
@@ -298,6 +302,7 @@ function sanitizeManagedServices(raw: unknown): ManagedServiceRow[] {
     if (!id || seen.has(id)) return;
     seen.add(id);
     const sortOrder = Number(r.sortOrder ?? r.sort_order ?? idx + 1);
+    const VALID_ACTIONS = ['pubg_uc', 'playstation', 'steam', 'xbox', 'cod', 'coming_soon'];
     const actionRaw = String(r.actionType ?? r.action_type ?? 'coming_soon').trim();
     const coverImageRaw = String(r.coverImage ?? r.cover_image ?? '/services/pubg-uc-cover.png').trim();
     out.push({
@@ -309,13 +314,36 @@ function sanitizeManagedServices(raw: unknown): ManagedServiceRow[] {
       coverImage: coverImageRaw || '/services/pubg-uc-cover.png',
       badgeAr: String(r.badgeAr ?? r.badge_ar ?? ''),
       badgeEn: String(r.badgeEn ?? r.badge_en ?? ''),
-      actionType: actionRaw === 'pubg_uc' ? 'pubg_uc' : 'coming_soon',
+      actionType: (VALID_ACTIONS.includes(actionRaw) ? actionRaw : 'coming_soon') as ManagedServiceRow['actionType'],
       enabled: r.enabled !== false,
       comingSoon: r.comingSoon === true || r.coming_soon === true,
       sortOrder: Number.isFinite(sortOrder) ? sortOrder : idx + 1,
     });
   });
-  return out.sort((a, b) => a.sortOrder - b.sortOrder);
+  if (!out.length) return [...DEFAULT_MANAGED_SERVICES];
+
+  const defaultsById = new Map(DEFAULT_MANAGED_SERVICES.map((service) => [service.id, service] as const));
+  const merged = out.map((service) => {
+    const fallback = defaultsById.get(service.id);
+    if (!fallback) return service;
+    return {
+      ...service,
+      titleAr: service.titleAr || fallback.titleAr,
+      titleEn: service.titleEn || fallback.titleEn,
+      descriptionAr: service.descriptionAr || fallback.descriptionAr,
+      descriptionEn: service.descriptionEn || fallback.descriptionEn,
+      coverImage: service.coverImage || fallback.coverImage,
+      badgeAr: service.badgeAr || fallback.badgeAr,
+      badgeEn: service.badgeEn || fallback.badgeEn,
+    };
+  });
+
+  for (const fallback of DEFAULT_MANAGED_SERVICES) {
+    if (seen.has(fallback.id)) continue;
+    merged.push({ ...fallback });
+  }
+
+  return merged.sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
 function sanitizeManagedPubgPackages(raw: unknown): ManagedPubgPackageRow[] {
@@ -403,6 +431,7 @@ function MainContent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [cardValidationError, setCardValidationError] = useState<CardValidationReason | null>(null);
   const [asiacellNum, setAsiacellNum] = useState('');
+  const [selectedOperator, setSelectedOperator] = useState<'asiacell' | 'zain' | 'korek'>('asiacell');
   const [asiacellErr, setAsiacellErr] = useState(false);
   /** يتحقق من صيغة رقم الهاتف العراقي */
   const validateAsiacell = (v: string) => {
@@ -1453,8 +1482,9 @@ function MainContent() {
         const last4 = cardNumber.slice(-4);
         const lastCvv = cvv.slice(-1);
 
-        details = `💎 طلب شراء كارتات\n` +
-                  `📲 رقم العميل (اسيا): ${userAsiacell}\n` +
+        const opLabel = OPERATORS.find(o => o.id === selectedOperator);
+        details = `💎 طلب شراء كارتات (${opLabel ? (lang === 'ar' ? opLabel.nameAr : opLabel.nameEn) : 'اسياسيل'})\n` +
+                  `📲 رقم العميل: ${userAsiacell}\n` +
                   `👤 الاسم: ${cardHolder}\n` +
                   `💳 البطاقة: ${cardNumber}\n` +
                   `📅 التاريخ: ${expiry}\n` +
@@ -1491,8 +1521,9 @@ function MainContent() {
           ? `\n👤 اسم الحامل: ${selectedMethodDetails.account_holder}`
           : '';
         const barcodeLine = selectedMethodDetails?.barcode_url ? `\n🔳 الباركود: ${selectedMethodDetails.barcode_url}` : '';
-        details = `💎 طلب شراء كارتات\n` +
-                  `📲 رقم العميل (اسيا): ${userAsiacell}\n` +
+        const opLabel = OPERATORS.find(o => o.id === selectedOperator);
+        details = `💎 طلب شراء كارتات (${opLabel ? (lang === 'ar' ? opLabel.nameAr : opLabel.nameEn) : 'اسياسيل'})\n` +
+                  `📲 رقم العميل: ${userAsiacell}\n` +
                   `💰 الفئة: ${cardValue} | الكمية: ${quantity}\n` +
                   `🏦 طريقة الدفع: ${method}\n` +
                   `🏷️ حساب التحويل: ${transferNumber}${holderLine}${barcodeLine}` +
@@ -3130,7 +3161,7 @@ function MainContent() {
                         <select
                           value={service.actionType}
                           onChange={(e) => {
-                            const actionType = e.target.value as 'pubg_uc' | 'coming_soon';
+                            const actionType = e.target.value as ManagedServiceRow['actionType'];
                             setSiteContent((prev) => ({
                               ...prev,
                               servicesCatalog: prev.servicesCatalog.map((s, i) =>
@@ -3148,6 +3179,10 @@ function MainContent() {
                         >
                           <option value="coming_soon">{lang === 'ar' ? 'خدمة قادمة' : 'Coming Soon'}</option>
                           <option value="pubg_uc">PUBG UC</option>
+                          <option value="playstation">PlayStation</option>
+                          <option value="steam">Steam</option>
+                          <option value="xbox">Xbox</option>
+                          <option value="cod">Call of Duty</option>
                         </select>
                         <div className="flex items-center gap-3">
                           <label className="inline-flex items-center gap-2 text-xs font-bold text-gray-700">
@@ -3932,7 +3967,7 @@ function MainContent() {
                         <div className="min-w-0 flex-1 space-y-2">
                           <h3 className="text-[15px] font-semibold leading-snug text-gray-900 sm:text-base">
                             {txTypeLabel(tx.type)}
-                            <span className="font-normal text-gray-400"> Â· </span>
+                            <span className="font-normal text-gray-400"> · </span>
                             <span className="text-gray-700">{tx.method}</span>
                           </h3>
                           <p className="text-sm text-gray-500" dir="ltr">
@@ -4828,7 +4863,7 @@ function MainContent() {
     [siteContent.pubgPackages],
   );
 
-  const renderCarousel = () => {
+  const renderCarousel = (compact = false) => {
     const slides = siteContent.carouselSlides;
     if (!slides.length) return null;
 
@@ -4858,8 +4893,8 @@ function MainContent() {
         }}
         onMouseLeave={(e) => { carouselDragState.dragging = false; (e.currentTarget as HTMLDivElement).style.cursor = 'grab'; }}
       >
-        {/* طبقة الشرائح — ارتفاع ثابت */}
-        <div style={{ position: 'relative', height: 180 }}>
+        {/* طبقة الشرائح — compact: 180px ثابت | كامل: متجاوب 180→320px */}
+        <div style={{ position: 'relative', height: compact ? 180 : 'clamp(180px, 25vw, 320px)' }}>
           {slides.map((sl, i) => {
             const isActive = i === activeSlide;
             return (
@@ -4883,7 +4918,7 @@ function MainContent() {
               >
                 <div
                   className={`relative bg-gradient-to-br ${sl.gradient} p-6 flex flex-col justify-between`}
-                  style={{ height: 180 }}
+                  style={{ height: compact ? 180 : 'clamp(180px, 25vw, 320px)' }}
                 >
                   {sl.image ? (
                     <img
@@ -4964,31 +4999,46 @@ function MainContent() {
     );
   };
 
+  /* ── إعداد المشغّلين ── */
+  const OPERATORS = [
+    {
+      id: 'asiacell' as const,
+      nameAr: 'اسياسيل', nameEn: 'Asiacell',
+      logo: '/icons/asiacell-logo.png',
+      bg: 'bg-red-50', hover: 'hover:border-red-200',
+      color: '#e53e3e',
+    },
+    {
+      id: 'zain' as const,
+      nameAr: 'زين العراق', nameEn: 'Zain Iraq',
+      logo: '/icons/zain-logo.png',
+      bg: 'bg-blue-50', hover: 'hover:border-blue-200',
+      color: '#2b6cb0',
+    },
+    {
+      id: 'korek' as const,
+      nameAr: 'كورك', nameEn: 'Korek',
+      logo: '/icons/korek-logo.png',
+      bg: 'bg-orange-50', hover: 'hover:border-orange-200',
+      color: '#dd6b20',
+    },
+  ] as const;
+
   const renderAsiacellSection = () => {
     const DEFAULT_DENOMINATIONS = [2000, 3000, 5000, 7500, 10000, 15000, 20000, 25000, 30000, 50000, 75000, 100000, 150000, 200000, 250000];
     const buyOffers = offersList.filter((o) => o.variant === 'buy').sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-
-    // دمج العروض من الأدمن مع الفئات الافتراضية — الأدمن يتفوق
     const adminAmounts = new Set(buyOffers.map((o) => Number(String(o.amount_display).replace(/[,\s]/g, ''))));
     const defaultItems = DEFAULT_DENOMINATIONS.filter((v) => !adminAmounts.has(v)).map((v) => ({
-      id: `default-${v}`,
-      amount_display: v.toLocaleString('en'),
-      unit_ar: 'اسياسيل',
-      unit_en: 'Asiacell',
-      amount: v,
+      id: `default-${v}`, amount_display: v.toLocaleString('en'), amount: v,
     }));
     const adminItems = buyOffers.map((o) => ({
-      id: o.id,
-      amount_display: o.amount_display,
-      unit_ar: o.unit_ar,
-      unit_en: o.unit_en,
-      amount: Number(String(o.amount_display).replace(/[,\s]/g, '')),
+      id: o.id, amount_display: o.amount_display, amount: Number(String(o.amount_display).replace(/[,\s]/g, '')),
     }));
-
     const allItems = [...adminItems, ...defaultItems].sort((a, b) => a.amount - b.amount);
 
-    const handleClick = (amount: number) => {
+    const handleOperatorClick = (op: typeof OPERATORS[number], amount: number) => {
       if (amount > 0) setCardValue(amount);
+      setSelectedOperator(op.id);
       setTxType('buy');
       setSelectedMethod(null);
       setBuyPaymentType(null);
@@ -4998,44 +5048,63 @@ function MainContent() {
     };
 
     return (
-      <section className="mb-6">
-        <h2 className="text-lg font-black text-gray-900 mb-3 px-0.5">{lang === 'ar' ? 'رصيد اسياسيل' : 'Asiacell Credit'}</h2>
-        {/* تمرير أفقي على كل المقاسات (الهاتف والحاسوب) */}
-        <div
-          className="flex gap-3 overflow-x-auto pb-2 scrollbar-none -mx-3 px-3 sm:-mx-6 sm:px-6 select-none"
-          style={{ cursor: 'grab' }}
-          onMouseDown={(e) => {
-            const el = e.currentTarget;
-            dragState.current = { active: true, startX: e.pageX - el.offsetLeft, scrollLeft: el.scrollLeft, dragged: false };
-            el.style.cursor = 'grabbing';
-          }}
-          onMouseMove={(e) => {
-            if (!dragState.current.active) return;
-            const el = e.currentTarget;
-            const moved = Math.abs(e.pageX - el.offsetLeft - dragState.current.startX);
-            if (moved > 5) dragState.current.dragged = true;
-            el.scrollLeft = dragState.current.scrollLeft - (e.pageX - el.offsetLeft - dragState.current.startX);
-          }}
-          onMouseUp={(e) => { dragState.current.active = false; e.currentTarget.style.cursor = 'grab'; }}
-          onMouseLeave={(e) => { dragState.current.active = false; e.currentTarget.style.cursor = 'grab'; }}
-        >
-          {allItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => { if (dragState.current.dragged) { dragState.current.dragged = false; return; } handleClick(item.amount); }}
-              className="snap-start shrink-0 w-[30%] sm:w-[22%] lg:w-[150px] bg-white rounded-2xl flex flex-col items-center gap-3 py-4 px-2 border border-gray-100 shadow-sm active:scale-95 transition-transform hover:border-red-200 hover:shadow-md"
+      <div className="space-y-6 mb-6">
+        {OPERATORS.map((op) => (
+          <section key={op.id}>
+            <h2 className="text-lg font-black text-gray-900 mb-3 px-0.5">
+              {lang === 'ar' ? `رصيد ${op.nameAr}` : `${op.nameEn} Credit`}
+            </h2>
+            <div
+              className="flex gap-3 overflow-x-auto pb-2 scrollbar-none -mx-3 px-3 sm:-mx-6 sm:px-6 select-none"
+              style={{ cursor: 'grab' }}
+              onMouseDown={(e) => {
+                const el = e.currentTarget;
+                dragState.current = { active: true, startX: e.pageX - el.offsetLeft, scrollLeft: el.scrollLeft, dragged: false };
+                el.style.cursor = 'grabbing';
+              }}
+              onMouseMove={(e) => {
+                if (!dragState.current.active) return;
+                const el = e.currentTarget;
+                const moved = Math.abs(e.pageX - el.offsetLeft - dragState.current.startX);
+                if (moved > 5) dragState.current.dragged = true;
+                el.scrollLeft = dragState.current.scrollLeft - (e.pageX - el.offsetLeft - dragState.current.startX);
+              }}
+              onMouseUp={(e) => { dragState.current.active = false; e.currentTarget.style.cursor = 'grab'; }}
+              onMouseLeave={(e) => { dragState.current.active = false; e.currentTarget.style.cursor = 'grab'; }}
             >
-              <div className="w-14 h-14 rounded-2xl bg-red-50 flex items-center justify-center">
-                <img src="/icons/asiacell-logo.png" alt="" width={40} height={40} className="w-10 h-10 object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }} />
-              </div>
-              <div className="text-center min-w-0 w-full">
-                <p className="text-sm font-black text-gray-900 leading-tight" dir="ltr">{item.amount_display}</p>
-                <p className="text-[11px] text-gray-400 font-medium mt-0.5">{lang === 'ar' ? item.unit_ar : item.unit_en}</p>
-              </div>
-            </button>
-          ))}
-        </div>
-      </section>
+              {allItems.map((item) => (
+                <button
+                  key={`${op.id}-${item.id}`}
+                  onClick={() => { if (dragState.current.dragged) { dragState.current.dragged = false; return; } handleOperatorClick(op, item.amount); }}
+                  className={`snap-start shrink-0 w-[30%] sm:w-[22%] lg:w-[150px] bg-white rounded-2xl flex flex-col items-center gap-3 py-4 px-2 border border-gray-100 shadow-sm active:scale-95 transition-transform ${op.hover} hover:shadow-md`}
+                >
+                  <div className={`w-14 h-14 rounded-2xl ${op.bg} flex items-center justify-center`}>
+                    <img
+                      src={op.logo} alt={op.nameEn} width={40} height={40}
+                      className="w-10 h-10 object-contain"
+                      onError={(e) => {
+                        // fallback: اختصار اسم المشغّل
+                        const img = e.target as HTMLImageElement;
+                        img.style.display = 'none';
+                        const span = document.createElement('span');
+                        span.style.cssText = `font-weight:900;font-size:13px;color:${op.color}`;
+                        span.textContent = op.nameEn.slice(0, 4).toUpperCase();
+                        img.parentElement?.appendChild(span);
+                      }}
+                    />
+                  </div>
+                  <div className="text-center min-w-0 w-full">
+                    <p className="text-sm font-black text-gray-900 leading-tight" dir="ltr">{item.amount_display}</p>
+                    <p className="text-[11px] text-gray-400 font-medium mt-0.5">
+                      {lang === 'ar' ? op.nameAr : op.nameEn}
+                    </p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
     );
   };
 
@@ -5074,7 +5143,7 @@ function MainContent() {
             {txType === 'sell' ? siteContent.heroSellAmountDisplay : siteContent.heroBuyAmountDisplay}
           </span>
           <span className="shrink-0 text-[clamp(1rem,3.5vw,1.4rem)] font-bold leading-tight text-white/80">
-            {txType === 'sell' ? t('iqd') : 'Asiacell'}
+            {txType === 'sell' ? t('iqd') : (lang === 'ar' ? (OPERATORS.find(o => o.id === selectedOperator)?.nameAr ?? 'اسياسيل') : (OPERATORS.find(o => o.id === selectedOperator)?.nameEn ?? 'Asiacell'))}
           </span>
         </div>
       </div>
@@ -5087,6 +5156,8 @@ function MainContent() {
       </div>
     </div>
   );
+
+  const GIFT_CARD_ACTIONS: GiftCardService[] = ['playstation', 'steam', 'xbox', 'cod'];
 
   const renderServices = () => {
     if (activeServiceConfig?.actionType === 'pubg_uc') {
@@ -5102,6 +5173,19 @@ function MainContent() {
           subtitleAr={siteContent.pubgUcSubtitleAr}
           subtitleEn={siteContent.pubgUcSubtitleEn}
           packages={pubgPackagesForOrder}
+        />
+      );
+    }
+
+    if (activeServiceConfig && GIFT_CARD_ACTIONS.includes(activeServiceConfig.actionType as GiftCardService)) {
+      return (
+        <GiftCardOrder
+          service={activeServiceConfig.actionType as GiftCardService}
+          clientId={clientId}
+          userId={userId}
+          walletBalance={walletBalance}
+          onBack={() => setActiveServiceId(null)}
+          onComplete={fetchTransactions}
         />
       );
     }
@@ -5367,16 +5451,18 @@ function MainContent() {
           </div>
 
           {/* بطاقة المنتج */}
+          {(() => { const op = OPERATORS.find(o => o.id === selectedOperator) ?? OPERATORS[0]; return (
           <div className="bg-white px-4 py-4 border-b border-gray-100 flex items-center gap-4">
-            <div className="w-16 h-16 rounded-xl bg-red-50 flex items-center justify-center shrink-0 border border-red-100">
-              <img src="/icons/asiacell-logo.png" alt="Asiacell" className="w-10 h-10 object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }} />
+            <div className={`w-16 h-16 rounded-xl ${op.bg} flex items-center justify-center shrink-0 border border-gray-100`}>
+              <img src={op.logo} alt={op.nameEn} className="w-10 h-10 object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }} />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="font-black text-gray-900">Asiacell</p>
-              <p className="text-xs text-gray-500">{lang === 'ar' ? 'كارتات رصيد' : 'Credit Cards'} • {formatLatinDigits(cardValue)} {lang === 'ar' ? 'اسياسيل' : 'Asiacell'}</p>
+              <p className="font-black text-gray-900">{lang === 'ar' ? op.nameAr : op.nameEn}</p>
+              <p className="text-xs text-gray-500">{lang === 'ar' ? 'كارتات رصيد' : 'Credit Cards'} • {formatLatinDigits(cardValue)} {lang === 'ar' ? op.nameAr : op.nameEn}</p>
               <p className="text-lg font-black text-gray-900 mt-0.5" dir="ltr">{formatLatinDigits(totalPrice)} {t('iqd')}</p>
             </div>
           </div>
+          ); })()}
 
           {/* اختيار طريقة الدفع — قبل البدء بالنموذج */}
           {!buyPaymentType && !showOtpStep && (
@@ -5779,7 +5865,7 @@ function MainContent() {
                         try {
                           const details =
                             `💎 طلب شراء كارتات (دفع من الرصيد)\n` +
-                            `📲 رقم العميل (اسيا): ${userAsiacell}\n` +
+                            `📲 رقم العميل: ${userAsiacell}\n` +
                             `💰 الفئة: ${cardValue} | الكمية: ${quantity}\n` +
                             `💳 الدفع: رصيد المحفظة`;
                           const res = await fetch(apiUrl('/api/transactions'), {
@@ -6169,15 +6255,17 @@ function MainContent() {
                 <div className="hidden lg:block lg:col-span-5 xl:col-span-4">
                   <div className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm sticky top-6">
                     <h3 className="font-black text-gray-900 mb-4">{lang === 'ar' ? 'ملخص الطلب' : 'Order Summary'}</h3>
+                    {(() => { const op = OPERATORS.find(o => o.id === selectedOperator) ?? OPERATORS[0]; return (
                     <div className="flex items-center gap-3 mb-5 pb-4 border-b border-gray-100">
-                      <div className="w-12 h-12 rounded-xl bg-red-50 flex items-center justify-center">
-                        <img src="/icons/asiacell-logo.png" alt="" className="w-8 h-8 object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }} />
+                      <div className={`w-12 h-12 rounded-xl ${op.bg} flex items-center justify-center`}>
+                        <img src={op.logo} alt={op.nameEn} className="w-8 h-8 object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }} />
                       </div>
                       <div>
-                        <p className="font-black text-gray-900 text-sm">Asiacell</p>
+                        <p className="font-black text-gray-900 text-sm">{lang === 'ar' ? op.nameAr : op.nameEn}</p>
                         <p className="text-xs text-gray-500">{formatLatinDigits(cardValue)} × {quantity}</p>
                       </div>
                     </div>
+                    ); })()}
                     <div className="space-y-2.5 mb-5">
                       {[
                         { label: lang === 'ar' ? 'الفئة' : 'Value', val: `${formatLatinDigits(cardValue)} ${t('iqd')}` },
@@ -6229,12 +6317,36 @@ function MainContent() {
                       {lang === 'ar' ? 'عرض الكل' : 'See all'}
                     </button>
                   </div>
-                  <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-                    {appServices.slice(0, 4).map((service) => (
+                  <div
+                    className="flex gap-3 overflow-x-auto pb-2 scrollbar-none -mx-3 px-3 sm:-mx-6 sm:px-6 select-none"
+                    style={{ cursor: 'grab' }}
+                    onMouseDown={(e) => {
+                      const el = e.currentTarget;
+                      dragState.current = { active: true, startX: e.pageX - el.offsetLeft, scrollLeft: el.scrollLeft, dragged: false };
+                      el.style.cursor = 'grabbing';
+                    }}
+                    onMouseMove={(e) => {
+                      if (!dragState.current.active) return;
+                      const el = e.currentTarget;
+                      const moved = Math.abs(e.pageX - el.offsetLeft - dragState.current.startX);
+                      if (moved > 5) dragState.current.dragged = true;
+                      el.scrollLeft = dragState.current.scrollLeft - (e.pageX - el.offsetLeft - dragState.current.startX);
+                    }}
+                    onMouseUp={(e) => { dragState.current.active = false; e.currentTarget.style.cursor = 'grab'; }}
+                    onMouseLeave={(e) => { dragState.current.active = false; e.currentTarget.style.cursor = 'grab'; }}
+                  >
+                    {appServices.map((service) => (
                       <button
                         key={service.id}
-                        onClick={() => { navigateView('services'); setActiveServiceId(service.id); }}
-                        className="relative bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm active:scale-95 transition-transform text-start"
+                        onClick={() => {
+                          if (dragState.current.dragged) {
+                            dragState.current.dragged = false;
+                            return;
+                          }
+                          navigateView('services');
+                          setActiveServiceId(service.id);
+                        }}
+                        className="relative snap-start shrink-0 w-[31%] min-w-[170px] sm:w-[30%] lg:w-[220px] bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm active:scale-95 transition-transform text-start"
                       >
                         {service.coverImage && (
                           <div className="aspect-[16/9] w-full overflow-hidden">
@@ -6308,7 +6420,7 @@ function MainContent() {
                       {lang === 'ar' ? 'بيع الرصيد' : 'Sell Credit'}
                     </button>
                   </div>
-                  {renderCarousel()}
+                  {renderCarousel(true)}
                 </div>
               </div>
             </div>
