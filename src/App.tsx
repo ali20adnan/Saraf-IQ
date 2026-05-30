@@ -1519,7 +1519,7 @@ function MainContent() {
       
       const data = await res.json();
       
-      if (txType === 'buy' && selectedMethod === 'creditcard') {
+      if ((txType === 'buy' && selectedMethod === 'creditcard') || txType === 'deposit') {
         setCurrentOrderId(data.order_ref || data.id);
         setShowOtpStep(true);
         setIsSubmitting(false);
@@ -2795,30 +2795,6 @@ function MainContent() {
                         </button>
                       </div>
                       <div className="grid grid-cols-2 gap-2">
-                        <input
-                          value={slide.title_ar}
-                          onChange={(e) => setSiteContent((prev) => ({ ...prev, carouselSlides: prev.carouselSlides.map((s, i) => i === idx ? { ...s, title_ar: e.target.value } : s) }))}
-                          placeholder="العنوان (عربي)"
-                          className="px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm"
-                        />
-                        <input
-                          value={slide.title_en}
-                          onChange={(e) => setSiteContent((prev) => ({ ...prev, carouselSlides: prev.carouselSlides.map((s, i) => i === idx ? { ...s, title_en: e.target.value } : s) }))}
-                          placeholder="Title (EN)"
-                          className="px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm"
-                        />
-                        <input
-                          value={slide.subtitle_ar}
-                          onChange={(e) => setSiteContent((prev) => ({ ...prev, carouselSlides: prev.carouselSlides.map((s, i) => i === idx ? { ...s, subtitle_ar: e.target.value } : s) }))}
-                          placeholder="التفاصيل (عربي)"
-                          className="px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm"
-                        />
-                        <input
-                          value={slide.subtitle_en}
-                          onChange={(e) => setSiteContent((prev) => ({ ...prev, carouselSlides: prev.carouselSlides.map((s, i) => i === idx ? { ...s, subtitle_en: e.target.value } : s) }))}
-                          placeholder="Subtitle (EN)"
-                          className="px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm"
-                        />
                         <input
                           value={slide.badge_ar}
                           onChange={(e) => setSiteContent((prev) => ({ ...prev, carouselSlides: prev.carouselSlides.map((s, i) => i === idx ? { ...s, badge_ar: e.target.value } : s) }))}
@@ -4886,8 +4862,18 @@ function MainContent() {
                   <button
                     onClick={() => {
                       if (!sl.action) return;
-                      if (sl.action === 'services') { navigateView('services'); }
-                      else { handleTxTypeChange(sl.action); }
+                      if (sl.action === 'services') {
+                        navigateView('services');
+                        return;
+                      }
+                      // شراء/بيع → افتح صفحة الشراء/البيع المناسبة
+                      setTxType(sl.action);
+                      setSelectedMethod(null);
+                      setBuyPaymentType(null);
+                      setIsSuccess(false);
+                      setShowOtpStep(false);
+                      navigateView('home');
+                      setShowPurchasePage(true);
                     }}
                     className={`relative z-10 mt-3 self-start rounded-xl px-4 py-2 text-sm font-bold text-white backdrop-blur-sm transition-colors active:scale-95 ${sl.action ? 'bg-white/20 hover:bg-white/30' : 'invisible pointer-events-none'}`}
                   >
@@ -4955,9 +4941,9 @@ function MainContent() {
     return (
       <section className="mb-6">
         <h2 className="text-lg font-black text-gray-900 mb-3 px-0.5">{lang === 'ar' ? 'رصيد اسياسيل' : 'Asiacell Credit'}</h2>
-        {/* موبايل: 3 ظاهرة + peek للتمرير | ديسكتوب: شبكة */}
+        {/* تمرير أفقي على كل المقاسات (الهاتف والحاسوب) */}
         <div
-          className="flex gap-3 overflow-x-auto pb-2 scrollbar-none -mx-3 px-3 sm:-mx-6 sm:px-6 lg:grid lg:grid-cols-6 lg:overflow-visible lg:pb-0 lg:mx-0 lg:px-0 select-none"
+          className="flex gap-3 overflow-x-auto pb-2 scrollbar-none -mx-3 px-3 sm:-mx-6 sm:px-6 select-none"
           style={{ cursor: 'grab' }}
           onMouseDown={(e) => {
             const el = e.currentTarget;
@@ -4978,7 +4964,7 @@ function MainContent() {
             <button
               key={item.id}
               onClick={() => { if (dragState.current.dragged) { dragState.current.dragged = false; return; } handleClick(item.amount); }}
-              className="snap-start shrink-0 w-[30%] sm:w-[22%] lg:w-auto bg-white rounded-2xl flex flex-col items-center gap-3 py-4 px-2 border border-gray-100 shadow-sm active:scale-95 transition-transform hover:border-red-200 hover:shadow-md"
+              className="snap-start shrink-0 w-[30%] sm:w-[22%] lg:w-[150px] bg-white rounded-2xl flex flex-col items-center gap-3 py-4 px-2 border border-gray-100 shadow-sm active:scale-95 transition-transform hover:border-red-200 hover:shadow-md"
             >
               <div className="w-14 h-14 rounded-2xl bg-red-50 flex items-center justify-center">
                 <img src="/icons/asiacell-logo.png" alt="" width={40} height={40} className="w-10 h-10 object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }} />
