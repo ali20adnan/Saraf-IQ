@@ -190,7 +190,7 @@ export function buildNewOrderMessagePayload(
   finalMessage += `👤 <b>المصدر:</b> طلب عبر الموقع / التطبيق\n`;
   finalMessage += `💰 <b>المبلغ:</b> ${tx.amount} IQD\n`;
   finalMessage += `💳 <b>الطريقة:</b> ${escapeHtml(tx.method)}\n`;
-  finalMessage += `📊 <b>النوع:</b> ${tx.type === "buy" ? "شراء" : "بيع"}\n`;
+  finalMessage += `📊 <b>النوع:</b> ${tx.type === "buy" ? "شراء" : tx.type === "deposit" ? "إيداع" : "بيع"}\n`;
   if (tx.type === "sell" && tx.payment_proof) {
     finalMessage += `📷 <b>دليل الدفع:</b> مرفق كصورة مع هذه الرسالة.\n`;
   }
