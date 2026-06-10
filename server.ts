@@ -214,6 +214,7 @@ async function startServer() {
 
   store.ensureBuyWalletIconsDir();
   store.ensureSellWalletIconsDir();
+  store.ensureServiceCoversDir();
   app.use(
     "/uploads/buy-wallet-icons",
     express.static(path.join(process.cwd(), "data", "buy-wallet-icons"), {
@@ -225,6 +226,14 @@ async function startServer() {
   app.use(
     "/uploads/sell-wallet-icons",
     express.static(path.join(process.cwd(), "data", "sell-wallet-icons"), {
+      maxAge: "7d",
+      index: false,
+      fallthrough: true,
+    }),
+  );
+  app.use(
+    "/uploads/service-covers",
+    express.static(path.join(process.cwd(), "data", "service-covers"), {
       maxAge: "7d",
       index: false,
       fallthrough: true,

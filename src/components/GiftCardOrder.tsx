@@ -22,10 +22,10 @@ const DEFAULT_SERVICE_META: ServiceMeta = {
 };
 
 const SERVICE_META: Partial<Record<GiftCardService, ServiceMeta>> = {
-  playstation: { nameAr: 'بلايستيشن', nameEn: 'PlayStation', color: '#003087', bg: 'bg-blue-50', logo: '/services/ps-logo.svg' },
-  steam:       { nameAr: 'ستيم',        nameEn: 'Steam',        color: '#1b2838', bg: 'bg-slate-100', logo: '/services/steam-logo.svg' },
-  xbox:        { nameAr: 'إكس بوكس',   nameEn: 'Xbox',         color: '#107c10', bg: 'bg-green-50', logo: '/services/xbox-logo.svg' },
-  cod:         { nameAr: 'كول أوف ديوتي', nameEn: 'Call of Duty', color: '#c7a227', bg: 'bg-yellow-50', logo: '/services/cod-logo.svg' },
+  playstation: { nameAr: 'بلايستيشن', nameEn: 'PlayStation', color: '#003087', bg: 'bg-blue-50', logo: '/icons/logo.png' },
+  steam:       { nameAr: 'ستيم',        nameEn: 'Steam',        color: '#1b2838', bg: 'bg-slate-100', logo: '/icons/logo.png' },
+  xbox:        { nameAr: 'إكس بوكس',   nameEn: 'Xbox',         color: '#107c10', bg: 'bg-green-50', logo: '/icons/logo.png' },
+  cod:         { nameAr: 'كول أوف ديوتي', nameEn: 'Call of Duty', color: '#c7a227', bg: 'bg-yellow-50', logo: '/icons/logo.png' },
 };
 
 const REGIONS: { id: GiftCardRegion; ar: string; en: string; flag: string }[] = [

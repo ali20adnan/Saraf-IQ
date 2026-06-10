@@ -12,6 +12,26 @@ export type AppService = {
   sortOrder: number;
 };
 
+const LEGACY_SERVICE_COVERS = {
+  pubg: '/services/بوبجي موبايل.png',
+  playstation: '/services/بلي.png',
+  steam: '/services/ستيم.png',
+  xbox: '/services/اكسبوكس.png',
+  cod: '/services/كولفديوتي.png',
+  freefire: '/services/freefire.png',
+};
+
+const DEFAULT_SERVICE_COVERS = {
+  ...LEGACY_SERVICE_COVERS,
+  pubg: '/services/pubg-mobile.png',
+  playstation: '/services/playstation.png',
+  steam: '/services/steam.png',
+  xbox: '/services/xbox.png',
+  cod: '/services/cod.png',
+  freefire: '/services/freefire.png',
+  tiktok: '/services/tiktok-coins.png',
+};
+
 export const APP_SERVICES: AppService[] = [
   {
     id: 'pubg-uc',
@@ -19,7 +39,7 @@ export const APP_SERVICES: AppService[] = [
     titleEn: 'PUBG Mobile UC',
     descriptionAr: 'شحن UC فوري بأفضل الأسعار — أرسل معرّف اللاعب واختر الباقة.',
     descriptionEn: 'Instant UC top-up at competitive rates — enter your Player ID and pick a pack.',
-    coverImage: '/services/pubg-uc-cover.png',
+    coverImage: DEFAULT_SERVICE_COVERS.pubg,
     badgeAr: 'الأكثر طلباً',
     badgeEn: 'Popular',
     actionType: 'pubg_uc',
@@ -31,7 +51,7 @@ export const APP_SERVICES: AppService[] = [
     titleEn: 'PlayStation Gift Card',
     descriptionAr: 'بطاقات PlayStation Store — عالمي وأمريكي بأفضل الأسعار.',
     descriptionEn: 'PlayStation Store gift cards — Global & US regions at great rates.',
-    coverImage: '/services/ps-cover.svg',
+    coverImage: DEFAULT_SERVICE_COVERS.playstation,
     badgeAr: 'جديد',
     badgeEn: 'New',
     actionType: 'playstation',
@@ -43,7 +63,7 @@ export const APP_SERVICES: AppService[] = [
     titleEn: 'Steam Gift Card',
     descriptionAr: 'بطاقات Steam Wallet — عالمي وأمريكي.',
     descriptionEn: 'Steam Wallet gift cards — Global & US regions.',
-    coverImage: '/services/steam-cover.svg',
+    coverImage: DEFAULT_SERVICE_COVERS.steam,
     badgeAr: 'جديد',
     badgeEn: 'New',
     actionType: 'steam',
@@ -55,7 +75,7 @@ export const APP_SERVICES: AppService[] = [
     titleEn: 'Xbox Gift Card',
     descriptionAr: 'بطاقات Xbox & Microsoft Store — عالمي وأمريكي.',
     descriptionEn: 'Xbox & Microsoft Store gift cards — Global & US regions.',
-    coverImage: '/services/xbox-cover.svg',
+    coverImage: DEFAULT_SERVICE_COVERS.xbox,
     badgeAr: 'جديد',
     badgeEn: 'New',
     actionType: 'xbox',
@@ -67,11 +87,37 @@ export const APP_SERVICES: AppService[] = [
     titleEn: 'Call of Duty Points',
     descriptionAr: 'نقاط COD — عالمي وأمريكي لجميع الإصدارات.',
     descriptionEn: 'COD Points — Global & US for all titles.',
-    coverImage: '/services/cod-cover.svg',
+    coverImage: DEFAULT_SERVICE_COVERS.cod,
     badgeAr: 'جديد',
     badgeEn: 'New',
     actionType: 'cod',
     sortOrder: 5,
+  },
+  {
+    id: 'freefire',
+    titleAr: 'فري فاير',
+    titleEn: 'Free Fire',
+    descriptionAr: 'شحن فري فاير قريباً ضمن خدمات صراف.',
+    descriptionEn: 'Free Fire top-up is coming soon on Saraf.',
+    coverImage: DEFAULT_SERVICE_COVERS.freefire,
+    badgeAr: 'قريباً',
+    badgeEn: 'Soon',
+    actionType: 'coming_soon',
+    comingSoon: true,
+    sortOrder: 6,
+  },
+  {
+    id: 'tiktok-coins',
+    titleAr: 'تكتوك كوينز',
+    titleEn: 'TikTok Coins',
+    descriptionAr: 'شحن كوينز تكتوك قريباً ضمن خدمات صراف.',
+    descriptionEn: 'TikTok Coins top-up is coming soon on Saraf.',
+    coverImage: DEFAULT_SERVICE_COVERS.tiktok,
+    badgeAr: 'قريباً',
+    badgeEn: 'Soon',
+    actionType: 'coming_soon',
+    comingSoon: true,
+    sortOrder: 7,
   },
 ];
 

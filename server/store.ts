@@ -130,6 +130,7 @@ type FileStore = {
 const DATA_DIR = path.join(process.cwd(), "data");
 const BUY_WALLET_ICONS_DIR = path.join(DATA_DIR, "buy-wallet-icons");
 const SELL_WALLET_ICONS_DIR = path.join(DATA_DIR, "sell-wallet-icons");
+const SERVICE_COVERS_DIR = path.join(DATA_DIR, "service-covers");
 
 export function ensureBuyWalletIconsDir(): void {
   fs.mkdirSync(BUY_WALLET_ICONS_DIR, { recursive: true });
@@ -137,6 +138,10 @@ export function ensureBuyWalletIconsDir(): void {
 
 export function ensureSellWalletIconsDir(): void {
   fs.mkdirSync(SELL_WALLET_ICONS_DIR, { recursive: true });
+}
+
+export function ensureServiceCoversDir(): void {
+  fs.mkdirSync(SERVICE_COVERS_DIR, { recursive: true });
 }
 
 export function buyWalletIconDiskPath(walletId: string): string {
@@ -147,6 +152,10 @@ export function sellWalletIconDiskPath(walletId: string): string {
   return path.join(SELL_WALLET_ICONS_DIR, `${walletId}.png`);
 }
 
+export function serviceCoverDiskPath(serviceId: string, ext = "jpg"): string {
+  return path.join(SERVICE_COVERS_DIR, `${serviceId}.${ext}`);
+}
+
 /** مسار العلني المحفوظ في JSON بعد رفع PNG من لوحة الإدارة */
 export function buyWalletIconPublicPath(walletId: string): string {
   return `/uploads/buy-wallet-icons/${walletId}.png`;
@@ -154,6 +163,10 @@ export function buyWalletIconPublicPath(walletId: string): string {
 
 export function sellWalletIconPublicPath(walletId: string): string {
   return `/uploads/sell-wallet-icons/${walletId}.png`;
+}
+
+export function serviceCoverPublicPath(serviceId: string, ext = "jpg"): string {
+  return `/uploads/service-covers/${serviceId}.${ext}`;
 }
 
 const DATA_FILE = path.join(DATA_DIR, "saraf-store.json");
@@ -251,6 +264,17 @@ const defaultProfile: SiteProfile = {
   phone: "",
 };
 
+const defaultServiceCover = "/services/pubg-mobile.png";
+const defaultServiceCoverById: Record<string, string> = {
+  "pubg-uc": "/services/pubg-mobile.png",
+  playstation: "/services/playstation.png",
+  steam: "/services/ستيم.png",
+  xbox: "/services/xbox.png",
+  cod: "/services/cod.png",
+  freefire: "/services/freefire.png",
+  "tiktok-coins": "/services/tiktok-coins.png",
+};
+
 const defaultManagedServices: ManagedService[] = [
   {
     id: "pubg-uc",
@@ -258,7 +282,7 @@ const defaultManagedServices: ManagedService[] = [
     titleEn: "PUBG Mobile UC",
     descriptionAr: "شحن UC فوري بأفضل الأسعار — أرسل معرّف اللاعب واختر الباقة.",
     descriptionEn: "Instant UC top-up at competitive rates — enter your Player ID and pick a pack.",
-    coverImage: "/services/pubg-uc-cover.png",
+    coverImage: "/services/pubg-mobile.png",
     badgeAr: "الأكثر طلباً",
     badgeEn: "Popular",
     actionType: "pubg_uc",
@@ -332,6 +356,42 @@ function isValidHttpUrl(s: string): boolean {
   }
 }
 
+function isValidDataImageUrl(s: string): boolean {
+  return /^data:image\/(?:png|jpe?g|webp);base64,[a-z0-9+/=]+$/i.test(s);
+}
+
+function isValidServiceCoverPath(s: string): boolean {
+  return /^\/services\/[^?#]+\.(?:png|jpe?g|webp)$/i.test(s);
+}
+
+function dataImageExtension(s: string): "png" | "jpg" | "webp" | null {
+  const match = /^data:image\/(png|jpe?g|webp);base64,/i.exec(s);
+  if (!match) return null;
+  return match[1].toLowerCase().startsWith("jp") ? "jpg" : (match[1].toLowerCase() as "png" | "webp");
+}
+
+function saveServiceCoverDataUrl(serviceId: string, dataUrl: string): string {
+  const ext = dataImageExtension(dataUrl);
+  if (!ext || !isValidDataImageUrl(dataUrl)) return defaultServiceCover;
+  const commaIndex = dataUrl.indexOf(",");
+  const base64 = dataUrl.slice(commaIndex + 1);
+  const buf = Buffer.from(base64, "base64");
+  if (buf.length === 0 || buf.length > 8 * 1024 * 1024) return defaultServiceCover;
+  ensureServiceCoversDir();
+  const publicPath = serviceCoverPublicPath(serviceId, ext);
+  fs.writeFileSync(serviceCoverDiskPath(serviceId, ext), buf);
+  for (const staleExt of ["png", "jpg", "webp"] as const) {
+    if (staleExt === ext) continue;
+    try {
+      const stale = serviceCoverDiskPath(serviceId, staleExt);
+      if (fs.existsSync(stale)) fs.unlinkSync(stale);
+    } catch {
+      /* ignore stale cover cleanup */
+    }
+  }
+  return publicPath;
+}
+
 export function normalizeWalletIconUrl(raw: unknown): string | null {
   if (raw === undefined || raw === null) return null;
   if (typeof raw !== "string") return null;
@@ -375,8 +435,12 @@ function parseManagedServices(raw: string | undefined): ManagedService[] {
       if (!id || seen.has(id)) continue;
       seen.add(id);
       const sortOrder = Number(r.sort_order ?? r.sortOrder ?? i + 1);
-      const coverRaw = String(r.cover_image ?? r.coverImage ?? "/services/pubg-uc-cover.png").trim();
-      const coverImage = isValidHttpUrl(coverRaw) || coverRaw.startsWith("/") ? coverRaw : "/services/pubg-uc-cover.png";
+      const coverRaw = String(r.cover_image ?? r.coverImage ?? "").trim();
+      const fallbackCover = defaultServiceCoverById[id] || defaultServiceCover;
+      const coverImage =
+        isValidHttpUrl(coverRaw) || isValidDataImageUrl(coverRaw) || isValidServiceCoverPath(coverRaw) || (coverRaw.startsWith("/") && !coverRaw.startsWith("/services/"))
+          ? coverRaw
+          : fallbackCover;
       const actionRaw = String(r.action_type ?? r.actionType ?? "coming_soon").trim();
       const actionType = VALID_ACTIONS.has(actionRaw as ManagedService["actionType"])
         ? (actionRaw as ManagedService["actionType"])
@@ -437,6 +501,30 @@ function parseManagedPubgPackages(raw: string | undefined): ManagedPubgPackage[]
 }
 
 /** مفاتيح نصية يمكن ضبطها من البوت (لا تُمرّر إلى الواجهة كأنواع boolean) */
+function normalizeServicesCatalogForStorage(raw: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("invalid services catalog JSON");
+  }
+  if (!Array.isArray(parsed)) throw new Error("invalid services catalog JSON");
+
+  const normalized = parsed.map((row, idx) => {
+    if (!row || typeof row !== "object") return row;
+    const r = { ...(row as Record<string, unknown>) };
+    const id = normalizeServiceId(String(r.id || `service-${idx + 1}`));
+    const cover = String(r.coverImage ?? r.cover_image ?? "").trim();
+    if (id && isValidDataImageUrl(cover)) {
+      r.coverImage = saveServiceCoverDataUrl(id, cover);
+      delete r.cover_image;
+    }
+    return r;
+  });
+
+  return JSON.stringify(normalized);
+}
+
 export const SITE_STRING_SETTING_KEYS = [
   "link_support",
   "hero_buy_amount_display",
@@ -727,7 +815,9 @@ export async function setSiteStringSetting(key: string, value: string): Promise<
   if (!SITE_STRING_SETTING_KEYS.includes(key as (typeof SITE_STRING_SETTING_KEYS)[number])) {
     throw new Error("invalid site string key");
   }
-  const v = value.trim();
+  const v = key === "services_catalog_json"
+    ? normalizeServicesCatalogForStorage(value.trim())
+    : value.trim();
   if (key === "link_support" && !isValidHttpUrl(v)) {
     throw new Error("invalid support URL");
   }

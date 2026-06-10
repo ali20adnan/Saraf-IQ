@@ -285,18 +285,15 @@ const SERVICE_COVER_BY_ID: Record<string, string> = Object.fromEntries(
   DEFAULT_MANAGED_SERVICES.map((service) => [service.id, service.coverImage]),
 );
 
-const LEGACY_SERVICE_COVER_BY_ID: Record<string, string> = {
-  playstation: '/services/ps-cover.png',
-  steam: '/services/steam-cover.png',
-  xbox: '/services/xbox-cover.png',
-  cod: '/services/cod-cover.png',
-};
+const SERVICE_FALLBACK_COVER = 'https://placehold.co/800x450/0f172a/ffffff/png?text=Service';
 
 function serviceCoverImage(id: string, coverImage: string): string {
   const cleanedCover = coverImage.trim();
   const defaultCover = SERVICE_COVER_BY_ID[id];
-  if (!cleanedCover) return defaultCover || '/services/pubg-uc-cover.png';
-  if (defaultCover && cleanedCover === LEGACY_SERVICE_COVER_BY_ID[id]) return defaultCover;
+  if (!cleanedCover) return defaultCover || SERVICE_FALLBACK_COVER;
+  if (cleanedCover.startsWith('/services/') && cleanedCover.endsWith('.svg')) {
+    return defaultCover || SERVICE_FALLBACK_COVER;
+  }
   return cleanedCover;
 }
 
@@ -324,7 +321,7 @@ function sanitizeManagedServices(raw: unknown): ManagedServiceRow[] {
     const sortOrder = Number(r.sortOrder ?? r.sort_order ?? idx + 1);
     const VALID_ACTIONS = ['pubg_uc', 'playstation', 'steam', 'xbox', 'cod', 'coming_soon'];
     const actionRaw = String(r.actionType ?? r.action_type ?? 'coming_soon').trim();
-    const coverImageRaw = String(r.coverImage ?? r.cover_image ?? '/services/pubg-uc-cover.png').trim();
+    const coverImageRaw = String(r.coverImage ?? r.cover_image ?? '').trim();
     out.push({
       id,
       titleAr: String(r.titleAr ?? r.title_ar ?? ''),
@@ -3149,7 +3146,7 @@ function MainContent() {
                             titleEn: '',
                             descriptionAr: '',
                             descriptionEn: '',
-                            coverImage: '/services/pubg-uc-cover.png',
+                            coverImage: SERVICE_FALLBACK_COVER,
                             badgeAr: '',
                             badgeEn: '',
                             actionType: 'coming_soon',
