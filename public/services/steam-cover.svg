@@ -1,3 +1,6 @@
-<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1600 900' preserveAspectRatio='xMidYMid slice'>
-  <image href='/services/steam-cover.png' x='0' y='0' width='1600' height='900'/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="Steam gift card cover">
+  <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1b3142"/><stop offset="1" stop-color="#070b10"/></linearGradient><radialGradient id="glow" cx=".72" cy=".28" r=".42"><stop offset="0" stop-color="#66c0f4" stop-opacity=".75"/><stop offset="1" stop-color="#66c0f4" stop-opacity="0"/></radialGradient></defs>
+  <rect width="1600" height="900" fill="url(#bg)"/><rect width="1600" height="900" fill="url(#glow)"/><path d="M0 660 C300 530 520 760 820 600 S1300 520 1600 380 V900 H0Z" fill="#66c0f4" opacity=".12"/><circle cx="1180" cy="315" r="250" fill="#66c0f4"/><circle cx="1180" cy="315" r="145" fill="#172a3a"/>
+  <text x="395" y="385" fill="#fff" font-family="Arial, sans-serif" font-size="132" font-weight="800" text-anchor="middle">STEAM</text><text x="395" y="475" fill="#d8edf9" font-family="Arial, sans-serif" font-size="48" font-weight="700" text-anchor="middle">WALLET GIFT CARD</text><text x="1180" y="367" fill="#fff" font-family="Arial, sans-serif" font-size="190" font-weight="800" text-anchor="middle">S</text>
+  <rect x="145" y="625" width="430" height="120" rx="60" fill="#fff" opacity=".14"/><text x="360" y="700" fill="#fff" font-family="Arial, sans-serif" font-size="34" font-weight="800" text-anchor="middle">DIGITAL CARD</text>
 </svg>

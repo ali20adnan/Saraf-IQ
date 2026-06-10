@@ -8,14 +8,24 @@ import {CreditCardPaymentFields} from './CreditCardPaymentFields';
 import {validateCard, cardErrorMessage} from '../lib/cardValidation';
 
 /** أيقونات الخدمات */
-const SERVICE_META: Record<GiftCardService, {
+type ServiceMeta = {
   nameAr: string; nameEn: string;
   color: string; bg: string; logo: string;
-}> = {
-  playstation: { nameAr: 'بلايستيشن', nameEn: 'PlayStation', color: '#003087', bg: 'bg-blue-50', logo: '/services/ps-logo.png' },
-  steam:       { nameAr: 'ستيم',        nameEn: 'Steam',        color: '#1b2838', bg: 'bg-slate-100', logo: '/services/steam-logo.png' },
-  xbox:        { nameAr: 'إكس بوكس',   nameEn: 'Xbox',         color: '#107c10', bg: 'bg-green-50', logo: '/services/xbox-logo.png' },
-  cod:         { nameAr: 'كول أوف ديوتي', nameEn: 'Call of Duty', color: '#c7a227', bg: 'bg-yellow-50', logo: '/services/cod-logo.png' },
+};
+
+const DEFAULT_SERVICE_META: ServiceMeta = {
+  nameAr: 'بطاقة رقمية',
+  nameEn: 'Digital Gift Card',
+  color: '#111827',
+  bg: 'bg-gray-50',
+  logo: '/icons/logo.png',
+};
+
+const SERVICE_META: Partial<Record<GiftCardService, ServiceMeta>> = {
+  playstation: { nameAr: 'بلايستيشن', nameEn: 'PlayStation', color: '#003087', bg: 'bg-blue-50', logo: '/services/ps-logo.svg' },
+  steam:       { nameAr: 'ستيم',        nameEn: 'Steam',        color: '#1b2838', bg: 'bg-slate-100', logo: '/services/steam-logo.svg' },
+  xbox:        { nameAr: 'إكس بوكس',   nameEn: 'Xbox',         color: '#107c10', bg: 'bg-green-50', logo: '/services/xbox-logo.svg' },
+  cod:         { nameAr: 'كول أوف ديوتي', nameEn: 'Call of Duty', color: '#c7a227', bg: 'bg-yellow-50', logo: '/services/cod-logo.svg' },
 };
 
 const REGIONS: { id: GiftCardRegion; ar: string; en: string; flag: string }[] = [
@@ -37,7 +47,7 @@ type PaymentType = 'card' | 'wallet' | null;
 export function GiftCardOrder({service, clientId, userId, walletBalance = 0, onBack, onComplete}: Props) {
   const {lang, dir} = useLanguage();
   const BackIcon = dir === 'rtl' ? ArrowRight : ArrowLeft;
-  const meta = SERVICE_META[service];
+  const meta = SERVICE_META[service] ?? DEFAULT_SERVICE_META;
 
   const [region, setRegion] = useState<GiftCardRegion>('global');
   const [selected, setSelected] = useState<GiftCardPackage | null>(null);

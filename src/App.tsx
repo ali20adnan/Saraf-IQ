@@ -173,6 +173,7 @@ type ManagedServiceRow = {
 
 /** نسبة أبعاد صورة الكاروسيل (العرض/الارتفاع) — تطابق صندوق العرض على الجوال */
 const CAROUSEL_IMAGE_ASPECT = 2.2;
+const SERVICE_IMAGE_ASPECT = 16 / 9;
 
 type CarouselSlide = {
   id: string;
@@ -280,6 +281,25 @@ const DEFAULT_MANAGED_SERVICES: ManagedServiceRow[] = listAppServices().map((ser
   sortOrder: service.sortOrder,
 }));
 
+const SERVICE_COVER_BY_ID: Record<string, string> = Object.fromEntries(
+  DEFAULT_MANAGED_SERVICES.map((service) => [service.id, service.coverImage]),
+);
+
+const LEGACY_SERVICE_COVER_BY_ID: Record<string, string> = {
+  playstation: '/services/ps-cover.png',
+  steam: '/services/steam-cover.png',
+  xbox: '/services/xbox-cover.png',
+  cod: '/services/cod-cover.png',
+};
+
+function serviceCoverImage(id: string, coverImage: string): string {
+  const cleanedCover = coverImage.trim();
+  const defaultCover = SERVICE_COVER_BY_ID[id];
+  if (!cleanedCover) return defaultCover || '/services/pubg-uc-cover.png';
+  if (defaultCover && cleanedCover === LEGACY_SERVICE_COVER_BY_ID[id]) return defaultCover;
+  return cleanedCover;
+}
+
 const DEFAULT_PUBG_PACKAGES: ManagedPubgPackageRow[] = PUBG_UC_PACKAGES.map((pkg, idx) => ({
   id: pkg.id,
   label: pkg.label,
@@ -311,7 +331,7 @@ function sanitizeManagedServices(raw: unknown): ManagedServiceRow[] {
       titleEn: String(r.titleEn ?? r.title_en ?? ''),
       descriptionAr: String(r.descriptionAr ?? r.description_ar ?? ''),
       descriptionEn: String(r.descriptionEn ?? r.description_en ?? ''),
-      coverImage: coverImageRaw || '/services/pubg-uc-cover.png',
+      coverImage: serviceCoverImage(id, coverImageRaw),
       badgeAr: String(r.badgeAr ?? r.badge_ar ?? ''),
       badgeEn: String(r.badgeEn ?? r.badge_en ?? ''),
       actionType: (VALID_ACTIONS.includes(actionRaw) ? actionRaw : 'coming_soon') as ManagedServiceRow['actionType'],
@@ -332,7 +352,7 @@ function sanitizeManagedServices(raw: unknown): ManagedServiceRow[] {
       titleEn: service.titleEn || fallback.titleEn,
       descriptionAr: service.descriptionAr || fallback.descriptionAr,
       descriptionEn: service.descriptionEn || fallback.descriptionEn,
-      coverImage: service.coverImage || fallback.coverImage,
+      coverImage: serviceCoverImage(service.id, service.coverImage || fallback.coverImage),
       badgeAr: service.badgeAr || fallback.badgeAr,
       badgeEn: service.badgeEn || fallback.badgeEn,
     };
@@ -400,6 +420,8 @@ function MainContent() {
   const [carouselAnimating, setCarouselAnimating] = useState(false);
   /** اقتصاص صورة شريحة الكاروسيل: فهرس الشريحة + الصورة الأصلية المختارة */
   const [carouselCropper, setCarouselCropper] = useState<{ idx: number; src: string } | null>(null);
+  /** اقتصاص صورة بطاقة خدمة: فهرس الخدمة + الصورة الأصلية المختارة */
+  const [serviceCropper, setServiceCropper] = useState<{ idx: number; src: string } | null>(null);
   const carouselTouchX = useRef(0);
   const carouselTouchY = useRef(0);
   const carouselRef = useRef<HTMLDivElement>(null);
@@ -462,6 +484,9 @@ function MainContent() {
     method_fastpay_buy_enabled: true,
     method_fastpay_sell_enabled: true,
     method_creditcard_buy_enabled: true,
+    google_auth_enabled:
+      /^(1|true|yes|on)$/i.test(import.meta.env.VITE_GOOGLE_AUTH_ENABLED || '') ||
+      Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID),
     buy_custom_wallets: [] as BuyCustomWalletRow[],
     sell_custom_wallets: [] as SellCustomWalletRow[],
   });
@@ -825,6 +850,7 @@ function MainContent() {
             method_fastpay_buy_enabled: d.method_fastpay_buy_enabled !== false,
             method_fastpay_sell_enabled: d.method_fastpay_sell_enabled !== false,
             method_creditcard_buy_enabled: d.method_creditcard_buy_enabled !== false,
+            google_auth_enabled: d.google_auth_enabled === true,
             buy_custom_wallets: Array.isArray(d.buy_custom_wallets)
               ? (d.buy_custom_wallets as BuyCustomWalletRow[])
               : prev.buy_custom_wallets,
@@ -1622,6 +1648,7 @@ function MainContent() {
     setSelectedMethod(null);
     setFileName(null);
     setDenominationSelected(false);
+    setBuyPaymentType(null);
   };
 
   const handleTxTypeChange = (type: TransactionType) => {
@@ -1850,13 +1877,13 @@ function MainContent() {
                 name="password"
                 type={showPassword ? 'text' : 'password'}
                 required dir="ltr"
-                className="w-full px-4 py-3 pe-11 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all text-sm"
+                className="w-full pl-4 pr-11 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all text-sm"
                 placeholder={lang === 'ar' ? 'كلمة المرور' : 'Password'}
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
@@ -1882,8 +1909,9 @@ function MainContent() {
           {/* تسجيل الدخول بـ Google */}
           <button
             type="button"
-            disabled={isAuthLoading}
+            disabled={isAuthLoading || !appSettings.google_auth_enabled}
             onClick={async () => {
+              if (!appSettings.google_auth_enabled) return;
               try {
                 await supabase.auth.signInWithOAuth({
                   provider: 'google',
@@ -1893,10 +1921,20 @@ function MainContent() {
                 console.error(e);
               }
             }}
-            className="w-full flex items-center justify-center gap-3 border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 font-bold py-3 rounded-xl transition-colors text-sm shadow-sm disabled:opacity-60"
+            className={`w-full flex items-center justify-center gap-3 border font-bold py-3 rounded-xl transition-colors text-sm shadow-sm ${
+              appSettings.google_auth_enabled
+                ? 'border-gray-200 bg-white hover:bg-gray-50 text-gray-700 disabled:opacity-60'
+                : 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed shadow-none'
+            }`}
           >
             {/* Google SVG */}
-            <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 18 18"
+              xmlns="http://www.w3.org/2000/svg"
+              className={appSettings.google_auth_enabled ? '' : 'grayscale opacity-60'}
+            >
               <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
               <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" fill="#34A853"/>
               <path d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/>
@@ -3285,18 +3323,70 @@ function MainContent() {
                           className="rounded-xl border border-gray-200 bg-white px-3 py-2 md:col-span-2"
                           dir="ltr"
                         />
-                        <input
-                          value={service.coverImage}
-                          onChange={(e) =>
-                            setSiteContent((prev) => ({
-                              ...prev,
-                              servicesCatalog: prev.servicesCatalog.map((s, i) => (i === idx ? { ...s, coverImage: e.target.value } : s)),
-                            }))
-                          }
-                          placeholder="/services/pubg-uc-cover.png"
-                          className="rounded-xl border border-gray-200 bg-white px-3 py-2 md:col-span-2 lg:col-span-4"
-                          dir="ltr"
-                        />
+                        <div className="space-y-2 md:col-span-2 lg:col-span-4">
+                          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
+                            {service.coverImage ? (
+                              <div className="relative">
+                                <img
+                                  src={service.coverImage}
+                                  alt=""
+                                  className="w-full object-cover"
+                                  style={{ aspectRatio: String(SERVICE_IMAGE_ASPECT) }}
+                                  loading="lazy"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setSiteContent((prev) => ({
+                                      ...prev,
+                                      servicesCatalog: prev.servicesCatalog.map((s, i) => (i === idx ? { ...s, coverImage: '' } : s)),
+                                    }))
+                                  }
+                                  className="absolute end-2 top-2 rounded-full bg-black/60 p-1.5 text-white hover:bg-black/80"
+                                  aria-label={lang === 'ar' ? 'حذف الصورة' : 'Remove image'}
+                                >
+                                  <XCircle className="h-4 w-4" />
+                                </button>
+                              </div>
+                            ) : (
+                              <div
+                                className="flex items-center justify-center bg-gray-100 text-sm font-bold text-gray-400"
+                                style={{ aspectRatio: String(SERVICE_IMAGE_ASPECT) }}
+                              >
+                                {lang === 'ar' ? 'لا توجد صورة' : 'No image'}
+                              </div>
+                            )}
+                          </div>
+                          <label className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-gray-300 bg-white px-3 py-2.5 text-sm font-bold text-gray-600 hover:border-red-400 hover:text-red-500">
+                            <UploadCloud className="h-4 w-4" />
+                            {service.coverImage ? (lang === 'ar' ? 'تغيير الصورة' : 'Change image') : (lang === 'ar' ? 'رفع صورة' : 'Upload image')}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                e.currentTarget.value = '';
+                                if (!file) return;
+                                const reader = new FileReader();
+                                reader.onload = () => setServiceCropper({ idx, src: String(reader.result) });
+                                reader.readAsDataURL(file);
+                              }}
+                            />
+                          </label>
+                          <input
+                            value={service.coverImage}
+                            onChange={(e) =>
+                              setSiteContent((prev) => ({
+                                ...prev,
+                                servicesCatalog: prev.servicesCatalog.map((s, i) => (i === idx ? { ...s, coverImage: e.target.value } : s)),
+                              }))
+                            }
+                            placeholder={lang === 'ar' ? 'أو الصق رابط الصورة يدوياً' : 'Or paste image URL manually'}
+                            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-mono text-gray-600"
+                            dir="ltr"
+                          />
+                        </div>
                       </div>
                       <div className="mt-3 flex justify-end">
                         <button
@@ -3316,6 +3406,22 @@ function MainContent() {
                   ))}
                 </div>
               </div>
+
+              {serviceCropper && (
+                <CarouselImageCropper
+                  src={serviceCropper.src}
+                  aspect={SERVICE_IMAGE_ASPECT}
+                  lang={lang}
+                  onCancel={() => setServiceCropper(null)}
+                  onCrop={(dataUrl) => {
+                    setSiteContent((prev) => ({
+                      ...prev,
+                      servicesCatalog: prev.servicesCatalog.map((s, i) => (i === serviceCropper.idx ? { ...s, coverImage: dataUrl } : s)),
+                    }));
+                    setServiceCropper(null);
+                  }}
+                />
+              )}
 
               <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
                 <h3 className="text-lg font-black text-gray-900">{lang === 'ar' ? 'تفاصيل خدمة PUBG UC' : 'PUBG UC Detail Page'}</h3>
@@ -5025,85 +5131,140 @@ function MainContent() {
   ] as const;
 
   const renderAsiacellSection = () => {
-    const DEFAULT_DENOMINATIONS = [2000, 3000, 5000, 7500, 10000, 15000, 20000, 25000, 30000, 50000, 75000, 100000, 150000, 200000, 250000];
-    const buyOffers = offersList.filter((o) => o.variant === 'buy').sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-    const adminAmounts = new Set(buyOffers.map((o) => Number(String(o.amount_display).replace(/[,\s]/g, ''))));
-    const defaultItems = DEFAULT_DENOMINATIONS.filter((v) => !adminAmounts.has(v)).map((v) => ({
-      id: `default-${v}`, amount_display: v.toLocaleString('en'), amount: v,
-    }));
-    const adminItems = buyOffers.map((o) => ({
-      id: o.id, amount_display: o.amount_display, amount: Number(String(o.amount_display).replace(/[,\s]/g, '')),
-    }));
-    const allItems = [...adminItems, ...defaultItems].sort((a, b) => a.amount - b.amount);
-
-    const handleOperatorClick = (op: typeof OPERATORS[number], amount: number) => {
-      if (amount > 0) setCardValue(amount);
+    const handleOperatorClick = (op: typeof OPERATORS[number]) => {
       setSelectedOperator(op.id);
       setTxType('buy');
       setSelectedMethod(null);
       setBuyPaymentType(null);
       setIsSuccess(false);
       setShowOtpStep(false);
+      setDenominationSelected(false);
       setShowPurchasePage(true);
     };
 
     return (
-      <div className="space-y-6 mb-6">
-        {OPERATORS.map((op) => (
-          <section key={op.id}>
-            <h2 className="text-lg font-black text-gray-900 mb-3 px-0.5">
-              {lang === 'ar' ? `رصيد ${op.nameAr}` : `${op.nameEn} Credit`}
-            </h2>
-            <div
-              className="flex gap-3 overflow-x-auto pb-2 scrollbar-none -mx-3 px-3 sm:-mx-6 sm:px-6 select-none"
-              style={{ cursor: 'grab' }}
-              onMouseDown={(e) => {
-                const el = e.currentTarget;
-                dragState.current = { active: true, startX: e.pageX - el.offsetLeft, scrollLeft: el.scrollLeft, dragged: false };
-                el.style.cursor = 'grabbing';
-              }}
-              onMouseMove={(e) => {
-                if (!dragState.current.active) return;
-                const el = e.currentTarget;
-                const moved = Math.abs(e.pageX - el.offsetLeft - dragState.current.startX);
-                if (moved > 5) dragState.current.dragged = true;
-                el.scrollLeft = dragState.current.scrollLeft - (e.pageX - el.offsetLeft - dragState.current.startX);
-              }}
-              onMouseUp={(e) => { dragState.current.active = false; e.currentTarget.style.cursor = 'grab'; }}
-              onMouseLeave={(e) => { dragState.current.active = false; e.currentTarget.style.cursor = 'grab'; }}
+      <section className="mb-6">
+        <div className="mb-3 flex items-center justify-between px-0.5">
+          <h2 className="text-lg font-black text-gray-900">
+            {lang === 'ar' ? 'رصيد' : 'Credit'}
+          </h2>
+        </div>
+        <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
+          {OPERATORS.map((op) => (
+            <button
+              key={op.id}
+              type="button"
+              onClick={() => handleOperatorClick(op)}
+              className={`relative flex aspect-[1.18] min-w-0 items-center justify-center overflow-hidden rounded-2xl border border-gray-100 bg-white p-3 shadow-sm transition-all active:scale-[0.98] hover:shadow-md ${op.hover}`}
             >
-              {allItems.map((item) => (
-                <button
-                  key={`${op.id}-${item.id}`}
-                  onClick={() => { if (dragState.current.dragged) { dragState.current.dragged = false; return; } handleOperatorClick(op, item.amount); }}
-                  className={`snap-start shrink-0 w-[30%] sm:w-[22%] lg:w-[150px] bg-white rounded-2xl flex flex-col items-center gap-3 py-4 px-2 border border-gray-100 shadow-sm active:scale-95 transition-transform ${op.hover} hover:shadow-md`}
-                >
-                  <div className={`w-14 h-14 rounded-2xl ${op.bg} flex items-center justify-center`}>
-                    <img
-                      src={op.logo} alt={op.nameEn} width={40} height={40}
-                      className="w-10 h-10 object-contain"
-                      onError={(e) => {
-                        // fallback: اختصار اسم المشغّل
-                        const img = e.target as HTMLImageElement;
-                        img.style.display = 'none';
-                        const span = document.createElement('span');
-                        span.style.cssText = `font-weight:900;font-size:13px;color:${op.color}`;
-                        span.textContent = op.nameEn.slice(0, 4).toUpperCase();
-                        img.parentElement?.appendChild(span);
-                      }}
-                    />
-                  </div>
-                  <div className="text-center min-w-0 w-full">
-                    <p className="text-sm font-black text-gray-900 leading-tight" dir="ltr">{item.amount_display}</p>
-                    <p className="text-[11px] text-gray-400 font-medium mt-0.5">
-                      {lang === 'ar' ? op.nameAr : op.nameEn}
-                    </p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </section>
-        ))}
+              {op.id === 'asiacell' && (
+                <span className="absolute end-0 top-0 rounded-bl-xl bg-red-600 px-2.5 py-1 text-[10px] font-black text-white">
+                  {lang === 'ar' ? 'أقل سعر' : 'Best'}
+                </span>
+              )}
+              {op.id === 'zain' && (
+                <span className="absolute end-0 top-0 rounded-bl-xl bg-gray-700 px-2.5 py-1 text-[10px] font-black text-white">
+                  {lang === 'ar' ? 'الأوفر بالسوق' : 'Deal'}
+                </span>
+              )}
+              <img
+                src={op.logo}
+                alt={op.nameEn}
+                className="max-h-14 w-full object-contain"
+                loading="lazy"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+              />
+            </button>
+          ))}
+        </div>
+      </section>
+    );
+  };
+
+  const renderCreditDenominationPage = () => {
+    const DEFAULT_DENOMINATIONS = [1000, 2000, 3000, 5000, 6000, 10000, 15000, 18000, 25000, 30000, 50000, 75000, 100000, 150000, 200000, 250000];
+    const buyOffers = offersList.filter((o) => o.variant === 'buy').sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+    const adminAmounts = new Set(buyOffers.map((o) => Number(String(o.amount_display).replace(/[,\s]/g, ''))));
+    const defaultItems = DEFAULT_DENOMINATIONS.filter((v) => !adminAmounts.has(v)).map((v) => ({
+      id: `default-${v}`,
+      amount_display: v.toLocaleString('en'),
+      amount: v,
+    }));
+    const adminItems = buyOffers.map((o) => ({
+      id: o.id,
+      amount_display: o.amount_display,
+      amount: Number(String(o.amount_display).replace(/[,\s]/g, '')),
+    }));
+    const allItems = [...adminItems, ...defaultItems].filter((item) => Number.isFinite(item.amount) && item.amount > 0).sort((a, b) => a.amount - b.amount);
+    const op = OPERATORS.find((o) => o.id === selectedOperator) ?? OPERATORS[0];
+    const hero100kIqd = parseHeroBuyPriceIqdFor100k(siteContent.heroBuyAmountDisplay);
+    const priceFor = (amount: number) => (
+      hero100kIqd != null ? Math.round((hero100kIqd / 100_000) * amount) : Math.round(amount * 0.98)
+    );
+
+    return (
+      <div className="mx-auto min-h-full w-full max-w-2xl bg-gray-50 pb-6">
+        <div className="sticky top-0 z-20 bg-gray-50/95 px-4 pb-3 pt-2 backdrop-blur">
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => { setShowPurchasePage(false); setDenominationSelected(false); }}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-white text-gray-600 shadow-sm ring-1 ring-gray-100"
+            >
+              {dir === 'rtl' ? <ArrowRight className="h-5 w-5" /> : <ArrowLeft className="h-5 w-5" />}
+            </button>
+            <h1 className="text-xl font-black text-gray-800">
+              {lang === 'ar' ? op.nameAr : op.nameEn}
+            </h1>
+            <button
+              type="button"
+              onClick={() => { setShowPurchasePage(false); setDenominationSelected(false); }}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-white text-gray-600 shadow-sm ring-1 ring-gray-100"
+            >
+              <Home className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="mt-4 flex items-center justify-center gap-3 rounded-xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
+            <img src={op.logo} alt={op.nameEn} className="h-7 w-7 object-contain" />
+            <span className="text-sm font-bold text-gray-800">
+              {lang === 'ar' ? 'كارتات رصيد' : 'Credit cards'}
+            </span>
+          </div>
+        </div>
+
+        <div className="px-4 pt-4">
+          <h2 className="mb-3 text-right text-lg font-black text-gray-800">
+            {lang === 'ar' ? 'اختر الباقة' : 'Choose Package'}
+          </h2>
+          <div className="space-y-3">
+            {allItems.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => {
+                  setCardValue(item.amount);
+                  setQuantity(1);
+                  setSelectedMethod(null);
+                  setBuyPaymentType(null);
+                  setDenominationSelected(true);
+                }}
+                className="flex w-full items-center gap-4 rounded-2xl border border-gray-100 bg-white px-5 py-4 text-start shadow-sm transition-all active:scale-[0.99] hover:border-gray-200 hover:shadow-md"
+              >
+                <ArrowLeft className={`h-5 w-5 shrink-0 text-gray-700 ${dir !== 'rtl' ? 'rotate-180' : ''}`} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xl font-black text-gray-900" dir={dir}>
+                    {lang === 'ar'
+                      ? `${op.nameAr} ${formatLatinDigits(item.amount)}`
+                      : `${formatLatinDigits(item.amount)} ${op.nameEn}`}
+                  </p>
+                  <p className="mt-1 text-lg font-black text-gray-600" dir="ltr">
+                    {formatLatinDigits(priceFor(item.amount))} {t('iqd')}
+                  </p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
     );
   };
@@ -5423,7 +5584,7 @@ function MainContent() {
     const selectedMethodName = currentMethodsFiltered.find(m => m.id === selectedMethod)?.name;
 
     if (txType === 'buy') {
-      const cardValues = [2000, 5000, 10000, 15000, 25000, 50000, 100000, 150000, 200000, 250000];
+      const cardValues = [1000, 2000, 3000, 5000, 6000, 7500, 10000, 15000, 18000, 20000, 25000, 30000, 50000, 75000, 100000, 150000, 200000, 250000];
       const hero100kIqd = parseHeroBuyPriceIqdFor100k(siteContent.heroBuyAmountDisplay);
       const pricePerCard =
         hero100kIqd != null
@@ -5439,7 +5600,7 @@ function MainContent() {
         >
           {/* هيدر شراء المنتج */}
           <div className="bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between sticky top-0 z-10">
-            <button onClick={() => { setSelectedMethod(null); setBuyPaymentType(null); setShowOtpStep(false); setShowPurchasePage(false); }} className="p-2 -ms-2 rounded-xl hover:bg-gray-100 transition-colors">
+            <button onClick={() => { setSelectedMethod(null); setBuyPaymentType(null); setShowOtpStep(false); setDenominationSelected(false); }} className="p-2 -ms-2 rounded-xl hover:bg-gray-100 transition-colors">
               {dir === 'rtl' ? <ArrowRight className="w-5 h-5 text-gray-600" /> : <ArrowLeft className="w-5 h-5 text-gray-600" />}
             </button>
             <h2 className="text-base font-black text-gray-900">
@@ -6233,6 +6394,10 @@ function MainContent() {
 
         // صفحة الشراء بعد اختيار الفئة
         if (showPurchasePage) {
+          if (txType === 'buy' && !denominationSelected && !isSuccess) {
+            return renderCreditDenominationPage();
+          }
+
           return (
             <div className="mx-auto w-full max-w-7xl lg:grid lg:grid-cols-12 lg:gap-8">
               <div className="lg:col-span-7 xl:col-span-8">
@@ -6243,7 +6408,7 @@ function MainContent() {
                     </div>
                     <h2 className="text-3xl font-black mb-3 text-gray-900">{t('requestSubmitted')}</h2>
                     <p className="text-gray-500 mb-10 leading-relaxed font-medium max-w-sm">{t('requestPending')}</p>
-                    <button onClick={() => { resetForm(); setShowPurchasePage(false); }} className="w-full max-w-xs bg-gray-900 text-white py-4 rounded-2xl font-bold hover:bg-gray-800 transition-colors active:scale-95 shadow-lg">
+                    <button onClick={() => { resetForm(); setShowPurchasePage(false); setDenominationSelected(false); }} className="w-full max-w-xs bg-gray-900 text-white py-4 rounded-2xl font-bold hover:bg-gray-800 transition-colors active:scale-95 shadow-lg">
                       {t('backToHome')}
                     </button>
                   </div>

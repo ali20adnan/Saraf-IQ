@@ -1,3 +1,6 @@
-<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1600 900' preserveAspectRatio='xMidYMid slice'>
-  <image href='/services/xbox-cover.png' x='0' y='0' width='1600' height='900'/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="Xbox gift card cover">
+  <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0b5f28"/><stop offset="1" stop-color="#06150b"/></linearGradient><pattern id="dots" width="70" height="70" patternUnits="userSpaceOnUse"><circle cx="8" cy="8" r="3" fill="#fff" opacity=".17"/></pattern></defs>
+  <rect width="1600" height="900" fill="url(#bg)"/><rect width="1600" height="900" fill="url(#dots)"/><circle cx="1210" cy="300" r="250" fill="#39b54a"/><path d="M1050 170 C1135 230 1225 350 1370 470M1370 170 C1270 240 1185 350 1050 470" fill="none" stroke="#fff" stroke-width="34" stroke-linecap="round" opacity=".9"/>
+  <text x="360" y="385" fill="#fff" font-family="Arial, sans-serif" font-size="138" font-weight="800" text-anchor="middle">XBOX</text><text x="360" y="475" fill="#dcfce7" font-family="Arial, sans-serif" font-size="46" font-weight="700" text-anchor="middle">MICROSOFT GIFT CARD</text><text x="1210" y="355" fill="#fff" font-family="Arial, sans-serif" font-size="172" font-weight="800" text-anchor="middle">X</text>
+  <rect x="145" y="625" width="430" height="120" rx="60" fill="#fff" opacity=".15"/><text x="360" y="700" fill="#fff" font-family="Arial, sans-serif" font-size="34" font-weight="800" text-anchor="middle">DIGITAL CARD</text>
 </svg>

@@ -178,6 +178,20 @@ function resolveCorsOrigin(): CorsOptions["origin"] {
   };
 }
 
+function envFlagEnabled(value: string | undefined): boolean {
+  return /^(1|true|yes|on)$/i.test((value || "").trim());
+}
+
+function isGoogleAuthConfigured(): boolean {
+  return (
+    envFlagEnabled(process.env.GOOGLE_AUTH_ENABLED) ||
+    envFlagEnabled(process.env.VITE_GOOGLE_AUTH_ENABLED) ||
+    Boolean(process.env.GOOGLE_CLIENT_ID?.trim()) ||
+    Boolean(process.env.GOOGLE_OAUTH_CLIENT_ID?.trim()) ||
+    Boolean(process.env.SUPABASE_AUTH_GOOGLE_CLIENT_ID?.trim())
+  );
+}
+
 async function startServer() {
   const app = express();
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -299,6 +313,7 @@ async function startServer() {
     ).trim();
     const apkUrl = process.env.VITE_APK_URL?.trim() || undefined;
     const railwayPublicDomain = process.env.RAILWAY_PUBLIC_DOMAIN?.trim() || undefined;
+    const googleAuthEnabled = isGoogleAuthConfigured();
 
     if (!supabaseUrl.startsWith("http") || !supabaseAnonKey) {
       res.status(503).json({
@@ -312,6 +327,7 @@ async function startServer() {
     res.json({
       supabaseUrl,
       supabaseAnonKey,
+      googleAuthEnabled,
       ...(apkUrl ? {apkUrl} : {}),
       ...(railwayPublicDomain ? {railwayPublicDomain} : {}),
     });
@@ -2123,7 +2139,10 @@ async function startServer() {
   app.get("/api/settings", async (_req, res) => {
     try {
       const settings = await store.getAppSettings();
-      res.json(settings);
+      res.json({
+        ...settings,
+        google_auth_enabled: isGoogleAuthConfigured(),
+      });
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Failed to load settings" });
