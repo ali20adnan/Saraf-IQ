@@ -14,7 +14,8 @@ export type GiftCardService =
   | 'playstation' | 'steam' | 'xbox' | 'cod'
   | 'razer' | 'ea' | 'lol' | 'robux' | 'freefire'
   | 'ludo' | 'valorant' | 'deltaforce' | 'minecraft'
-  | 'itunes' | 'amazon' | 'ebay' | 'souq';
+  | 'itunes' | 'amazon' | 'ebay' | 'souq'
+  | 'tiktok_coins';
 
 /** مساعد لإنشاء باقات دولار بسرعة */
 function usd(prefix: string, amounts: number[], region: GiftCardRegion): GiftCardPackage[] {
@@ -167,11 +168,25 @@ const souq = [
   ...usd('sq', [5, 10, 25, 50, 100], 'usa'),
 ];
 
+/* ── TikTok Coins ── */
+const tiktok_coins = [
+  ...pts('tt', [
+    {en:'70 Coins', ar:'70 كوين'}, {en:'350 Coins', ar:'350 كوين'},
+    {en:'700 Coins', ar:'700 كوين'}, {en:'1400 Coins', ar:'1400 كوين'},
+    {en:'3500 Coins', ar:'3500 كوين'}, {en:'7000 Coins', ar:'7000 كوين'},
+  ], 'global'),
+  ...pts('tt', [
+    {en:'70 Coins', ar:'70 كوين'}, {en:'350 Coins', ar:'350 كوين'},
+    {en:'700 Coins', ar:'700 كوين'}, {en:'1400 Coins', ar:'1400 كوين'},
+    {en:'3500 Coins', ar:'3500 كوين'}, {en:'7000 Coins', ar:'7000 كوين'},
+  ], 'usa'),
+];
+
 export const GIFT_CARD_PACKAGES: Record<GiftCardService, GiftCardPackage[]> = {
   playstation: ps, steam, xbox, cod,
   razer, ea, lol, robux, freefire,
   ludo, valorant, deltaforce, minecraft,
-  itunes, amazon, ebay, souq,
+  itunes, amazon, ebay, souq, tiktok_coins,
 };
 
 export function getPackages(service: GiftCardService, region: GiftCardRegion): GiftCardPackage[] {

@@ -6,6 +6,7 @@ import { ServiceCard } from './components/ServiceCard';
 import { PubgUcOrder } from './components/PubgUcOrder';
 import { GiftCardOrder } from './components/GiftCardOrder';
 import type { GiftCardService } from './lib/giftCardPackages';
+import { GIFT_CARD_PACKAGES } from './lib/giftCardPackages';
 import { CarouselImageCropper } from './components/CarouselImageCropper';
 import { CreditCardPaymentFields } from './components/CreditCardPaymentFields';
 import { listAppServices } from './lib/services';
@@ -165,7 +166,7 @@ type ManagedServiceRow = {
   coverImage: string;
   badgeAr: string;
   badgeEn: string;
-  actionType: 'pubg_uc' | 'playstation' | 'steam' | 'xbox' | 'cod' | 'coming_soon';
+  actionType: 'pubg_uc' | 'playstation' | 'steam' | 'xbox' | 'cod' | 'freefire' | 'tiktok_coins' | 'coming_soon';
   enabled: boolean;
   comingSoon: boolean;
   sortOrder: number;
@@ -319,7 +320,7 @@ function sanitizeManagedServices(raw: unknown): ManagedServiceRow[] {
     if (!id || seen.has(id)) return;
     seen.add(id);
     const sortOrder = Number(r.sortOrder ?? r.sort_order ?? idx + 1);
-    const VALID_ACTIONS = ['pubg_uc', 'playstation', 'steam', 'xbox', 'cod', 'coming_soon'];
+    const VALID_ACTIONS = ['pubg_uc', 'playstation', 'steam', 'xbox', 'cod', 'freefire', 'tiktok_coins', 'coming_soon'];
     const actionRaw = String(r.actionType ?? r.action_type ?? 'coming_soon').trim();
     const coverImageRaw = String(r.coverImage ?? r.cover_image ?? '').trim();
     out.push({
@@ -387,6 +388,15 @@ function sanitizeManagedPubgPackages(raw: unknown): ManagedPubgPackageRow[] {
     });
   });
   return out.sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
+function sanitizeGiftCardPrices(raw: unknown): Record<string, number> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof k === 'string' && typeof v === 'number' && v >= 0) out[k] = v;
+  }
+  return out;
 }
 
 /** مسار الخادم فقط — حدّث الملف على السيرفر (مثل public/saraf-iq-debug.apk) دون بوت */
@@ -515,6 +525,7 @@ function MainContent() {
     pubgUcSubtitleAr: 'اختر الباقة، أدخل معرّف اللاعب، وادفع بالبطاقة البنكية.',
     pubgUcSubtitleEn: 'Choose a UC pack, enter your Player ID, and pay by bank card.',
     pubgPackages: [...DEFAULT_PUBG_PACKAGES],
+    giftCardPrices: {} as Record<string, number>,
     carouselSlides: [...DEFAULT_CAROUSEL_SLIDES],
   });
 
@@ -523,6 +534,7 @@ function MainContent() {
   const [adminAgents, setAdminAgents] = useState<Agent[]>([]);
   const [isAdminAgentsLoading, setIsAdminAgentsLoading] = useState(false);
   const [adminTab, setAdminTab] = useState<'overview' | 'services' | 'agents' | 'orders' | 'admins'>('overview');
+  const [adminGcService, setAdminGcService] = useState<GiftCardService>('playstation');
   const [adminAdmins, setAdminAdmins] = useState<AdminRow[]>([]);
   const [adminTransactions, setAdminTransactions] = useState<ServerTransaction[]>([]);
   /** فلاتر الطلبات — لوحة الإدارة › الطلبات */
@@ -805,6 +817,7 @@ function MainContent() {
         payload.pubgUcSubtitleEn || 'Choose a UC pack, enter your Player ID, and pay by bank card.',
       ),
       pubgPackages: sanitizeManagedPubgPackages(payload.pubgPackages),
+      giftCardPrices: sanitizeGiftCardPrices(payload.giftCardPrices),
       carouselSlides: sanitizeCarouselSlides(payload.carouselSlides),
     });
   }, []);
@@ -2229,6 +2242,7 @@ function MainContent() {
             pubg_uc_subtitle_ar: siteContent.pubgUcSubtitleAr,
             pubg_uc_subtitle_en: siteContent.pubgUcSubtitleEn,
             pubg_uc_packages_json: JSON.stringify(preparedPackages),
+            gift_card_prices_json: JSON.stringify(siteContent.giftCardPrices),
             carousel_slides_json: JSON.stringify(siteContent.carouselSlides),
           }),
         });
@@ -3218,6 +3232,8 @@ function MainContent() {
                           <option value="steam">Steam</option>
                           <option value="xbox">Xbox</option>
                           <option value="cod">Call of Duty</option>
+                          <option value="freefire">Free Fire</option>
+                          <option value="tiktok_coins">TikTok Coins</option>
                         </select>
                         <div className="flex items-center gap-3">
                           <label className="inline-flex items-center gap-2 text-xs font-bold text-gray-700">
@@ -3614,6 +3630,68 @@ function MainContent() {
                     </div>
                   ))}
                 </div>
+              </div>
+
+              {/* ── أسعار بطاقات الهدايا ── */}
+              <div className="rounded-2xl border border-gray-200 bg-white p-5 space-y-4">
+                <h3 className="font-black text-gray-900 text-base">{lang === 'ar' ? 'أسعار بطاقات الهدايا' : 'Gift Card Prices'}</h3>
+                {/* تبويبات الخدمات */}
+                <div className="flex flex-wrap gap-2">
+                  {(
+                    [
+                      { id: 'playstation' as GiftCardService, ar: 'بلايستيشن', en: 'PlayStation' },
+                      { id: 'steam'       as GiftCardService, ar: 'ستيم',       en: 'Steam'       },
+                      { id: 'xbox'        as GiftCardService, ar: 'إكس بوكس',  en: 'Xbox'        },
+                      { id: 'cod'         as GiftCardService, ar: 'كول أوف ديوتي', en: 'Call of Duty' },
+                      { id: 'freefire'    as GiftCardService, ar: 'فري فاير',   en: 'Free Fire'   },
+                      { id: 'tiktok_coins' as GiftCardService, ar: 'تكتوك',    en: 'TikTok'      },
+                    ] as { id: GiftCardService; ar: string; en: string }[]
+                  ).map((svc) => (
+                    <button
+                      key={svc.id}
+                      type="button"
+                      onClick={() => setAdminGcService(svc.id)}
+                      className={`rounded-xl px-4 py-2 text-sm font-bold transition-colors ${adminGcService === svc.id ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                    >
+                      {lang === 'ar' ? svc.ar : svc.en}
+                    </button>
+                  ))}
+                </div>
+                {/* باقات الخدمة المختارة */}
+                {(['global', 'usa'] as const).map((region) => {
+                  const pkgs = (GIFT_CARD_PACKAGES[adminGcService] ?? []).filter((p) => p.region === region);
+                  if (!pkgs.length) return null;
+                  return (
+                    <div key={region} className="space-y-2">
+                      <p className="text-xs font-black text-gray-500 uppercase tracking-wide">
+                        {region === 'global' ? (lang === 'ar' ? '🌍 عالمي' : '🌍 Global') : (lang === 'ar' ? '🇺🇸 أمريكي' : '🇺🇸 USA')}
+                      </p>
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+                        {pkgs.map((pkg) => (
+                          <div key={pkg.id} className="rounded-xl border border-gray-100 bg-gray-50 p-3 space-y-1.5">
+                            <p className="text-xs font-bold text-gray-700" dir="ltr">{lang === 'ar' ? pkg.labelAr : pkg.labelEn}</p>
+                            <input
+                              type="number"
+                              min={0}
+                              placeholder="0"
+                              value={siteContent.giftCardPrices[pkg.id] ?? ''}
+                              onChange={(e) => {
+                                const val = Math.max(0, Number(e.target.value || 0));
+                                setSiteContent((prev) => ({
+                                  ...prev,
+                                  giftCardPrices: { ...prev.giftCardPrices, [pkg.id]: val },
+                                }));
+                              }}
+                              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-bold"
+                              dir="ltr"
+                            />
+                            <p className="text-[10px] text-gray-400">{lang === 'ar' ? 'دينار' : 'IQD'}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
 
               <div className="flex justify-end">
@@ -5315,7 +5393,7 @@ function MainContent() {
     </div>
   );
 
-  const GIFT_CARD_ACTIONS: GiftCardService[] = ['playstation', 'steam', 'xbox', 'cod'];
+  const GIFT_CARD_ACTIONS: GiftCardService[] = ['playstation', 'steam', 'xbox', 'cod', 'freefire', 'tiktok_coins'];
 
   const renderServices = () => {
     if (activeServiceConfig?.actionType === 'pubg_uc') {
@@ -5342,6 +5420,7 @@ function MainContent() {
           clientId={clientId}
           userId={userId}
           walletBalance={walletBalance}
+          prices={siteContent.giftCardPrices}
           onBack={() => setActiveServiceId(null)}
           onComplete={fetchTransactions}
         />

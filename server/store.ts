@@ -84,7 +84,7 @@ export type ManagedService = {
   coverImage: string;
   badgeAr: string;
   badgeEn: string;
-  actionType: "pubg_uc" | "playstation" | "steam" | "xbox" | "cod" | "coming_soon";
+  actionType: "pubg_uc" | "playstation" | "steam" | "xbox" | "cod" | "freefire" | "tiktok_coins" | "coming_soon";
   enabled: boolean;
   comingSoon: boolean;
   sortOrder: number;
@@ -341,6 +341,8 @@ const defaultAppSettings: Record<string, string> = {
   pubg_uc_subtitle_ar: "اختر الباقة، أدخل معرّف اللاعب، وادفع بالبطاقة البنكية.",
   pubg_uc_subtitle_en: "Choose a UC pack, enter your Player ID, and pay by bank card.",
   pubg_uc_packages_json: JSON.stringify(defaultManagedPubgPackages),
+  /** JSON object: packageId → priceIqd overrides for all gift card services */
+  gift_card_prices_json: "{}",
   /** JSON array: admin-defined buy payment wallets (method_key wallet_<id>) */
   buy_custom_wallets: "[]",
   /** JSON array: admin-defined sell receiving wallets (method_key sell_wallet_<id>) */
@@ -423,6 +425,8 @@ function parseManagedServices(raw: string | undefined): ManagedService[] {
       "steam",
       "xbox",
       "cod",
+      "freefire",
+      "tiktok_coins",
       "coming_soon",
     ]);
     const out: ManagedService[] = [];
@@ -539,6 +543,7 @@ export const SITE_STRING_SETTING_KEYS = [
   "pubg_uc_subtitle_ar",
   "pubg_uc_subtitle_en",
   "pubg_uc_packages_json",
+  "gift_card_prices_json",
   "carousel_slides_json",
 ] as const;
 
@@ -556,6 +561,7 @@ export type SiteContentPublic = {
   pubgUcSubtitleAr: string;
   pubgUcSubtitleEn: string;
   pubgPackages: ManagedPubgPackage[];
+  giftCardPrices: Record<string, number>;
   carouselSlides: unknown[];
 };
 
@@ -591,6 +597,17 @@ export async function getSiteContent(): Promise<SiteContentPublic> {
     pubgUcSubtitleAr: (final.pubg_uc_subtitle_ar || defaultAppSettings.pubg_uc_subtitle_ar).trim(),
     pubgUcSubtitleEn: (final.pubg_uc_subtitle_en || defaultAppSettings.pubg_uc_subtitle_en).trim(),
     pubgPackages: parseManagedPubgPackages(final.pubg_uc_packages_json),
+    giftCardPrices: (() => {
+      try {
+        const p = JSON.parse(final.gift_card_prices_json || "{}");
+        if (!p || typeof p !== "object" || Array.isArray(p)) return {};
+        const out: Record<string, number> = {};
+        for (const [k, v] of Object.entries(p)) {
+          if (typeof k === "string" && typeof v === "number" && v >= 0) out[k] = v;
+        }
+        return out;
+      } catch { return {}; }
+    })(),
     carouselSlides: (() => { try { const p = JSON.parse(final.carousel_slides_json || '[]'); return Array.isArray(p) ? p : []; } catch { return []; } })(),
   };
 }

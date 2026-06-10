@@ -22,10 +22,12 @@ const DEFAULT_SERVICE_META: ServiceMeta = {
 };
 
 const SERVICE_META: Partial<Record<GiftCardService, ServiceMeta>> = {
-  playstation: { nameAr: 'بلايستيشن', nameEn: 'PlayStation', color: '#003087', bg: 'bg-blue-50', logo: '/icons/logo.png' },
-  steam:       { nameAr: 'ستيم',        nameEn: 'Steam',        color: '#1b2838', bg: 'bg-slate-100', logo: '/icons/logo.png' },
-  xbox:        { nameAr: 'إكس بوكس',   nameEn: 'Xbox',         color: '#107c10', bg: 'bg-green-50', logo: '/icons/logo.png' },
-  cod:         { nameAr: 'كول أوف ديوتي', nameEn: 'Call of Duty', color: '#c7a227', bg: 'bg-yellow-50', logo: '/icons/logo.png' },
+  playstation:  { nameAr: 'بلايستيشن',     nameEn: 'PlayStation',   color: '#003087', bg: 'bg-blue-50',   logo: '/icons/logo.png' },
+  steam:        { nameAr: 'ستيم',           nameEn: 'Steam',         color: '#1b2838', bg: 'bg-slate-100', logo: '/icons/logo.png' },
+  xbox:         { nameAr: 'إكس بوكس',      nameEn: 'Xbox',          color: '#107c10', bg: 'bg-green-50',  logo: '/icons/logo.png' },
+  cod:          { nameAr: 'كول أوف ديوتي', nameEn: 'Call of Duty',  color: '#c7a227', bg: 'bg-yellow-50', logo: '/icons/logo.png' },
+  freefire:     { nameAr: 'فري فاير',       nameEn: 'Free Fire',     color: '#ff5722', bg: 'bg-orange-50', logo: '/services/freefire.png' },
+  tiktok_coins: { nameAr: 'تكتوك كوينز',   nameEn: 'TikTok Coins',  color: '#010101', bg: 'bg-gray-50',   logo: '/services/تكتوك كوينز.png' },
 };
 
 const REGIONS: { id: GiftCardRegion; ar: string; en: string; flag: string }[] = [
@@ -38,13 +40,14 @@ type Props = {
   clientId: string | null;
   userId: string | null;
   walletBalance?: number;
+  prices?: Record<string, number>;
   onBack: () => void;
   onComplete?: () => void;
 };
 
 type PaymentType = 'card' | 'wallet' | null;
 
-export function GiftCardOrder({service, clientId, userId, walletBalance = 0, onBack, onComplete}: Props) {
+export function GiftCardOrder({service, clientId, userId, walletBalance = 0, prices, onBack, onComplete}: Props) {
   const {lang, dir} = useLanguage();
   const BackIcon = dir === 'rtl' ? ArrowRight : ArrowLeft;
   const meta = SERVICE_META[service] ?? DEFAULT_SERVICE_META;
@@ -56,7 +59,9 @@ export function GiftCardOrder({service, clientId, userId, walletBalance = 0, onB
   const [cardError, setCardError] = useState<ReturnType<typeof validateCard>>(null);
   const [done, setDone] = useState(false);
 
-  const packages = getPackages(service, region);
+  const packages = getPackages(service, region).map((pkg) =>
+    prices && prices[pkg.id] !== undefined ? { ...pkg, priceIqd: prices[pkg.id] } : pkg
+  );
   const noPrice = selected?.priceIqd === 0;
 
   // عند تغيير المنطقة: حافظ على الاختيار إن وُجد مقابل في المنطقة الجديدة

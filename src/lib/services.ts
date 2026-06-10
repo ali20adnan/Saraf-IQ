@@ -7,7 +7,7 @@ export type AppService = {
   coverImage: string;
   badgeAr?: string;
   badgeEn?: string;
-  actionType?: 'pubg_uc' | 'playstation' | 'steam' | 'xbox' | 'cod' | 'coming_soon';
+  actionType?: 'pubg_uc' | 'playstation' | 'steam' | 'xbox' | 'cod' | 'freefire' | 'tiktok_coins' | 'coming_soon';
   comingSoon?: boolean;
   sortOrder: number;
 };
@@ -95,28 +95,26 @@ export const APP_SERVICES: AppService[] = [
   },
   {
     id: 'freefire',
-    titleAr: 'فري فاير',
-    titleEn: 'Free Fire',
-    descriptionAr: 'شحن فري فاير قريباً ضمن خدمات صراف.',
-    descriptionEn: 'Free Fire top-up is coming soon on Saraf.',
+    titleAr: 'شحن فري فاير',
+    titleEn: 'Free Fire Diamonds',
+    descriptionAr: 'شحن إلماس فري فاير بأفضل الأسعار — عالمي وأمريكي.',
+    descriptionEn: 'Free Fire Diamonds top-up at great rates — Global & US regions.',
     coverImage: DEFAULT_SERVICE_COVERS.freefire,
-    badgeAr: 'قريباً',
-    badgeEn: 'Soon',
-    actionType: 'coming_soon',
-    comingSoon: true,
+    badgeAr: 'جديد',
+    badgeEn: 'New',
+    actionType: 'freefire',
     sortOrder: 6,
   },
   {
     id: 'tiktok-coins',
     titleAr: 'تكتوك كوينز',
     titleEn: 'TikTok Coins',
-    descriptionAr: 'شحن كوينز تكتوك قريباً ضمن خدمات صراف.',
-    descriptionEn: 'TikTok Coins top-up is coming soon on Saraf.',
+    descriptionAr: 'شحن كوينز تكتوك — عالمي وأمريكي بأسعار منافسة.',
+    descriptionEn: 'TikTok Coins top-up — Global & US at competitive rates.',
     coverImage: DEFAULT_SERVICE_COVERS.tiktok,
-    badgeAr: 'قريباً',
-    badgeEn: 'Soon',
-    actionType: 'coming_soon',
-    comingSoon: true,
+    badgeAr: 'جديد',
+    badgeEn: 'New',
+    actionType: 'tiktok_coins',
     sortOrder: 7,
   },
 ];
