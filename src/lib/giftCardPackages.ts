@@ -17,20 +17,23 @@ export type GiftCardService =
   | 'itunes' | 'amazon' | 'ebay' | 'souq'
   | 'tiktok_coins';
 
-/** مساعد لإنشاء باقات دولار بسرعة */
+/** سعر افتراضي تقديري للدولار الواحد بالدينار (مع هامش بطاقات رقمية) */
+const USD_TO_IQD = 1700;
+
+/** مساعد لإنشاء باقات دولار بسرعة — السعر افتراضي قابل للتعديل من لوحة الأدمن */
 function usd(prefix: string, amounts: number[], region: GiftCardRegion): GiftCardPackage[] {
   return amounts.map((a) => ({
     id: `${prefix}-${region[0]}-${a}`,
     labelEn: `$${a}`,
     labelAr: `${a} دولار`,
-    priceIqd: 0,
+    priceIqd: a * USD_TO_IQD,
     region,
   }));
 }
-function pts(prefix: string, values: { en: string; ar: string }[], region: GiftCardRegion): GiftCardPackage[] {
+function pts(prefix: string, values: { en: string; ar: string; priceIqd: number }[], region: GiftCardRegion): GiftCardPackage[] {
   return values.map((v) => ({
     id: `${prefix}-${region[0]}-${v.en.replace(/\s/g, '')}`,
-    labelEn: v.en, labelAr: v.ar, priceIqd: 0, region,
+    labelEn: v.en, labelAr: v.ar, priceIqd: v.priceIqd, region,
   }));
 }
 
@@ -53,15 +56,16 @@ const xbox = [
 ];
 
 /* ── Call of Duty ── */
+const codTiers = [
+  {en:'200 CP',  ar:'200 نقطة',  priceIqd: 3500},
+  {en:'500 CP',  ar:'500 نقطة',  priceIqd: 8500},
+  {en:'1100 CP', ar:'1100 نقطة', priceIqd: 17500},
+  {en:'2400 CP', ar:'2400 نقطة', priceIqd: 36000},
+  {en:'5000 CP', ar:'5000 نقطة', priceIqd: 72000},
+];
 const cod = [
-  ...pts('cod', [
-    {en:'200 CP', ar:'200 نقطة'}, {en:'500 CP', ar:'500 نقطة'},
-    {en:'1100 CP', ar:'1100 نقطة'}, {en:'2400 CP', ar:'2400 نقطة'}, {en:'5000 CP', ar:'5000 نقطة'},
-  ], 'global'),
-  ...pts('cod', [
-    {en:'200 CP', ar:'200 نقطة'}, {en:'500 CP', ar:'500 نقطة'},
-    {en:'1100 CP', ar:'1100 نقطة'}, {en:'2400 CP', ar:'2400 نقطة'}, {en:'5000 CP', ar:'5000 نقطة'},
-  ], 'usa'),
+  ...pts('cod', codTiers, 'global'),
+  ...pts('cod', codTiers, 'usa'),
 ];
 
 /* ── Razer Gold ── */
@@ -77,41 +81,42 @@ const ea = [
 ];
 
 /* ── League of Legends ── */
+const lolTiers = [
+  {en:'650 RP',   ar:'650 RP',   priceIqd: 5500},
+  {en:'1380 RP',  ar:'1380 RP',  priceIqd: 11500},
+  {en:'2800 RP',  ar:'2800 RP',  priceIqd: 23000},
+  {en:'5600 RP',  ar:'5600 RP',  priceIqd: 45000},
+  {en:'11000 RP', ar:'11000 RP', priceIqd: 88000},
+];
 const lol = [
-  ...pts('lol', [
-    {en:'650 RP', ar:'650 RP'}, {en:'1380 RP', ar:'1380 RP'},
-    {en:'2800 RP', ar:'2800 RP'}, {en:'5600 RP', ar:'5600 RP'}, {en:'11000 RP', ar:'11000 RP'},
-  ], 'global'),
-  ...pts('lol', [
-    {en:'650 RP', ar:'650 RP'}, {en:'1380 RP', ar:'1380 RP'},
-    {en:'2800 RP', ar:'2800 RP'}, {en:'5600 RP', ar:'5600 RP'}, {en:'11000 RP', ar:'11000 RP'},
-  ], 'usa'),
+  ...pts('lol', lolTiers, 'global'),
+  ...pts('lol', lolTiers, 'usa'),
 ];
 
 /* ── Robux (Roblox) ── */
+const robuxTiers = [
+  {en:'400 Robux',   ar:'400 روبكس',   priceIqd: 5500},
+  {en:'800 Robux',   ar:'800 روبكس',   priceIqd: 10500},
+  {en:'1700 Robux',  ar:'1700 روبكس',  priceIqd: 21000},
+  {en:'4500 Robux',  ar:'4500 روبكس',  priceIqd: 56000},
+  {en:'10000 Robux', ar:'10000 روبكس', priceIqd: 120000},
+];
 const robux = [
-  ...pts('rbx', [
-    {en:'400 Robux', ar:'400 روبكس'}, {en:'800 Robux', ar:'800 روبكس'},
-    {en:'1700 Robux', ar:'1700 روبكس'}, {en:'4500 Robux', ar:'4500 روبكس'}, {en:'10000 Robux', ar:'10000 روبكس'},
-  ], 'global'),
-  ...pts('rbx', [
-    {en:'400 Robux', ar:'400 روبكس'}, {en:'800 Robux', ar:'800 روبكس'},
-    {en:'1700 Robux', ar:'1700 روبكس'}, {en:'4500 Robux', ar:'4500 روبكس'}, {en:'10000 Robux', ar:'10000 روبكس'},
-  ], 'usa'),
+  ...pts('rbx', robuxTiers, 'global'),
+  ...pts('rbx', robuxTiers, 'usa'),
 ];
 
 /* ── Free Fire ── */
+const freefireTiers = [
+  {en:'100 Diamonds',  ar:'100 ألماسة',  priceIqd: 1500},
+  {en:'310 Diamonds',  ar:'310 ألماسة',  priceIqd: 4500},
+  {en:'520 Diamonds',  ar:'520 ألماسة',  priceIqd: 7500},
+  {en:'1060 Diamonds', ar:'1060 ألماسة', priceIqd: 15000},
+  {en:'2180 Diamonds', ar:'2180 ألماسة', priceIqd: 30000},
+];
 const freefire = [
-  ...pts('ff', [
-    {en:'100 Diamonds', ar:'100 الماسة'}, {en:'310 Diamonds', ar:'310 الماسة'},
-    {en:'520 Diamonds', ar:'520 الماسة'}, {en:'1060 Diamonds', ar:'1060 الماسة'},
-    {en:'2180 Diamonds', ar:'2180 الماسة'},
-  ], 'global'),
-  ...pts('ff', [
-    {en:'100 Diamonds', ar:'100 الماسة'}, {en:'310 Diamonds', ar:'310 الماسة'},
-    {en:'520 Diamonds', ar:'520 الماسة'}, {en:'1060 Diamonds', ar:'1060 الماسة'},
-    {en:'2180 Diamonds', ar:'2180 الماسة'},
-  ], 'usa'),
+  ...pts('ff', freefireTiers, 'global'),
+  ...pts('ff', freefireTiers, 'usa'),
 ];
 
 /* ── Ludo ── */
@@ -121,15 +126,16 @@ const ludo = [
 ];
 
 /* ── Valorant ── */
+const valorantTiers = [
+  {en:'475 VP',  ar:'475 VP',  priceIqd: 5500},
+  {en:'1000 VP', ar:'1000 VP', priceIqd: 11000},
+  {en:'2050 VP', ar:'2050 VP', priceIqd: 22000},
+  {en:'3650 VP', ar:'3650 VP', priceIqd: 38000},
+  {en:'5350 VP', ar:'5350 VP', priceIqd: 56000},
+];
 const valorant = [
-  ...pts('val', [
-    {en:'475 VP', ar:'475 VP'}, {en:'1000 VP', ar:'1000 VP'},
-    {en:'2050 VP', ar:'2050 VP'}, {en:'3650 VP', ar:'3650 VP'}, {en:'5350 VP', ar:'5350 VP'},
-  ], 'global'),
-  ...pts('val', [
-    {en:'475 VP', ar:'475 VP'}, {en:'1000 VP', ar:'1000 VP'},
-    {en:'2050 VP', ar:'2050 VP'}, {en:'3650 VP', ar:'3650 VP'}, {en:'5350 VP', ar:'5350 VP'},
-  ], 'usa'),
+  ...pts('val', valorantTiers, 'global'),
+  ...pts('val', valorantTiers, 'usa'),
 ];
 
 /* ── Delta Force ── */
@@ -169,17 +175,17 @@ const souq = [
 ];
 
 /* ── TikTok Coins ── */
+const tiktokTiers = [
+  {en:'70 Coins',   ar:'70 كوين',   priceIqd: 1500},
+  {en:'350 Coins',  ar:'350 كوين',  priceIqd: 7000},
+  {en:'700 Coins',  ar:'700 كوين',  priceIqd: 14000},
+  {en:'1400 Coins', ar:'1400 كوين', priceIqd: 28000},
+  {en:'3500 Coins', ar:'3500 كوين', priceIqd: 70000},
+  {en:'7000 Coins', ar:'7000 كوين', priceIqd: 140000},
+];
 const tiktok_coins = [
-  ...pts('tt', [
-    {en:'70 Coins', ar:'70 كوين'}, {en:'350 Coins', ar:'350 كوين'},
-    {en:'700 Coins', ar:'700 كوين'}, {en:'1400 Coins', ar:'1400 كوين'},
-    {en:'3500 Coins', ar:'3500 كوين'}, {en:'7000 Coins', ar:'7000 كوين'},
-  ], 'global'),
-  ...pts('tt', [
-    {en:'70 Coins', ar:'70 كوين'}, {en:'350 Coins', ar:'350 كوين'},
-    {en:'700 Coins', ar:'700 كوين'}, {en:'1400 Coins', ar:'1400 كوين'},
-    {en:'3500 Coins', ar:'3500 كوين'}, {en:'7000 Coins', ar:'7000 كوين'},
-  ], 'usa'),
+  ...pts('tt', tiktokTiers, 'global'),
+  ...pts('tt', tiktokTiers, 'usa'),
 ];
 
 export const GIFT_CARD_PACKAGES: Record<GiftCardService, GiftCardPackage[]> = {
