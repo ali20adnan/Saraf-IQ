@@ -5288,7 +5288,7 @@ function MainContent() {
               key={op.id}
               type="button"
               onClick={() => handleOperatorClick(op)}
-              className={`relative flex aspect-[1.18] min-w-0 items-center justify-center overflow-hidden rounded-2xl border border-gray-100 bg-white p-3 shadow-sm transition-all active:scale-[0.98] hover:shadow-md ${op.hover}`}
+              className={`relative flex aspect-[1.18] min-w-0 items-center justify-center overflow-hidden rounded-2xl border border-gray-100 bg-white p-2 shadow-sm transition-all active:scale-[0.98] hover:shadow-md ${op.hover}`}
             >
               {op.id === 'asiacell' && (
                 <span className="absolute end-0 top-0 rounded-bl-xl bg-red-600 px-2.5 py-1 text-[10px] font-black text-white">
@@ -5303,7 +5303,7 @@ function MainContent() {
               <img
                 src={op.logo}
                 alt={op.nameEn}
-                className="max-h-14 w-full object-contain"
+                className="h-full max-h-[5.5rem] w-full object-contain"
                 loading="lazy"
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
               />
