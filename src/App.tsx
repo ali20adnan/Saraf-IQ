@@ -6678,73 +6678,96 @@ function MainContent() {
               {/* رصيد اسياسيل */}
               {renderAsiacellSection()}
 
-              {/* قسم الخدمات */}
-              {appServices.length > 0 && (
-                <section className="mb-6">
-                  <div className="flex items-center justify-between mb-3 px-0.5">
-                    <h2 className="text-lg font-black text-gray-900">
-                      {lang === 'ar' ? siteContent.servicesSectionTitleAr : siteContent.servicesSectionTitleEn}
-                    </h2>
-                    <button onClick={() => navigateView('services')} className="text-xs font-bold text-red-600">
-                      {lang === 'ar' ? 'عرض الكل' : 'See all'}
-                    </button>
-                  </div>
-                  <div
-                    className="flex gap-3 overflow-x-auto pb-2 scrollbar-none -mx-3 px-3 sm:-mx-6 sm:px-6 select-none"
-                    style={{ cursor: 'grab' }}
-                    onMouseDown={(e) => {
-                      const el = e.currentTarget;
-                      dragState.current = { active: true, startX: e.pageX - el.offsetLeft, scrollLeft: el.scrollLeft, dragged: false };
-                      el.style.cursor = 'grabbing';
-                    }}
-                    onMouseMove={(e) => {
-                      if (!dragState.current.active) return;
-                      const el = e.currentTarget;
-                      const moved = Math.abs(e.pageX - el.offsetLeft - dragState.current.startX);
-                      if (moved > 5) dragState.current.dragged = true;
-                      el.scrollLeft = dragState.current.scrollLeft - (e.pageX - el.offsetLeft - dragState.current.startX);
-                    }}
-                    onMouseUp={(e) => { dragState.current.active = false; e.currentTarget.style.cursor = 'grab'; }}
-                    onMouseLeave={(e) => { dragState.current.active = false; e.currentTarget.style.cursor = 'grab'; }}
-                  >
-                    {appServices.map((service) => (
-                      <button
-                        key={service.id}
-                        onClick={() => {
-                          if (dragState.current.dragged) {
-                            dragState.current.dragged = false;
-                            return;
-                          }
-                          navigateView('services');
-                          setActiveServiceId(service.id);
-                        }}
-                        className="relative snap-start shrink-0 w-[31%] min-w-[170px] sm:w-[30%] lg:w-[220px] bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm active:scale-95 transition-transform text-start"
-                      >
-                        {service.coverImage && (
-                          <div className="aspect-[16/9] w-full overflow-hidden">
-                            <img src={service.coverImage} alt="" className="w-full h-full object-cover object-center" loading="lazy" />
+              {/* قسم الخدمات — مقسّمة حسب التصنيف */}
+              {appServices.length > 0 && (() => {
+                const homeCategoryOf = (action: string): 'games' | 'entertainment' | 'apps' | 'other' => {
+                  if (['pubg_uc', 'playstation', 'steam', 'xbox', 'cod', 'freefire'].includes(action)) return 'games';
+                  if (['netflix', 'iptv', 'tiktok_coins'].includes(action)) return 'entertainment';
+                  if (['chatgpt', 'canva'].includes(action)) return 'apps';
+                  return 'other';
+                };
+                const homeGroups: { id: 'games' | 'entertainment' | 'apps' | 'other'; titleAr: string; titleEn: string; emoji: string }[] = [
+                  { id: 'games',         titleAr: 'ألعاب',              titleEn: 'Games',                emoji: '🎮' },
+                  { id: 'entertainment', titleAr: 'ترفيه',              titleEn: 'Entertainment',        emoji: '📺' },
+                  { id: 'apps',          titleAr: 'برامج واشتراكات',    titleEn: 'Apps & Subscriptions', emoji: '🛠️' },
+                  { id: 'other',         titleAr: 'خدمات أخرى',          titleEn: 'Other',                emoji: '✨' },
+                ];
+                return (
+                  <>
+                    {homeGroups.map((group) => {
+                      const items = appServices.filter((s) => homeCategoryOf(s.actionType) === group.id);
+                      if (!items.length) return null;
+                      return (
+                        <section key={group.id} className="mb-6">
+                          <div className="flex items-center justify-between mb-3 px-0.5">
+                            <h2 className="text-lg font-black text-gray-900 flex items-center gap-2">
+                              <span>{group.emoji}</span>
+                              {lang === 'ar' ? group.titleAr : group.titleEn}
+                            </h2>
+                            <button onClick={() => navigateView('services')} className="text-xs font-bold text-red-600">
+                              {lang === 'ar' ? 'عرض الكل' : 'See all'}
+                            </button>
                           </div>
-                        )}
-                        <div className="p-3">
-                          <p className="text-sm font-black text-gray-900 leading-snug">
-                            {lang === 'ar' ? service.titleAr : service.titleEn}
-                          </p>
-                          {(service.badgeAr || service.badgeEn) && (
-                            <span className="mt-1 inline-block rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-600">
-                              {lang === 'ar' ? service.badgeAr : service.badgeEn}
-                            </span>
-                          )}
-                        </div>
-                        {service.comingSoon && (
-                          <div className="absolute inset-0 bg-white/70 flex items-center justify-center rounded-2xl">
-                            <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">{t('comingSoon')}</span>
+                          <div
+                            className="flex gap-3 overflow-x-auto pb-2 scrollbar-none -mx-3 px-3 sm:-mx-6 sm:px-6 select-none"
+                            style={{ cursor: 'grab' }}
+                            onMouseDown={(e) => {
+                              const el = e.currentTarget;
+                              dragState.current = { active: true, startX: e.pageX - el.offsetLeft, scrollLeft: el.scrollLeft, dragged: false };
+                              el.style.cursor = 'grabbing';
+                            }}
+                            onMouseMove={(e) => {
+                              if (!dragState.current.active) return;
+                              const el = e.currentTarget;
+                              const moved = Math.abs(e.pageX - el.offsetLeft - dragState.current.startX);
+                              if (moved > 5) dragState.current.dragged = true;
+                              el.scrollLeft = dragState.current.scrollLeft - (e.pageX - el.offsetLeft - dragState.current.startX);
+                            }}
+                            onMouseUp={(e) => { dragState.current.active = false; e.currentTarget.style.cursor = 'grab'; }}
+                            onMouseLeave={(e) => { dragState.current.active = false; e.currentTarget.style.cursor = 'grab'; }}
+                          >
+                            {items.map((service) => (
+                              <button
+                                key={service.id}
+                                onClick={() => {
+                                  if (dragState.current.dragged) {
+                                    dragState.current.dragged = false;
+                                    return;
+                                  }
+                                  navigateView('services');
+                                  setActiveServiceId(service.id);
+                                }}
+                                className="relative snap-start shrink-0 w-[31%] min-w-[170px] sm:w-[30%] lg:w-[220px] bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm active:scale-95 transition-transform text-start"
+                              >
+                                {service.coverImage && (
+                                  <div className="aspect-[16/9] w-full overflow-hidden">
+                                    <img src={service.coverImage} alt="" className="w-full h-full object-cover object-center" loading="lazy" />
+                                  </div>
+                                )}
+                                <div className="p-3">
+                                  <p className="text-sm font-black text-gray-900 leading-snug">
+                                    {lang === 'ar' ? service.titleAr : service.titleEn}
+                                  </p>
+                                  {(service.badgeAr || service.badgeEn) && (
+                                    <span className="mt-1 inline-block rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-600">
+                                      {lang === 'ar' ? service.badgeAr : service.badgeEn}
+                                    </span>
+                                  )}
+                                </div>
+                                {service.comingSoon && (
+                                  <div className="absolute inset-0 bg-white/70 flex items-center justify-center rounded-2xl">
+                                    <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">{t('comingSoon')}</span>
+                                  </div>
+                                )}
+                              </button>
+                            ))}
                           </div>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              )}
+                        </section>
+                      );
+                    })}
+                  </>
+                );
+              })()}
 
               {/* آخر الطلبات */}
               {transactions.length > 0 && (
