@@ -166,7 +166,11 @@ type ManagedServiceRow = {
   coverImage: string;
   badgeAr: string;
   badgeEn: string;
-  actionType: 'pubg_uc' | 'playstation' | 'steam' | 'xbox' | 'cod' | 'freefire' | 'tiktok_coins' | 'coming_soon';
+  actionType:
+    | 'pubg_uc' | 'playstation' | 'steam' | 'xbox' | 'cod'
+    | 'freefire' | 'tiktok_coins'
+    | 'iptv' | 'chatgpt' | 'canva' | 'netflix'
+    | 'coming_soon';
   enabled: boolean;
   comingSoon: boolean;
   sortOrder: number;
@@ -320,7 +324,7 @@ function sanitizeManagedServices(raw: unknown): ManagedServiceRow[] {
     if (!id || seen.has(id)) return;
     seen.add(id);
     const sortOrder = Number(r.sortOrder ?? r.sort_order ?? idx + 1);
-    const VALID_ACTIONS = ['pubg_uc', 'playstation', 'steam', 'xbox', 'cod', 'freefire', 'tiktok_coins', 'coming_soon'];
+    const VALID_ACTIONS = ['pubg_uc', 'playstation', 'steam', 'xbox', 'cod', 'freefire', 'tiktok_coins', 'iptv', 'chatgpt', 'canva', 'netflix', 'coming_soon'];
     const actionRaw = String(r.actionType ?? r.action_type ?? 'coming_soon').trim();
     const coverImageRaw = String(r.coverImage ?? r.cover_image ?? '').trim();
     out.push({
@@ -535,6 +539,7 @@ function MainContent() {
   const [isAdminAgentsLoading, setIsAdminAgentsLoading] = useState(false);
   const [adminTab, setAdminTab] = useState<'overview' | 'services' | 'agents' | 'orders' | 'admins'>('overview');
   const [adminGcService, setAdminGcService] = useState<GiftCardService>('playstation');
+  const [serviceSearchQuery, setServiceSearchQuery] = useState('');
   const [adminAdmins, setAdminAdmins] = useState<AdminRow[]>([]);
   const [adminTransactions, setAdminTransactions] = useState<ServerTransaction[]>([]);
   /** فلاتر الطلبات — لوحة الإدارة › الطلبات */
@@ -3234,6 +3239,10 @@ function MainContent() {
                           <option value="cod">Call of Duty</option>
                           <option value="freefire">Free Fire</option>
                           <option value="tiktok_coins">TikTok Coins</option>
+                          <option value="netflix">Netflix</option>
+                          <option value="chatgpt">ChatGPT Plus</option>
+                          <option value="canva">Canva Pro</option>
+                          <option value="iptv">IPTV</option>
                         </select>
                         <div className="flex items-center gap-3">
                           <label className="inline-flex items-center gap-2 text-xs font-bold text-gray-700">
@@ -3645,6 +3654,10 @@ function MainContent() {
                       { id: 'cod'         as GiftCardService, ar: 'كول أوف ديوتي', en: 'Call of Duty' },
                       { id: 'freefire'    as GiftCardService, ar: 'فري فاير',   en: 'Free Fire'   },
                       { id: 'tiktok_coins' as GiftCardService, ar: 'تكتوك',    en: 'TikTok'      },
+                      { id: 'netflix'     as GiftCardService, ar: 'نتفلكس',    en: 'Netflix'     },
+                      { id: 'chatgpt'     as GiftCardService, ar: 'ChatGPT',   en: 'ChatGPT'     },
+                      { id: 'canva'       as GiftCardService, ar: 'كانفا',      en: 'Canva'       },
+                      { id: 'iptv'        as GiftCardService, ar: 'IPTV',       en: 'IPTV'        },
                     ] as { id: GiftCardService; ar: string; en: string }[]
                   ).map((svc) => (
                     <button
@@ -5393,7 +5406,7 @@ function MainContent() {
     </div>
   );
 
-  const GIFT_CARD_ACTIONS: GiftCardService[] = ['playstation', 'steam', 'xbox', 'cod', 'freefire', 'tiktok_coins'];
+  const GIFT_CARD_ACTIONS: GiftCardService[] = ['playstation', 'steam', 'xbox', 'cod', 'freefire', 'tiktok_coins', 'iptv', 'chatgpt', 'canva', 'netflix'];
 
   const renderServices = () => {
     if (activeServiceConfig?.actionType === 'pubg_uc') {
@@ -5453,6 +5466,16 @@ function MainContent() {
       );
     }
 
+    const q = serviceSearchQuery.trim().toLowerCase();
+    const filteredServices = q
+      ? appServices.filter((s) =>
+          (s.titleAr || '').toLowerCase().includes(q) ||
+          (s.titleEn || '').toLowerCase().includes(q) ||
+          (s.descriptionAr || '').toLowerCase().includes(q) ||
+          (s.descriptionEn || '').toLowerCase().includes(q),
+        )
+      : appServices;
+
     return (
       <div className="mx-auto w-full min-w-0 max-w-6xl space-y-6 pb-4 sm:space-y-8">
         <div className="min-w-0">
@@ -5463,17 +5486,47 @@ function MainContent() {
             {lang === 'ar' ? siteContent.servicesSectionSubtitleAr : siteContent.servicesSectionSubtitleEn}
           </p>
         </div>
-        <div className="grid grid-cols-1 gap-4 max-[360px]:gap-3 min-[400px]:grid-cols-2 md:gap-5 lg:grid-cols-3 2xl:grid-cols-4">
-          {appServices.map((service) => (
-            <div key={service.id} className="min-w-0">
-              <ServiceCard
-                service={service}
-                variant="full"
-                onAction={() => setActiveServiceId(service.id)}
-              />
-            </div>
-          ))}
+        {/* شريط بحث الخدمات */}
+        <div className="relative max-w-xl">
+          <Search className={`pointer-events-none absolute top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 ${dir === 'rtl' ? 'right-4' : 'left-4'}`} />
+          <input
+            type="search"
+            value={serviceSearchQuery}
+            onChange={(e) => setServiceSearchQuery(e.target.value)}
+            placeholder={lang === 'ar' ? 'ابحث عن خدمة…' : 'Search services…'}
+            className={`w-full rounded-2xl border border-gray-200 bg-white py-3 text-sm font-medium text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-100 ${dir === 'rtl' ? 'pr-11 pl-10' : 'pl-11 pr-10'}`}
+            dir={dir}
+          />
+          {serviceSearchQuery && (
+            <button
+              type="button"
+              onClick={() => setServiceSearchQuery('')}
+              className={`absolute top-1/2 -translate-y-1/2 rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 ${dir === 'rtl' ? 'left-3' : 'right-3'}`}
+              aria-label="clear"
+            >
+              <XCircle className="h-4 w-4" />
+            </button>
+          )}
         </div>
+        {filteredServices.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-gray-200 bg-white p-8 text-center">
+            <p className="text-sm font-bold text-gray-500">
+              {lang === 'ar' ? 'لا توجد نتائج مطابقة' : 'No matching services'}
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 max-[360px]:gap-3 min-[400px]:grid-cols-2 md:gap-5 lg:grid-cols-3 2xl:grid-cols-4">
+            {filteredServices.map((service) => (
+              <div key={service.id} className="min-w-0">
+                <ServiceCard
+                  service={service}
+                  variant="full"
+                  onAction={() => setActiveServiceId(service.id)}
+                />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     );
   };

@@ -15,7 +15,8 @@ export type GiftCardService =
   | 'razer' | 'ea' | 'lol' | 'robux' | 'freefire'
   | 'ludo' | 'valorant' | 'deltaforce' | 'minecraft'
   | 'itunes' | 'amazon' | 'ebay' | 'souq'
-  | 'tiktok_coins';
+  | 'tiktok_coins'
+  | 'iptv' | 'chatgpt' | 'canva' | 'netflix';
 
 /** سعر افتراضي تقديري للدولار الواحد بالدينار (مع هامش بطاقات رقمية) */
 const USD_TO_IQD = 1700;
@@ -174,6 +175,40 @@ const souq = [
   ...usd('sq', [5, 10, 25, 50, 100], 'usa'),
 ];
 
+/* ── IPTV ── */
+const iptvTiers = [
+  {en:'1 Month',   ar:'شهر',     priceIqd: 15000},
+  {en:'3 Months',  ar:'3 شهور',  priceIqd: 40000},
+  {en:'6 Months',  ar:'6 شهور',  priceIqd: 75000},
+  {en:'12 Months', ar:'سنة',     priceIqd: 140000},
+];
+const iptv = pts('iptv', iptvTiers, 'global');
+
+/* ── ChatGPT Plus ── */
+const chatgptTiers = [
+  {en:'1 Month',   ar:'شهر',  priceIqd: 30000},
+  {en:'3 Months',  ar:'3 شهور', priceIqd: 88000},
+  {en:'12 Months', ar:'سنة',   priceIqd: 320000},
+];
+const chatgpt = pts('cgpt', chatgptTiers, 'global');
+
+/* ── Canva Pro ── */
+const canvaTiers = [
+  {en:'1 Month',   ar:'شهر', priceIqd: 18000},
+  {en:'6 Months',  ar:'6 شهور', priceIqd: 95000},
+  {en:'12 Months', ar:'سنة',  priceIqd: 165000},
+];
+const canva = pts('canva', canvaTiers, 'global');
+
+/* ── Netflix ── */
+const netflixTiers = [
+  {en:'1 Month',   ar:'شهر',    priceIqd: 12000},
+  {en:'3 Months',  ar:'3 شهور', priceIqd: 33000},
+  {en:'6 Months',  ar:'6 شهور', priceIqd: 65000},
+  {en:'12 Months', ar:'سنة',    priceIqd: 120000},
+];
+const netflix = pts('nflx', netflixTiers, 'global');
+
 /* ── TikTok Coins ── */
 const tiktokTiers = [
   {en:'70 Coins',   ar:'70 كوين',   priceIqd: 1500},
@@ -193,6 +228,7 @@ export const GIFT_CARD_PACKAGES: Record<GiftCardService, GiftCardPackage[]> = {
   razer, ea, lol, robux, freefire,
   ludo, valorant, deltaforce, minecraft,
   itunes, amazon, ebay, souq, tiktok_coins,
+  iptv, chatgpt, canva, netflix,
 };
 
 export function getPackages(service: GiftCardService, region: GiftCardRegion): GiftCardPackage[] {

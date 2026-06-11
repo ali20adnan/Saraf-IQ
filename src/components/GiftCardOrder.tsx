@@ -3,7 +3,7 @@ import {Activity, ArrowLeft, ArrowRight, Check, CreditCard, Globe, Wallet} from 
 import {useLanguage} from '../context/LanguageContext';
 import {apiUrl} from '../lib/apiBase';
 import {formatLatinDigits} from '../lib/formatNumbers';
-import {getPackages, type GiftCardService, type GiftCardRegion, type GiftCardPackage} from '../lib/giftCardPackages';
+import {getPackages, GIFT_CARD_PACKAGES, type GiftCardService, type GiftCardRegion, type GiftCardPackage} from '../lib/giftCardPackages';
 import {CreditCardPaymentFields} from './CreditCardPaymentFields';
 import {validateCard, cardErrorMessage} from '../lib/cardValidation';
 
@@ -22,12 +22,16 @@ const DEFAULT_SERVICE_META: ServiceMeta = {
 };
 
 const SERVICE_META: Partial<Record<GiftCardService, ServiceMeta>> = {
-  playstation:  { nameAr: 'بلايستيشن',     nameEn: 'PlayStation',   color: '#003087', bg: 'bg-blue-50',   logo: '/icons/logo.png' },
-  steam:        { nameAr: 'ستيم',           nameEn: 'Steam',         color: '#1b2838', bg: 'bg-slate-100', logo: '/icons/logo.png' },
-  xbox:         { nameAr: 'إكس بوكس',      nameEn: 'Xbox',          color: '#107c10', bg: 'bg-green-50',  logo: '/icons/logo.png' },
-  cod:          { nameAr: 'كول أوف ديوتي', nameEn: 'Call of Duty',  color: '#c7a227', bg: 'bg-yellow-50', logo: '/icons/logo.png' },
-  freefire:     { nameAr: 'فري فاير',       nameEn: 'Free Fire',     color: '#ff5722', bg: 'bg-orange-50', logo: '/services/freefire.png' },
-  tiktok_coins: { nameAr: 'تكتوك كوينز',   nameEn: 'TikTok Coins',  color: '#010101', bg: 'bg-gray-50',   logo: '/services/تكتوك كوينز.png' },
+  playstation:  { nameAr: 'بلايستيشن',      nameEn: 'PlayStation',   color: '#003087', bg: 'bg-blue-50',    logo: '/icons/logo.png' },
+  steam:        { nameAr: 'ستيم',           nameEn: 'Steam',         color: '#1b2838', bg: 'bg-slate-100',  logo: '/icons/logo.png' },
+  xbox:         { nameAr: 'إكس بوكس',       nameEn: 'Xbox',          color: '#107c10', bg: 'bg-green-50',   logo: '/icons/logo.png' },
+  cod:          { nameAr: 'كول أوف ديوتي',  nameEn: 'Call of Duty',  color: '#c7a227', bg: 'bg-yellow-50',  logo: '/icons/logo.png' },
+  freefire:     { nameAr: 'فري فاير',        nameEn: 'Free Fire',     color: '#ff5722', bg: 'bg-orange-50',  logo: '/services/freefire.png' },
+  tiktok_coins: { nameAr: 'تكتوك كوينز',    nameEn: 'TikTok Coins',  color: '#010101', bg: 'bg-gray-50',    logo: '/services/تكتوك كوينز.png' },
+  netflix:      { nameAr: 'نتفلكس',          nameEn: 'Netflix',       color: '#E50914', bg: 'bg-red-50',     logo: '/services/نتفلكس.png' },
+  chatgpt:      { nameAr: 'ChatGPT Plus',    nameEn: 'ChatGPT Plus',  color: '#10a37f', bg: 'bg-emerald-50', logo: '/services/جات جيبي تي.png' },
+  canva:        { nameAr: 'كانفا برو',       nameEn: 'Canva Pro',     color: '#00C4CC', bg: 'bg-cyan-50',    logo: '/services/كانفا.png' },
+  iptv:         { nameAr: 'IPTV',            nameEn: 'IPTV',          color: '#7c3aed', bg: 'bg-violet-50',  logo: '/services/iptv.png' },
 };
 
 const REGIONS: { id: GiftCardRegion; ar: string; en: string; flag: string }[] = [
@@ -59,6 +63,8 @@ export function GiftCardOrder({service, clientId, userId, walletBalance = 0, pri
   const [cardError, setCardError] = useState<ReturnType<typeof validateCard>>(null);
   const [done, setDone] = useState(false);
 
+  const allRegions = new Set((GIFT_CARD_PACKAGES[service] ?? []).map((p) => p.region));
+  const showRegionToggle = allRegions.size > 1;
   const packages = getPackages(service, region).map((pkg) =>
     prices && prices[pkg.id] !== undefined ? { ...pkg, priceIqd: prices[pkg.id] } : pkg
   );
@@ -105,12 +111,12 @@ export function GiftCardOrder({service, clientId, userId, walletBalance = 0, pri
         </div>
         <div>
           <h2 className="text-xl font-black text-gray-900">{lang === 'ar' ? meta.nameAr : meta.nameEn}</h2>
-          <p className="text-sm text-gray-400">{lang === 'ar' ? 'اختر المنطقة والباقة' : 'Select region & package'}</p>
+          <p className="text-sm text-gray-400">{lang === 'ar' ? (showRegionToggle ? 'اختر المنطقة والباقة' : 'اختر الباقة') : (showRegionToggle ? 'Select region & package' : 'Select a package')}</p>
         </div>
       </div>
 
       {/* اختيار المنطقة */}
-      <div className="flex bg-gray-100 rounded-2xl p-1 mb-5">
+      {showRegionToggle && <div className="flex bg-gray-100 rounded-2xl p-1 mb-5">
         {REGIONS.map((r) => (
           <button key={r.id} onClick={() => changeRegion(r.id)}
             className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-bold rounded-xl transition-all ${
@@ -120,7 +126,7 @@ export function GiftCardOrder({service, clientId, userId, walletBalance = 0, pri
             {lang === 'ar' ? r.ar : r.en}
           </button>
         ))}
-      </div>
+      </div>}
 
       {/* قائمة الباقات */}
       {!paymentType ? (

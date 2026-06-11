@@ -7,7 +7,11 @@ export type AppService = {
   coverImage: string;
   badgeAr?: string;
   badgeEn?: string;
-  actionType?: 'pubg_uc' | 'playstation' | 'steam' | 'xbox' | 'cod' | 'freefire' | 'tiktok_coins' | 'coming_soon';
+  actionType?:
+    | 'pubg_uc' | 'playstation' | 'steam' | 'xbox' | 'cod'
+    | 'freefire' | 'tiktok_coins'
+    | 'iptv' | 'chatgpt' | 'canva' | 'netflix'
+    | 'coming_soon';
   comingSoon?: boolean;
   sortOrder: number;
 };
@@ -30,6 +34,10 @@ const DEFAULT_SERVICE_COVERS = {
   cod: '/services/cod.png',
   freefire: '/services/freefire.png',
   tiktok: '/services/tiktok-coins.png',
+  iptv: '/services/iptv.png',
+  chatgpt: '/services/جات جيبي تي.png',
+  canva: '/services/كانفا.png',
+  netflix: '/services/نتفلكس.png',
 };
 
 export const APP_SERVICES: AppService[] = [
@@ -116,6 +124,54 @@ export const APP_SERVICES: AppService[] = [
     badgeEn: 'New',
     actionType: 'tiktok_coins',
     sortOrder: 7,
+  },
+  {
+    id: 'netflix',
+    titleAr: 'اشتراك نتفلكس',
+    titleEn: 'Netflix Subscription',
+    descriptionAr: 'اشتراكات نتفلكس بجودة عالية — شهر / 3 شهور / 6 شهور / سنة.',
+    descriptionEn: 'Premium Netflix subscriptions — 1 / 3 / 6 / 12 months.',
+    coverImage: DEFAULT_SERVICE_COVERS.netflix,
+    badgeAr: 'جديد',
+    badgeEn: 'New',
+    actionType: 'netflix',
+    sortOrder: 8,
+  },
+  {
+    id: 'chatgpt',
+    titleAr: 'اشتراك ChatGPT Plus',
+    titleEn: 'ChatGPT Plus',
+    descriptionAr: 'اشتراك ChatGPT Plus الرسمي بأفضل سعر — شهري وسنوي.',
+    descriptionEn: 'Official ChatGPT Plus subscription — monthly & yearly.',
+    coverImage: DEFAULT_SERVICE_COVERS.chatgpt,
+    badgeAr: 'جديد',
+    badgeEn: 'New',
+    actionType: 'chatgpt',
+    sortOrder: 9,
+  },
+  {
+    id: 'canva',
+    titleAr: 'اشتراك Canva Pro',
+    titleEn: 'Canva Pro',
+    descriptionAr: 'اشتراك Canva Pro لكل أدوات التصميم الاحترافي.',
+    descriptionEn: 'Canva Pro subscription for full professional design tools.',
+    coverImage: DEFAULT_SERVICE_COVERS.canva,
+    badgeAr: 'جديد',
+    badgeEn: 'New',
+    actionType: 'canva',
+    sortOrder: 10,
+  },
+  {
+    id: 'iptv',
+    titleAr: 'اشتراك IPTV',
+    titleEn: 'IPTV Subscription',
+    descriptionAr: 'اشتراك IPTV عالي الجودة لكل القنوات الرياضية والترفيهية.',
+    descriptionEn: 'High-quality IPTV subscription — all sports & entertainment channels.',
+    coverImage: DEFAULT_SERVICE_COVERS.iptv,
+    badgeAr: 'جديد',
+    badgeEn: 'New',
+    actionType: 'iptv',
+    sortOrder: 11,
   },
 ];
 

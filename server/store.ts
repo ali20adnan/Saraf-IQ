@@ -84,7 +84,11 @@ export type ManagedService = {
   coverImage: string;
   badgeAr: string;
   badgeEn: string;
-  actionType: "pubg_uc" | "playstation" | "steam" | "xbox" | "cod" | "freefire" | "tiktok_coins" | "coming_soon";
+  actionType:
+    | "pubg_uc" | "playstation" | "steam" | "xbox" | "cod"
+    | "freefire" | "tiktok_coins"
+    | "iptv" | "chatgpt" | "canva" | "netflix"
+    | "coming_soon";
   enabled: boolean;
   comingSoon: boolean;
   sortOrder: number;
@@ -273,6 +277,10 @@ const defaultServiceCoverById: Record<string, string> = {
   cod: "/services/cod.png",
   freefire: "/services/freefire.png",
   "tiktok-coins": "/services/tiktok-coins.png",
+  netflix: "/services/نتفلكس.png",
+  chatgpt: "/services/جات جيبي تي.png",
+  canva: "/services/كانفا.png",
+  iptv: "/services/iptv.png",
 };
 
 const defaultManagedServices: ManagedService[] = [
@@ -427,6 +435,10 @@ function parseManagedServices(raw: string | undefined): ManagedService[] {
       "cod",
       "freefire",
       "tiktok_coins",
+      "iptv",
+      "chatgpt",
+      "canva",
+      "netflix",
       "coming_soon",
     ]);
     const out: ManagedService[] = [];
