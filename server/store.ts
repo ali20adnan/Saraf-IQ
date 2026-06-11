@@ -277,9 +277,9 @@ const defaultServiceCoverById: Record<string, string> = {
   cod: "/services/cod.png",
   freefire: "/services/freefire.png",
   "tiktok-coins": "/services/tiktok-coins.png",
-  netflix: "/services/نتفلكس.png",
-  chatgpt: "/services/جات جيبي تي.png",
-  canva: "/services/كانفا.png",
+  netflix: "/services/netflix.png",
+  chatgpt: "/services/chatgpt.png",
+  canva: "/services/canva.png",
   iptv: "/services/iptv.png",
 };
 

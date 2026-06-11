@@ -28,9 +28,9 @@ const SERVICE_META: Partial<Record<GiftCardService, ServiceMeta>> = {
   cod:          { nameAr: 'كول أوف ديوتي',  nameEn: 'Call of Duty',  color: '#c7a227', bg: 'bg-yellow-50',  logo: '/icons/logo.png' },
   freefire:     { nameAr: 'فري فاير',        nameEn: 'Free Fire',     color: '#ff5722', bg: 'bg-orange-50',  logo: '/services/freefire.png' },
   tiktok_coins: { nameAr: 'تكتوك كوينز',    nameEn: 'TikTok Coins',  color: '#010101', bg: 'bg-gray-50',    logo: '/services/تكتوك كوينز.png' },
-  netflix:      { nameAr: 'نتفلكس',          nameEn: 'Netflix',       color: '#E50914', bg: 'bg-red-50',     logo: '/services/نتفلكس.png' },
-  chatgpt:      { nameAr: 'ChatGPT Plus',    nameEn: 'ChatGPT Plus',  color: '#10a37f', bg: 'bg-emerald-50', logo: '/services/جات جيبي تي.png' },
-  canva:        { nameAr: 'كانفا برو',       nameEn: 'Canva Pro',     color: '#00C4CC', bg: 'bg-cyan-50',    logo: '/services/كانفا.png' },
+  netflix:      { nameAr: 'نتفلكس',          nameEn: 'Netflix',       color: '#E50914', bg: 'bg-red-50',     logo: '/services/netflix.png' },
+  chatgpt:      { nameAr: 'ChatGPT Plus',    nameEn: 'ChatGPT Plus',  color: '#10a37f', bg: 'bg-emerald-50', logo: '/services/chatgpt.png' },
+  canva:        { nameAr: 'كانفا برو',       nameEn: 'Canva Pro',     color: '#00C4CC', bg: 'bg-cyan-50',    logo: '/services/canva.png' },
   iptv:         { nameAr: 'IPTV',            nameEn: 'IPTV',          color: '#7c3aed', bg: 'bg-violet-50',  logo: '/services/iptv.png' },
 };
 

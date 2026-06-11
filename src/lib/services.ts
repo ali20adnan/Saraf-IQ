@@ -35,9 +35,9 @@ const DEFAULT_SERVICE_COVERS = {
   freefire: '/services/freefire.png',
   tiktok: '/services/tiktok-coins.png',
   iptv: '/services/iptv.png',
-  chatgpt: '/services/جات جيبي تي.png',
-  canva: '/services/كانفا.png',
-  netflix: '/services/نتفلكس.png',
+  chatgpt: '/services/chatgpt.png',
+  canva: '/services/canva.png',
+  netflix: '/services/netflix.png',
 };
 
 export const APP_SERVICES: AppService[] = [
