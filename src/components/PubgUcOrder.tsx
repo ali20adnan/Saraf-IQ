@@ -248,6 +248,13 @@ export function PubgUcOrder({
           <p className="text-sm text-gray-400 mt-1">{lang === 'ar' ? 'اختر الباقة المناسبة' : 'Select a UC package'}</p>
         </div>
 
+        {hasDiscount && (
+          <div className="mb-3 flex items-center gap-2 rounded-xl bg-red-50 border border-red-100 px-3 py-2">
+            <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-black text-white">-{discountPercent}%</span>
+            <span className="text-xs font-bold text-red-700">{lang === 'ar' ? 'تخفيض عام على كل الباقات' : 'Discount on all packages'}</span>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 mb-5">
           {packageList.map((pkg) => {
             const sel = selectedId === pkg.id;
