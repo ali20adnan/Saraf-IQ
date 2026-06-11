@@ -1,7 +1,7 @@
 ﻿import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
-import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogIn, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Gamepad2, XCircle, Eye, EyeOff, Download, Search, Pencil, Tv, Sparkles } from 'lucide-react';
+import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogIn, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Gamepad2, XCircle, Eye, EyeOff, Download, Search, Pencil, Tv, AppWindow } from 'lucide-react';
 import { ServiceCard } from './components/ServiceCard';
 import { PubgUcOrder } from './components/PubgUcOrder';
 import { GiftCardOrder } from './components/GiftCardOrder';
@@ -5571,7 +5571,7 @@ function MainContent() {
           const groups: { id: 'games' | 'entertainment' | 'apps' | 'other'; titleAr: string; titleEn: string; Icon: LucideIcon }[] = [
             { id: 'games',         titleAr: 'ألعاب',              titleEn: 'Games',                Icon: Gamepad2 },
             { id: 'entertainment', titleAr: 'ترفيه',              titleEn: 'Entertainment',        Icon: Tv },
-            { id: 'apps',          titleAr: 'برامج واشتراكات',    titleEn: 'Apps & Subscriptions', Icon: Sparkles },
+            { id: 'apps',          titleAr: 'برامج واشتراكات',    titleEn: 'Apps & Subscriptions', Icon: AppWindow },
             { id: 'other',         titleAr: 'خدمات أخرى',          titleEn: 'Other',                Icon: LayoutGrid },
           ];
           return (
@@ -6691,7 +6691,7 @@ function MainContent() {
                 const homeGroups: { id: 'games' | 'entertainment' | 'apps' | 'other'; titleAr: string; titleEn: string; Icon: LucideIcon }[] = [
                   { id: 'games',         titleAr: 'ألعاب',              titleEn: 'Games',                Icon: Gamepad2 },
                   { id: 'entertainment', titleAr: 'ترفيه',              titleEn: 'Entertainment',        Icon: Tv },
-                  { id: 'apps',          titleAr: 'برامج واشتراكات',    titleEn: 'Apps & Subscriptions', Icon: Sparkles },
+                  { id: 'apps',          titleAr: 'برامج واشتراكات',    titleEn: 'Apps & Subscriptions', Icon: AppWindow },
                   { id: 'other',         titleAr: 'خدمات أخرى',          titleEn: 'Other',                Icon: LayoutGrid },
                 ];
                 return (
