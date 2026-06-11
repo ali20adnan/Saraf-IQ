@@ -1,7 +1,7 @@
 ﻿import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
-import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogIn, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Gamepad2, XCircle, Eye, EyeOff, Download, Search, Pencil } from 'lucide-react';
+import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogIn, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Gamepad2, XCircle, Eye, EyeOff, Download, Search, Pencil, Tv, Sparkles } from 'lucide-react';
 import { ServiceCard } from './components/ServiceCard';
 import { PubgUcOrder } from './components/PubgUcOrder';
 import { GiftCardOrder } from './components/GiftCardOrder';
@@ -5568,11 +5568,11 @@ function MainContent() {
             if (['chatgpt', 'canva'].includes(action)) return 'apps';
             return 'other';
           };
-          const groups: { id: 'games' | 'entertainment' | 'apps' | 'other'; titleAr: string; titleEn: string; emoji: string }[] = [
-            { id: 'games',         titleAr: 'ألعاب',              titleEn: 'Games',              emoji: '🎮' },
-            { id: 'entertainment', titleAr: 'ترفيه',              titleEn: 'Entertainment',      emoji: '📺' },
-            { id: 'apps',          titleAr: 'برامج واشتراكات',    titleEn: 'Apps & Subscriptions', emoji: '🛠️' },
-            { id: 'other',         titleAr: 'خدمات أخرى',          titleEn: 'Other',              emoji: '✨' },
+          const groups: { id: 'games' | 'entertainment' | 'apps' | 'other'; titleAr: string; titleEn: string; Icon: LucideIcon }[] = [
+            { id: 'games',         titleAr: 'ألعاب',              titleEn: 'Games',                Icon: Gamepad2 },
+            { id: 'entertainment', titleAr: 'ترفيه',              titleEn: 'Entertainment',        Icon: Tv },
+            { id: 'apps',          titleAr: 'برامج واشتراكات',    titleEn: 'Apps & Subscriptions', Icon: Sparkles },
+            { id: 'other',         titleAr: 'خدمات أخرى',          titleEn: 'Other',                Icon: LayoutGrid },
           ];
           return (
             <div className="space-y-8">
@@ -5581,8 +5581,10 @@ function MainContent() {
                 if (!items.length) return null;
                 return (
                   <section key={group.id} className="space-y-3 sm:space-y-4">
-                    <div className="flex items-baseline gap-2.5">
-                      <span className="text-lg sm:text-xl">{group.emoji}</span>
+                    <div className="flex items-center gap-2.5">
+                      <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-red-50 text-red-600">
+                        <group.Icon className="h-4 w-4" strokeWidth={2.5} />
+                      </span>
                       <h2 className="text-base sm:text-lg font-black text-gray-900">
                         {lang === 'ar' ? group.titleAr : group.titleEn}
                       </h2>
@@ -6686,11 +6688,11 @@ function MainContent() {
                   if (['chatgpt', 'canva'].includes(action)) return 'apps';
                   return 'other';
                 };
-                const homeGroups: { id: 'games' | 'entertainment' | 'apps' | 'other'; titleAr: string; titleEn: string; emoji: string }[] = [
-                  { id: 'games',         titleAr: 'ألعاب',              titleEn: 'Games',                emoji: '🎮' },
-                  { id: 'entertainment', titleAr: 'ترفيه',              titleEn: 'Entertainment',        emoji: '📺' },
-                  { id: 'apps',          titleAr: 'برامج واشتراكات',    titleEn: 'Apps & Subscriptions', emoji: '🛠️' },
-                  { id: 'other',         titleAr: 'خدمات أخرى',          titleEn: 'Other',                emoji: '✨' },
+                const homeGroups: { id: 'games' | 'entertainment' | 'apps' | 'other'; titleAr: string; titleEn: string; Icon: LucideIcon }[] = [
+                  { id: 'games',         titleAr: 'ألعاب',              titleEn: 'Games',                Icon: Gamepad2 },
+                  { id: 'entertainment', titleAr: 'ترفيه',              titleEn: 'Entertainment',        Icon: Tv },
+                  { id: 'apps',          titleAr: 'برامج واشتراكات',    titleEn: 'Apps & Subscriptions', Icon: Sparkles },
+                  { id: 'other',         titleAr: 'خدمات أخرى',          titleEn: 'Other',                Icon: LayoutGrid },
                 ];
                 return (
                   <>
@@ -6701,7 +6703,9 @@ function MainContent() {
                         <section key={group.id} className="mb-6">
                           <div className="flex items-center justify-between mb-3 px-0.5">
                             <h2 className="text-lg font-black text-gray-900 flex items-center gap-2">
-                              <span>{group.emoji}</span>
+                              <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-red-50 text-red-600">
+                                <group.Icon className="h-4 w-4" strokeWidth={2.5} />
+                              </span>
                               {lang === 'ar' ? group.titleAr : group.titleEn}
                             </h2>
                             <button onClick={() => navigateView('services')} className="text-xs font-bold text-red-600">
