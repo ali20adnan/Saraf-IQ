@@ -2499,6 +2499,7 @@ async function startServer() {
         pubg_uc_subtitle_en: string;
         pubg_uc_packages_json: string;
         gift_card_prices_json: string;
+        shop_discount_percent: string;
         carousel_slides_json: string;
       }>;
       if (typeof body.link_support === "string") {
@@ -2542,6 +2543,9 @@ async function startServer() {
       }
       if (typeof body.gift_card_prices_json === "string") {
         await store.setSiteStringSetting("gift_card_prices_json", body.gift_card_prices_json);
+      }
+      if (typeof body.shop_discount_percent === "string") {
+        await store.setSiteStringSetting("shop_discount_percent", body.shop_discount_percent);
       }
       if (typeof body.carousel_slides_json === "string") {
         await store.setSiteStringSetting("carousel_slides_json", body.carousel_slides_json);

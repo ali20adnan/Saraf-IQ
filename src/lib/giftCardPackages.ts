@@ -8,6 +8,7 @@ export type GiftCardPackage = {
   labelAr: string;
   priceIqd: number; // 0 = سيُحدد لاحقاً
   region: GiftCardRegion;
+  originalPriceIqd?: number;
 };
 
 export type GiftCardService =

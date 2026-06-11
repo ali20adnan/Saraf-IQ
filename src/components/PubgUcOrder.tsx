@@ -23,7 +23,14 @@ type PubgUcOrderProps = {
   subtitleAr?: string;
   subtitleEn?: string;
   packages?: PubgUcPackage[];
+  discountPercent?: number;
 };
+
+function applyDiscount(price: number, percent: number): number {
+  if (!price || !percent || percent <= 0) return price;
+  const p = Math.min(100, Math.max(0, percent));
+  return Math.round(price * (100 - p) / 100);
+}
 
 function UcIcon({tier}: {tier: PubgUcPackage['iconTier']}) {
   return (
@@ -52,10 +59,20 @@ export function PubgUcOrder({
   titleAr,
   titleEn,
   packages,
+  discountPercent = 0,
 }: PubgUcOrderProps) {
   const {lang, t, dir} = useLanguage();
   const BackIcon = dir === 'rtl' ? ArrowRight : ArrowLeft;
-  const packageList = useMemo(() => (packages && packages.length > 0 ? packages : PUBG_UC_PACKAGES), [packages]);
+  const rawPackageList = useMemo(() => (packages && packages.length > 0 ? packages : PUBG_UC_PACKAGES), [packages]);
+  const packageList = useMemo(
+    () => rawPackageList.map((p) => ({
+      ...p,
+      originalPriceIqd: p.priceIqd,
+      priceIqd: applyDiscount(p.priceIqd, discountPercent),
+    })),
+    [rawPackageList, discountPercent],
+  );
+  const hasDiscount = discountPercent > 0;
 
   const [step, setStep] = useState<Step>('package');
   const [selectedId, setSelectedId] = useState(packageList[0]?.id ?? '');
@@ -242,7 +259,12 @@ export function PubgUcOrder({
                 </div>
                 <div className="min-w-0 flex-1" dir="ltr">
                   <p className="font-black text-sm text-gray-900 truncate">{pkg.label} <span className="text-gray-400 font-bold">UC</span></p>
-                  <p className="font-black text-sm text-gray-900">{formatLatinDigits(pkg.priceIqd)} <span className="text-[10px] font-bold text-gray-500">{t('iqd')}</span></p>
+                  <div className="flex items-baseline gap-2">
+                    <p className="font-black text-sm text-gray-900">{formatLatinDigits(pkg.priceIqd)} <span className="text-[10px] font-bold text-gray-500">{t('iqd')}</span></p>
+                    {hasDiscount && pkg.originalPriceIqd && pkg.originalPriceIqd > pkg.priceIqd && (
+                      <p className="text-[10px] font-bold text-gray-400 line-through">{formatLatinDigits(pkg.originalPriceIqd)}</p>
+                    )}
+                  </div>
                 </div>
                 <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${sel ? 'border-red-500 bg-red-500 text-white' : 'border-gray-200'}`}>
                   {sel && <Check className="h-3 w-3 stroke-[3]" />}

@@ -15,6 +15,7 @@ export type PubgUcPackage = {
   label: string;
   totalUc: number;
   priceIqd: number;
+  originalPriceIqd?: number;
   isMinimum?: boolean;
   iconTier: 1 | 2 | 3;
 };

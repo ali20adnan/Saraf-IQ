@@ -530,6 +530,7 @@ function MainContent() {
     pubgUcSubtitleEn: 'Choose a UC pack, enter your Player ID, and pay by bank card.',
     pubgPackages: [...DEFAULT_PUBG_PACKAGES],
     giftCardPrices: {} as Record<string, number>,
+    shopDiscountPercent: 0,
     carouselSlides: [...DEFAULT_CAROUSEL_SLIDES],
   });
 
@@ -823,6 +824,11 @@ function MainContent() {
       ),
       pubgPackages: sanitizeManagedPubgPackages(payload.pubgPackages),
       giftCardPrices: sanitizeGiftCardPrices(payload.giftCardPrices),
+      shopDiscountPercent: (() => {
+        const n = Number((payload as { shopDiscountPercent?: unknown }).shopDiscountPercent);
+        if (!Number.isFinite(n) || n < 0) return 0;
+        return Math.min(100, n);
+      })(),
       carouselSlides: sanitizeCarouselSlides(payload.carouselSlides),
     });
   }, []);
@@ -2248,6 +2254,7 @@ function MainContent() {
             pubg_uc_subtitle_en: siteContent.pubgUcSubtitleEn,
             pubg_uc_packages_json: JSON.stringify(preparedPackages),
             gift_card_prices_json: JSON.stringify(siteContent.giftCardPrices),
+            shop_discount_percent: String(Math.max(0, Math.min(100, Number(siteContent.shopDiscountPercent) || 0))),
             carousel_slides_json: JSON.stringify(siteContent.carouselSlides),
           }),
         });
@@ -3638,6 +3645,44 @@ function MainContent() {
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+
+              {/* ── تخفيض عام على المتجر ── */}
+              <div className="rounded-2xl border border-gray-200 bg-gradient-to-br from-rose-50 to-white p-5 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="font-black text-gray-900 text-base">{lang === 'ar' ? 'تخفيض عام على كل المنتجات' : 'Global Shop Discount'}</h3>
+                    <p className="text-xs text-gray-500 mt-1">{lang === 'ar' ? 'يُطبَّق على أسعار PUBG UC وكل بطاقات الهدايا والاشتراكات. أدخل 0 لإيقاف التخفيض.' : 'Applies to PUBG UC, gift cards, and subscription prices. Set 0 to disable.'}</p>
+                  </div>
+                  {siteContent.shopDiscountPercent > 0 && (
+                    <span className="shrink-0 rounded-full bg-red-600 px-3 py-1 text-xs font-black text-white">
+                      -{siteContent.shopDiscountPercent}%
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={siteContent.shopDiscountPercent}
+                    onChange={(e) => {
+                      const v = Math.max(0, Math.min(100, Number(e.target.value || 0)));
+                      setSiteContent((prev) => ({ ...prev, shopDiscountPercent: v }));
+                    }}
+                    className="w-32 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-lg font-black text-gray-900"
+                    dir="ltr"
+                  />
+                  <span className="text-sm font-bold text-gray-500">%</span>
+                  <button
+                    type="button"
+                    onClick={() => setSiteContent((prev) => ({ ...prev, shopDiscountPercent: 0 }))}
+                    className="text-xs font-bold text-gray-500 hover:text-red-600"
+                  >
+                    {lang === 'ar' ? 'إيقاف' : 'Disable'}
+                  </button>
                 </div>
               </div>
 
@@ -5422,6 +5467,7 @@ function MainContent() {
           subtitleAr={siteContent.pubgUcSubtitleAr}
           subtitleEn={siteContent.pubgUcSubtitleEn}
           packages={pubgPackagesForOrder}
+          discountPercent={siteContent.shopDiscountPercent}
         />
       );
     }
@@ -5434,6 +5480,7 @@ function MainContent() {
           userId={userId}
           walletBalance={walletBalance}
           prices={siteContent.giftCardPrices}
+          discountPercent={siteContent.shopDiscountPercent}
           onBack={() => setActiveServiceId(null)}
           onComplete={fetchTransactions}
         />

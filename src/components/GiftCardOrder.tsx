@@ -45,13 +45,20 @@ type Props = {
   userId: string | null;
   walletBalance?: number;
   prices?: Record<string, number>;
+  discountPercent?: number;
   onBack: () => void;
   onComplete?: () => void;
 };
 
+function applyDiscount(price: number, percent: number): number {
+  if (!price || !percent || percent <= 0) return price;
+  const p = Math.min(100, Math.max(0, percent));
+  return Math.round(price * (100 - p) / 100);
+}
+
 type PaymentType = 'card' | 'wallet' | null;
 
-export function GiftCardOrder({service, clientId, userId, walletBalance = 0, prices, onBack, onComplete}: Props) {
+export function GiftCardOrder({service, clientId, userId, walletBalance = 0, prices, discountPercent = 0, onBack, onComplete}: Props) {
   const {lang, dir} = useLanguage();
   const BackIcon = dir === 'rtl' ? ArrowRight : ArrowLeft;
   const meta = SERVICE_META[service] ?? DEFAULT_SERVICE_META;
@@ -65,9 +72,12 @@ export function GiftCardOrder({service, clientId, userId, walletBalance = 0, pri
 
   const allRegions = new Set((GIFT_CARD_PACKAGES[service] ?? []).map((p) => p.region));
   const showRegionToggle = allRegions.size > 1;
-  const packages = getPackages(service, region).map((pkg) =>
-    prices && prices[pkg.id] !== undefined ? { ...pkg, priceIqd: prices[pkg.id] } : pkg
-  );
+  const packages = getPackages(service, region).map((pkg) => {
+    const base = prices && prices[pkg.id] !== undefined ? prices[pkg.id] : pkg.priceIqd;
+    const finalPrice = applyDiscount(base, discountPercent);
+    return { ...pkg, priceIqd: finalPrice, originalPriceIqd: base };
+  });
+  const hasDiscount = discountPercent > 0;
   const noPrice = selected?.priceIqd === 0;
 
   // عند تغيير المنطقة: حافظ على الاختيار إن وُجد مقابل في المنطقة الجديدة
@@ -131,6 +141,12 @@ export function GiftCardOrder({service, clientId, userId, walletBalance = 0, pri
       {/* قائمة الباقات */}
       {!paymentType ? (
         <>
+          {hasDiscount && (
+            <div className="mb-3 flex items-center gap-2 rounded-xl bg-red-50 border border-red-100 px-3 py-2">
+              <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-black text-white">-{discountPercent}%</span>
+              <span className="text-xs font-bold text-red-700">{lang === 'ar' ? 'تخفيض عام على كل الباقات' : 'Discount on all packages'}</span>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3 mb-5">
             {packages.map((pkg) => (
               <button key={pkg.id} onClick={() => setSelected(pkg)}
@@ -138,9 +154,16 @@ export function GiftCardOrder({service, clientId, userId, walletBalance = 0, pri
                   selected?.id === pkg.id ? 'border-red-500 bg-red-50 shadow-md shadow-red-100' : 'border-gray-100 bg-white hover:border-gray-200'
                 }`}>
                 <p className="font-black text-gray-900" dir="ltr">{lang === 'ar' ? pkg.labelAr : pkg.labelEn}</p>
-                <p className="text-sm font-bold mt-1" style={{color: pkg.priceIqd ? '#1a202c' : '#9ca3af'}}>
-                  {pkg.priceIqd ? `${formatLatinDigits(pkg.priceIqd)} ${lang === 'ar' ? 'دينار' : 'IQD'}` : (lang === 'ar' ? 'قريباً' : 'Soon')}
-                </p>
+                {pkg.priceIqd ? (
+                  <div className="mt-1 flex items-baseline gap-2" dir="ltr">
+                    <p className="text-sm font-bold text-gray-900">{formatLatinDigits(pkg.priceIqd)} <span className="text-xs text-gray-500">{lang === 'ar' ? 'د.ع' : 'IQD'}</span></p>
+                    {hasDiscount && pkg.originalPriceIqd > pkg.priceIqd && (
+                      <p className="text-xs font-bold text-gray-400 line-through">{formatLatinDigits(pkg.originalPriceIqd)}</p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm font-bold mt-1 text-gray-400">{lang === 'ar' ? 'قريباً' : 'Soon'}</p>
+                )}
                 {selected?.id === pkg.id && (
                   <span className="inline-flex mt-2 h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white">
                     <Check className="h-3 w-3 stroke-[3]" />

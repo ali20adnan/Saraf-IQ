@@ -351,6 +351,8 @@ const defaultAppSettings: Record<string, string> = {
   pubg_uc_packages_json: JSON.stringify(defaultManagedPubgPackages),
   /** JSON object: packageId → priceIqd overrides for all gift card services */
   gift_card_prices_json: "{}",
+  /** Global shop discount percent (0-100) applied to all gift card / PUBG prices */
+  shop_discount_percent: "0",
   /** JSON array: admin-defined buy payment wallets (method_key wallet_<id>) */
   buy_custom_wallets: "[]",
   /** JSON array: admin-defined sell receiving wallets (method_key sell_wallet_<id>) */
@@ -556,6 +558,7 @@ export const SITE_STRING_SETTING_KEYS = [
   "pubg_uc_subtitle_en",
   "pubg_uc_packages_json",
   "gift_card_prices_json",
+  "shop_discount_percent",
   "carousel_slides_json",
 ] as const;
 
@@ -574,6 +577,7 @@ export type SiteContentPublic = {
   pubgUcSubtitleEn: string;
   pubgPackages: ManagedPubgPackage[];
   giftCardPrices: Record<string, number>;
+  shopDiscountPercent: number;
   carouselSlides: unknown[];
 };
 
@@ -619,6 +623,11 @@ export async function getSiteContent(): Promise<SiteContentPublic> {
         }
         return out;
       } catch { return {}; }
+    })(),
+    shopDiscountPercent: (() => {
+      const n = Number(final.shop_discount_percent);
+      if (!Number.isFinite(n) || n < 0) return 0;
+      return Math.min(100, n);
     })(),
     carouselSlides: (() => { try { const p = JSON.parse(final.carousel_slides_json || '[]'); return Array.isArray(p) ? p : []; } catch { return []; } })(),
   };
