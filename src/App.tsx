@@ -5561,19 +5561,50 @@ function MainContent() {
               {lang === 'ar' ? 'لا توجد نتائج مطابقة' : 'No matching services'}
             </p>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4 max-[360px]:gap-3 min-[400px]:grid-cols-2 md:gap-5 lg:grid-cols-3 2xl:grid-cols-4">
-            {filteredServices.map((service) => (
-              <div key={service.id} className="min-w-0">
-                <ServiceCard
-                  service={service}
-                  variant="full"
-                  onAction={() => setActiveServiceId(service.id)}
-                />
-              </div>
-            ))}
-          </div>
-        )}
+        ) : (() => {
+          const categoryOf = (action: string): 'games' | 'entertainment' | 'apps' | 'other' => {
+            if (['pubg_uc', 'playstation', 'steam', 'xbox', 'cod', 'freefire'].includes(action)) return 'games';
+            if (['netflix', 'iptv', 'tiktok_coins'].includes(action)) return 'entertainment';
+            if (['chatgpt', 'canva'].includes(action)) return 'apps';
+            return 'other';
+          };
+          const groups: { id: 'games' | 'entertainment' | 'apps' | 'other'; titleAr: string; titleEn: string; emoji: string }[] = [
+            { id: 'games',         titleAr: 'ألعاب',              titleEn: 'Games',              emoji: '🎮' },
+            { id: 'entertainment', titleAr: 'ترفيه',              titleEn: 'Entertainment',      emoji: '📺' },
+            { id: 'apps',          titleAr: 'برامج واشتراكات',    titleEn: 'Apps & Subscriptions', emoji: '🛠️' },
+            { id: 'other',         titleAr: 'خدمات أخرى',          titleEn: 'Other',              emoji: '✨' },
+          ];
+          return (
+            <div className="space-y-8">
+              {groups.map((group) => {
+                const items = filteredServices.filter((s) => categoryOf(s.actionType) === group.id);
+                if (!items.length) return null;
+                return (
+                  <section key={group.id} className="space-y-3 sm:space-y-4">
+                    <div className="flex items-baseline gap-2.5">
+                      <span className="text-lg sm:text-xl">{group.emoji}</span>
+                      <h2 className="text-base sm:text-lg font-black text-gray-900">
+                        {lang === 'ar' ? group.titleAr : group.titleEn}
+                      </h2>
+                      <span className="text-xs font-bold text-gray-400">({items.length})</span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-4 max-[360px]:gap-3 min-[400px]:grid-cols-2 md:gap-5 lg:grid-cols-3 2xl:grid-cols-4">
+                      {items.map((service) => (
+                        <div key={service.id} className="min-w-0">
+                          <ServiceCard
+                            service={service}
+                            variant="full"
+                            onAction={() => setActiveServiceId(service.id)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                );
+              })}
+            </div>
+          );
+        })()}
       </div>
     );
   };
