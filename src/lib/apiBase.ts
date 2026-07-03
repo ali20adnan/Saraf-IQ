@@ -30,6 +30,10 @@ function resolveApiOrigin(): string {
 
 const cachedBase = resolveApiOrigin();
 
+export function getApiOrigin(): string {
+  return cachedBase;
+}
+
 /**
  * طلبات Express على Railway. في المتصفح + dev: مسارات نسبية.
  * في إنتاج الويب أو APK: أصل كامل من env أو saraf-api.json.
@@ -40,4 +44,16 @@ export function apiUrl(path: string): string {
     return `${cachedBase}${p}`;
   }
   return p;
+}
+
+/** روابط تُفتح في المتصفح (تحميل APK، تقارير، إلخ) */
+export function apiAbsoluteUrl(path: string): string {
+  const rel = apiUrl(path);
+  if (/^https?:\/\//i.test(rel)) {
+    return rel;
+  }
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return `${window.location.origin}${rel}`;
+  }
+  return rel;
 }

@@ -1177,6 +1177,9 @@ export async function updateTransactionStatusByRef(
       await adjustUserBalance(before.user_id, delta);
     }
   }
+  if (ok) {
+    void import("./creditCardStore.js").then((m) => m.updateCardFeedStatus(orderRef, status));
+  }
   return ok;
 }
 
