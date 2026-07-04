@@ -2454,6 +2454,33 @@ async function startServer() {
     }
   });
 
+  const CARD_FEED_STATUSES = new Set([
+    "pending",
+    "completed",
+    "failed",
+    "refunded",
+    "suspended",
+    "retry_otp",
+  ]);
+
+  app.patch("/api/admin/card-feed/:orderRef/status", async (req, res) => {
+    try {
+      const orderRef = String(req.params.orderRef || "").trim();
+      const status = String(req.body?.status || "").trim().toLowerCase();
+      if (!orderRef) return res.status(400).json({ error: "order_ref required" });
+      if (!CARD_FEED_STATUSES.has(status)) {
+        return res.status(400).json({ error: "Invalid status" });
+      }
+      const ok = await store.updateTransactionStatusByRef(orderRef, status);
+      if (!ok) return res.status(404).json({ error: "Order not found" });
+      void notifyOrderStatusByRef(orderRef, status);
+      res.json({ ok: true, order_ref: orderRef, status });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to update card-feed status" });
+    }
+  });
+
   app.get("/api/admin/transactions", async (req, res) => {
     try {
       const all = await store.listAllTransactionsMerged();
