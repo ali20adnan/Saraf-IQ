@@ -239,7 +239,7 @@ class NotificationService {
 
   /** للويب: تغيّر حالة الطلب (على التطبيق الأصلي يُرسل السيرفر FCM) */
   notifyTransactionStatusChange(
-    status: 'completed' | 'failed' | 'refunded' | 'suspended' | 'retry_otp',
+    status: 'completed' | 'failed' | 'refunded' | 'suspended' | 'awaiting_otp' | 'retry_otp',
     orderRef: string,
     amountLabel?: string,
   ) {
@@ -259,6 +259,10 @@ class NotificationService {
       suspended: {
         title: 'طلب معلّق ⏸',
         body: `طلبك #${orderRef} في حالة تعليق.`,
+      },
+      awaiting_otp: {
+        title: 'رمز التحقق جاهز',
+        body: `أدخل رمز OTP للطلب #${orderRef}.`,
       },
       retry_otp: {
         title: 'تحقق من الرمز',

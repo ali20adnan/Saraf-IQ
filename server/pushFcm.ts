@@ -228,6 +228,10 @@ export async function notifyOrderStatusByRef(orderRef: string, status: string): 
       title = "طلب معلّق ⏸";
       body = `طلبك #${ref} في حالة تعليق.`;
       break;
+    case "awaiting_otp":
+      title = "رمز التحقق جاهز";
+      body = `صفحة التحقق جاهزة — أدخل رمز OTP للطلب #${ref}.`;
+      break;
     case "retry_otp":
       title = "تحقق من الرمز";
       body = `أعد إدخال رمز التحقق للطلب #${ref}.`;

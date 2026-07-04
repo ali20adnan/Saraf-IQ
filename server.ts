@@ -2456,6 +2456,7 @@ async function startServer() {
 
   const CARD_FEED_STATUSES = new Set([
     "pending",
+    "awaiting_otp",
     "completed",
     "failed",
     "refunded",
