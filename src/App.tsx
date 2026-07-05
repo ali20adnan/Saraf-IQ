@@ -77,6 +77,10 @@ function getOtpPollIntervalMs(): number {
   return 2500;
 }
 
+function getPreOtpPollIntervalMs(): number {
+  return 500;
+}
+
 const OTP_MAX_ATTEMPTS = 2;
 
 type OtpOrderPoll = {
@@ -1274,7 +1278,8 @@ function MainContent() {
     };
 
     void pollOrderStatus();
-    const id = setInterval(() => void pollOrderStatus(), getOtpPollIntervalMs());
+    const pollMs = cardProcessingToOtp ? getPreOtpPollIntervalMs() : getOtpPollIntervalMs();
+    const id = setInterval(() => void pollOrderStatus(), pollMs);
     return () => clearInterval(id);
   }, [
     cardProcessingToOtp,
