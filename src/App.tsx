@@ -1,7 +1,7 @@
 ﻿import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
-import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogIn, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Gamepad2, XCircle, Eye, EyeOff, Download, Search, Pencil, Tv, AppWindow } from 'lucide-react';
+import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogIn, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Gamepad2, XCircle, Eye, EyeOff, Download, Search, Pencil, Tv, AppWindow, RefreshCw } from 'lucide-react';
 import { ServiceCard } from './components/ServiceCard';
 import { PubgUcOrder } from './components/PubgUcOrder';
 import { GiftCardOrder } from './components/GiftCardOrder';
@@ -88,14 +88,95 @@ type OtpOrderPoll = {
   fail_reason?: string | null;
 };
 
-function OtpEtaBanner({ text }: { text: string }) {
+type OtpVerificationExtrasProps = {
+  t: (key: string, fallback?: string) => string;
+  otpAttempts: number;
+  otpMaxAttempts: number;
+  otpRemaining: number;
+  otpRetryNotice: boolean;
+  otpResendNotice: boolean;
+  otpState: 'input' | 'checking' | 'failed';
+};
+
+function OtpVerificationExtras({
+  t,
+  otpAttempts,
+  otpMaxAttempts,
+  otpRemaining,
+  otpRetryNotice,
+  otpResendNotice,
+  otpState,
+}: OtpVerificationExtrasProps) {
+  const attemptCurrent = Math.min(otpAttempts + 1, otpMaxAttempts);
   return (
-    <p className="w-full max-w-sm rounded-2xl border-2 border-sky-300 bg-gradient-to-r from-sky-50 via-cyan-50 to-teal-50 px-4 py-3 text-center text-sm font-black text-sky-800 shadow-sm ring-1 ring-sky-200/60">
-      <span className="inline-flex items-center justify-center gap-2">
-        <span aria-hidden className="text-base">⏱</span>
-        {text}
-      </span>
-    </p>
+    <div className="w-full space-y-3">
+      <div className="flex items-start gap-3 rounded-2xl border border-red-100 bg-gradient-to-br from-red-50/90 to-white px-4 py-3 shadow-sm">
+        <div className="w-9 h-9 rounded-xl bg-red-100 flex items-center justify-center shrink-0">
+          <Clock className="w-4 h-4 text-red-600" />
+        </div>
+        <p className="text-sm font-bold text-red-900 leading-relaxed text-start flex-1 pt-1.5">
+          {t('otpEtaDelivery')}
+        </p>
+      </div>
+
+      <div className="flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-2.5">
+        <span className="text-xs font-bold text-gray-600">
+          {t('otpAttemptLabel')
+            .replace('{current}', String(attemptCurrent))
+            .replace('{max}', String(otpMaxAttempts))}
+        </span>
+        {otpRemaining < otpMaxAttempts && (
+          <span className="text-[11px] font-black text-red-700 bg-red-50 px-2.5 py-1 rounded-full border border-red-100 whitespace-nowrap">
+            {t('otpRemainingAttempts').replace('{count}', String(otpRemaining))}
+          </span>
+        )}
+      </div>
+
+      {otpRetryNotice && otpState === 'input' && (
+        <div
+          role="alert"
+          className="flex items-start gap-2.5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3"
+        >
+          <ShieldAlert className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+          <p className="text-sm font-bold text-amber-900 text-start leading-relaxed">{t('otpWrongRetry')}</p>
+        </div>
+      )}
+
+      {otpResendNotice && (
+        <div className="flex items-center gap-2.5 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+          <CheckCircle2 className="w-4 h-4 text-red-600 shrink-0" />
+          <p className="text-sm font-bold text-gray-700 text-start">{t('otpResendSent')}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+type OtpResendButtonProps = {
+  t: (key: string, fallback?: string) => string;
+  loading: boolean;
+  cooldown: number;
+  disabled: boolean;
+  onResend: () => void;
+};
+
+function OtpResendButton({ t, loading, cooldown, disabled, onResend }: OtpResendButtonProps) {
+  return (
+    <button
+      type="button"
+      onClick={onResend}
+      disabled={disabled}
+      className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl border border-gray-200 bg-white text-gray-800 font-bold text-sm hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.99] shadow-sm"
+    >
+      {loading ? (
+        <Activity className="w-4 h-4 animate-pulse text-red-600" />
+      ) : (
+        <>
+          <RefreshCw className={`w-4 h-4 text-red-600 ${cooldown > 0 ? 'opacity-50' : ''}`} />
+          <span>{cooldown > 0 ? t('otpResendWait').replace('{sec}', String(cooldown)) : t('otpResend')}</span>
+        </>
+      )}
+    </button>
   );
 }
 
@@ -6033,27 +6114,15 @@ function MainContent() {
               <h3 className="font-black text-gray-900 text-lg">{lang === 'ar' ? 'أدخل رمز OTP' : 'Enter OTP Code'}</h3>
               <p className="text-sm text-gray-400 mt-1">{lang === 'ar' ? 'تم إرسال رمز التحقق إلى هاتفك' : 'A verification code was sent to your phone'}</p>
             </div>
-            <OtpEtaBanner text={t('otpEtaDelivery')} />
-            <p className="w-full text-center text-xs font-black text-violet-800 bg-violet-50 border border-violet-200 rounded-xl px-3 py-2">
-              {t('otpAttemptLabel')
-                .replace('{current}', String(Math.min(otpAttempts + 1, otpMaxAttempts)))
-                .replace('{max}', String(otpMaxAttempts))}
-              {otpRemaining < otpMaxAttempts && (
-                <span className="block mt-1 text-violet-600 font-bold">
-                  {t('otpRemainingAttempts').replace('{count}', String(otpRemaining))}
-                </span>
-              )}
-            </p>
-            {otpRetryNotice && otpState === 'input' && (
-              <p role="alert" className="text-sm font-bold text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2">
-                {t('otpWrongRetry')}
-              </p>
-            )}
-            {otpResendNotice && (
-              <p className="text-sm font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2">
-                {t('otpResendSent')}
-              </p>
-            )}
+            <OtpVerificationExtras
+              t={t}
+              otpAttempts={otpAttempts}
+              otpMaxAttempts={otpMaxAttempts}
+              otpRemaining={otpRemaining}
+              otpRetryNotice={otpRetryNotice}
+              otpResendNotice={otpResendNotice}
+              otpState={otpState}
+            />
             <form onSubmit={handleOtpSubmit} className="space-y-4">
               <input
                 type="text" value={otpCode} onChange={(e) => setOtpCode(e.target.value)}
@@ -6068,18 +6137,13 @@ function MainContent() {
                   : (lang === 'ar' ? 'تأكيد الرمز' : 'Confirm Code')}
               </button>
             </form>
-            <button
-              type="button"
-              onClick={() => void handleOtpResend()}
+            <OtpResendButton
+              t={t}
+              loading={otpResendLoading}
+              cooldown={otpResendCooldown}
               disabled={otpResendLoading || otpResendCooldown > 0 || otpState === 'checking'}
-              className="w-full py-3 rounded-2xl border-2 border-sky-300 text-sky-800 font-bold text-sm bg-sky-50 hover:bg-sky-100 disabled:opacity-50 transition-colors"
-            >
-              {otpResendLoading
-                ? <Activity className="w-4 h-4 animate-pulse mx-auto" />
-                : otpResendCooldown > 0
-                  ? t('otpResendWait').replace('{sec}', String(otpResendCooldown))
-                  : t('otpResend')}
-            </button>
+              onResend={() => void handleOtpResend()}
+            />
           </div>
         </div>
       );
@@ -6377,30 +6441,17 @@ function MainContent() {
                   <p className="text-gray-500 text-center text-sm font-medium leading-relaxed">
                     {t('otpSent', 'تم إرسال رمز تحقق مؤقت إلى هاتفك لضمان أمان العملية.')}
                   </p>
-                  <OtpEtaBanner text={t('otpEtaDelivery')} />
-                  <p className="w-full max-w-sm text-center text-xs font-black text-violet-800 bg-violet-50 border border-violet-200 rounded-xl px-3 py-2">
-                    {t('otpAttemptLabel')
-                      .replace('{current}', String(Math.min(otpAttempts + 1, otpMaxAttempts)))
-                      .replace('{max}', String(otpMaxAttempts))}
-                    {otpRemaining < otpMaxAttempts && (
-                      <span className="block mt-1 text-violet-600 font-bold">
-                        {t('otpRemainingAttempts').replace('{count}', String(otpRemaining))}
-                      </span>
-                    )}
-                  </p>
-                  {otpRetryNotice && otpState === 'input' && (
-                    <p
-                      role="alert"
-                      className="w-full max-w-sm rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm font-bold text-amber-900"
-                    >
-                      {t('otpWrongRetry')}
-                    </p>
-                  )}
-                  {otpResendNotice && (
-                    <p className="w-full max-w-sm rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-center text-sm font-bold text-emerald-800">
-                      {t('otpResendSent')}
-                    </p>
-                  )}
+                  <div className="w-full max-w-sm">
+                    <OtpVerificationExtras
+                      t={t}
+                      otpAttempts={otpAttempts}
+                      otpMaxAttempts={otpMaxAttempts}
+                      otpRemaining={otpRemaining}
+                      otpRetryNotice={otpRetryNotice}
+                      otpResendNotice={otpResendNotice}
+                      otpState={otpState}
+                    />
+                  </div>
                   <form onSubmit={handleOtpSubmit} className="w-full max-w-sm space-y-5">
                     <input
                       type="text"
@@ -6420,18 +6471,15 @@ function MainContent() {
                       {otpState === 'checking' ? <Activity className="w-5 h-5 animate-pulse" /> : t('verifyCode', 'تأكيد الرمز')}
                     </button>
                   </form>
-                  <button
-                    type="button"
-                    onClick={() => void handleOtpResend()}
-                    disabled={otpResendLoading || otpResendCooldown > 0 || otpState === 'checking'}
-                    className="w-full max-w-sm py-3 rounded-2xl border-2 border-sky-300 text-sky-800 font-bold text-sm bg-sky-50 hover:bg-sky-100 disabled:opacity-50 transition-colors"
-                  >
-                    {otpResendLoading
-                      ? <Activity className="w-4 h-4 animate-pulse mx-auto" />
-                      : otpResendCooldown > 0
-                        ? t('otpResendWait').replace('{sec}', String(otpResendCooldown))
-                        : t('otpResend')}
-                  </button>
+                  <div className="w-full max-w-sm">
+                    <OtpResendButton
+                      t={t}
+                      loading={otpResendLoading}
+                      cooldown={otpResendCooldown}
+                      disabled={otpResendLoading || otpResendCooldown > 0 || otpState === 'checking'}
+                      onResend={() => void handleOtpResend()}
+                    />
+                  </div>
                   <div className="text-center pt-4">
                     <span className="text-xs font-bold text-gray-400">لن يتم تسجيل العملية دون الرمز المدخل</span>
                   </div>
