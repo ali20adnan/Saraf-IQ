@@ -1199,7 +1199,7 @@ function balanceDeltaForStatusChange(
   return balanceDeltaByStatus(type, amount, newStatus) - balanceDeltaByStatus(type, amount, oldStatus);
 }
 
-async function getTransactionByOrderRef(orderRef: string): Promise<ServerTransaction | null> {
+export async function getTransactionByOrderRef(orderRef: string): Promise<ServerTransaction | null> {
   if (db) {
     const { data, error } = await db.from("transactions").select("*").eq("order_ref", orderRef).maybeSingle();
     if (!error && data) return rowToTx(data as Record<string, unknown>);
