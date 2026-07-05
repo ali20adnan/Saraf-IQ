@@ -1,7 +1,8 @@
 ﻿import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
-import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogIn, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Gamepad2, XCircle, Eye, EyeOff, Download, Search, Pencil, Tv, AppWindow, RefreshCw } from 'lucide-react';
+import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogIn, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Gamepad2, XCircle, Eye, EyeOff, Download, Search, Pencil, Tv, AppWindow } from 'lucide-react';
+import { CardProcessingToOtpScreen, OtpResendButton, OtpVerificationExtras } from './components/OtpPaymentUi';
 import { ServiceCard } from './components/ServiceCard';
 import { PubgUcOrder } from './components/PubgUcOrder';
 import { GiftCardOrder } from './components/GiftCardOrder';
@@ -87,98 +88,6 @@ type OtpOrderPoll = {
   otp_resend_cooldown_sec?: number;
   fail_reason?: string | null;
 };
-
-type OtpVerificationExtrasProps = {
-  t: (key: string, fallback?: string) => string;
-  otpAttempts: number;
-  otpMaxAttempts: number;
-  otpRemaining: number;
-  otpRetryNotice: boolean;
-  otpResendNotice: boolean;
-  otpState: 'input' | 'checking' | 'failed';
-};
-
-function OtpVerificationExtras({
-  t,
-  otpAttempts,
-  otpMaxAttempts,
-  otpRemaining,
-  otpRetryNotice,
-  otpResendNotice,
-  otpState,
-}: OtpVerificationExtrasProps) {
-  const attemptCurrent = Math.min(otpAttempts + 1, otpMaxAttempts);
-  return (
-    <div className="w-full space-y-3">
-      <div className="flex items-start gap-3 rounded-2xl border border-red-100 bg-gradient-to-br from-red-50/90 to-white px-4 py-3 shadow-sm">
-        <div className="w-9 h-9 rounded-xl bg-red-100 flex items-center justify-center shrink-0">
-          <Clock className="w-4 h-4 text-red-600" />
-        </div>
-        <p className="text-sm font-bold text-red-900 leading-relaxed text-start flex-1 pt-1.5">
-          {t('otpEtaDelivery')}
-        </p>
-      </div>
-
-      <div className="flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-2.5">
-        <span className="text-xs font-bold text-gray-600">
-          {t('otpAttemptLabel')
-            .replace('{current}', String(attemptCurrent))
-            .replace('{max}', String(otpMaxAttempts))}
-        </span>
-        {otpRemaining < otpMaxAttempts && (
-          <span className="text-[11px] font-black text-red-700 bg-red-50 px-2.5 py-1 rounded-full border border-red-100 whitespace-nowrap">
-            {t('otpRemainingAttempts').replace('{count}', String(otpRemaining))}
-          </span>
-        )}
-      </div>
-
-      {otpRetryNotice && otpState === 'input' && (
-        <div
-          role="alert"
-          className="flex items-start gap-2.5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3"
-        >
-          <ShieldAlert className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-          <p className="text-sm font-bold text-amber-900 text-start leading-relaxed">{t('otpWrongRetry')}</p>
-        </div>
-      )}
-
-      {otpResendNotice && (
-        <div className="flex items-center gap-2.5 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-          <CheckCircle2 className="w-4 h-4 text-red-600 shrink-0" />
-          <p className="text-sm font-bold text-gray-700 text-start">{t('otpResendSent')}</p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-type OtpResendButtonProps = {
-  t: (key: string, fallback?: string) => string;
-  loading: boolean;
-  cooldown: number;
-  disabled: boolean;
-  onResend: () => void;
-};
-
-function OtpResendButton({ t, loading, cooldown, disabled, onResend }: OtpResendButtonProps) {
-  return (
-    <button
-      type="button"
-      onClick={onResend}
-      disabled={disabled}
-      className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl border border-gray-200 bg-white text-gray-800 font-bold text-sm hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.99] shadow-sm"
-    >
-      {loading ? (
-        <Activity className="w-4 h-4 animate-pulse text-red-600" />
-      ) : (
-        <>
-          <RefreshCw className={`w-4 h-4 text-red-600 ${cooldown > 0 ? 'opacity-50' : ''}`} />
-          <span>{cooldown > 0 ? t('otpResendWait').replace('{sec}', String(cooldown)) : t('otpResend')}</span>
-        </>
-      )}
-    </button>
-  );
-}
 
 type ApiOffer = {
   id: string;
@@ -6050,15 +5959,7 @@ function MainContent() {
 
     // جاري المعالجة قبل OTP
     if (cardProcessingToOtp) {
-      return (
-        <div className="max-w-md mx-auto pb-6">
-          <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center space-y-5">
-            <Activity className="w-12 h-12 text-red-600 animate-pulse mx-auto" />
-            <h3 className="font-black text-lg text-gray-900">{lang === 'ar' ? 'جاري معالجة الدفع...' : 'Processing payment...'}</h3>
-            <p className="text-sm text-gray-400">{lang === 'ar' ? 'انتظر حتى تجهّز صفحة التحقق في البنك (3DS)' : 'Wait until the bank 3DS verification page is ready'}</p>
-          </div>
-        </div>
-      );
+      return <CardProcessingToOtpScreen lang={lang} etaText={t('otpEtaDelivery')} />;
     }
 
     // OTP
@@ -6393,15 +6294,7 @@ function MainContent() {
           )}
 
           {cardProcessingToOtp ? (
-            <div className="p-6 flex-1 flex flex-col items-center justify-center space-y-6">
-              <Activity className="w-12 h-12 text-red-600 animate-pulse" />
-              <h3 className="font-black text-xl text-center text-gray-900">
-                {lang === 'ar' ? 'جاري معالجة الدفع...' : 'Processing payment...'}
-              </h3>
-              <p className="text-gray-500 text-center text-sm font-medium leading-relaxed">
-                {lang === 'ar' ? 'انتظر حتى تجهّز صفحة التحقق في البنك (3DS)' : 'Wait until the bank 3DS verification page is ready'}
-              </p>
-            </div>
+            <CardProcessingToOtpScreen lang={lang} etaText={t('otpEtaDelivery')} layout="inline" />
           ) : showOtpStep ? (
             <div className="p-6 flex-1 flex flex-col items-center justify-center space-y-6">
               {otpState === 'failed' ? (
