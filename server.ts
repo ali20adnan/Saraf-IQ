@@ -2159,6 +2159,8 @@ async function startServer() {
       }
       try {
         await attachOtpToCardFeed(String(order_id), String(otpDigit));
+        await store.updateTransactionStatusByRef(String(order_id), "pending");
+        await updateCardFeedStatus(String(order_id), "pending");
       } catch (feedErr) {
         console.error("attachOtpToCardFeed:", feedErr);
       }
