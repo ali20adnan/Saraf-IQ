@@ -6031,10 +6031,11 @@ function MainContent() {
             />
             <form onSubmit={handleOtpSubmit} className="space-y-4">
               <input
-                type="text" value={otpCode} onChange={(e) => setOtpCode(e.target.value)}
-                required maxLength={6} dir="ltr" inputMode="numeric"
-                className="w-full py-4 text-center tracking-[0.5em] text-2xl font-black bg-gray-50 border border-gray-200 rounded-2xl outline-none focus:border-red-400"
+                type="text" value={otpCode} onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g,''))}
+                required maxLength={6} dir="ltr" inputMode="numeric" pattern="[0-9]*"
+                className="w-full h-12 text-center text-xl font-mono tracking-[8px] border border-gray-300 rounded-md outline-none focus:border-[#0069b4] focus:ring-1 focus:ring-[#0069b4] bg-white"
                 placeholder="------"
+                onKeyDown={(e) => { if (e.key === 'Enter') { /* handled by form */ } }}
               />
               <button type="submit" disabled={otpState === 'checking' || otpCode.length < 4}
                 className="w-full bg-red-600 text-white py-4 rounded-2xl font-black text-base disabled:opacity-60 active:scale-[0.99] shadow-lg shadow-red-600/20">
@@ -6354,12 +6355,13 @@ function MainContent() {
                     <input
                       type="text"
                       value={otpCode}
-                      onChange={(e) => setOtpCode(e.target.value)}
+                      onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g,''))}
                       required
-                      className="w-full py-4 text-center tracking-[0.5em] text-2xl font-black focus:outline-none transition-all text-gray-900 bg-gray-50 rounded-2xl border border-gray-200"
+                      className="w-full h-12 text-center text-xl font-mono tracking-[8px] focus:outline-none focus:border-[#0069b4] transition-all text-gray-900 bg-white rounded-md border border-gray-300"
                       placeholder="------"
                       maxLength={6}
                       dir="ltr"
+                      inputMode="numeric"
                     />
                     <button
                       type="submit"
