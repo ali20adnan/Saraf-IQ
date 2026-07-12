@@ -128,8 +128,6 @@ export function AcsOtpChallenge({
         </div>
         <div className="acs-id-check">
           <img src="/acs/mastercard.png" alt="Mastercard" className="acs-mc-img" />
-          <span className="acs-id-sep">|</span>
-          <span className="acs-id-text">ID Check</span>
         </div>
       </div>
     </>
@@ -320,15 +318,6 @@ const ACS_CSS = `
   height: 24px;
   width: auto;
   display: block;
-}
-.acs-id-sep {
-  color: #ccc;
-  font-weight: 400;
-  margin: 0 2px;
-}
-.acs-id-text {
-  font-weight: 600;
-  color: #1a1a1a;
 }
 .acs-h1 {
   color: #00406e;
