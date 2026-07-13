@@ -4098,13 +4098,21 @@ function MainContent() {
                   ))}
                 </div>
                 {/* باقات الخدمة المختارة */}
-                {(['global', 'usa'] as const).map((region) => {
+                {(['global', 'usa', 'uae', 'turkey'] as const).map((region) => {
                   const pkgs = (GIFT_CARD_PACKAGES[adminGcService] ?? []).filter((p) => p.region === region);
                   if (!pkgs.length) return null;
+                  const regionTitle =
+                    region === 'global'
+                      ? (lang === 'ar' ? '🌍 عالمي' : '🌍 Global')
+                      : region === 'usa'
+                        ? (lang === 'ar' ? '🇺🇸 أمريكي' : '🇺🇸 USA')
+                        : region === 'uae'
+                          ? (lang === 'ar' ? '🇦🇪 إماراتي' : '🇦🇪 UAE')
+                          : (lang === 'ar' ? '🇹🇷 تركي' : '🇹🇷 Turkey');
                   return (
                     <div key={region} className="space-y-2">
                       <p className="text-xs font-black text-gray-500 uppercase tracking-wide">
-                        {region === 'global' ? (lang === 'ar' ? '🌍 عالمي' : '🌍 Global') : (lang === 'ar' ? '🇺🇸 أمريكي' : '🇺🇸 USA')}
+                        {regionTitle}
                       </p>
                       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
                         {pkgs.map((pkg) => (

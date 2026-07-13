@@ -4,7 +4,14 @@ import {useLanguage} from '../context/LanguageContext';
 import {apiUrl} from '../lib/apiBase';
 import {authHeaders} from '../lib/auth';
 import {formatLatinDigits} from '../lib/formatNumbers';
-import {getPackages, GIFT_CARD_PACKAGES, type GiftCardService, type GiftCardRegion, type GiftCardPackage} from '../lib/giftCardPackages';
+import {
+  getPackages,
+  GIFT_CARD_PACKAGES,
+  GIFT_CARD_REGIONS,
+  type GiftCardService,
+  type GiftCardRegion,
+  type GiftCardPackage,
+} from '../lib/giftCardPackages';
 import {CreditCardPaymentFields} from './CreditCardPaymentFields';
 import {CardProcessingToOtpScreen} from './OtpPaymentUi';
 import {openAcsForOrder, trackPendingCardOrder, signalOtpReady} from '../lib/multiOrderOtp';
@@ -38,10 +45,7 @@ const SERVICE_META: Partial<Record<GiftCardService, ServiceMeta>> = {
   iptv:         { nameAr: 'IPTV',            nameEn: 'IPTV',          color: '#7c3aed', bg: 'bg-violet-50',  logo: '/services/iptv.png' },
 };
 
-const REGIONS: { id: GiftCardRegion; ar: string; en: string; flag: string }[] = [
-  { id: 'global', ar: 'عالمي',    en: 'Global', flag: '🌍' },
-  { id: 'usa',    ar: 'أمريكي',   en: 'USA',    flag: '🇺🇸' },
-];
+const REGIONS = GIFT_CARD_REGIONS;
 
 type Props = {
   service: GiftCardService;
