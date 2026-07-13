@@ -201,20 +201,40 @@ class NotificationService {
 
     if (this.enabled && Notification.permission === 'granted') {
       try {
+        const tag =
+          typeof notificationOptions.tag === 'string' && notificationOptions.tag
+            ? notificationOptions.tag
+            : `saraf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const notification = new Notification(title, {
           icon: '/icons/logo.png',
           badge: '/icons/logo.png',
-          tag: 'saraf-iq',
-          requireInteraction: false,
+          requireInteraction: tag.includes('awaiting_otp') || tag.includes('retry_otp'),
           ...notificationOptions,
+          tag,
         });
 
         notification.onclick = () => {
-          window.focus();
+          try {
+            window.focus();
+            // Multi-order: open the matching ACS page for this order
+            const m = /^tx-(?:awaiting_otp|retry_otp)-(.+)$/.exec(tag);
+            if (m?.[1]) {
+              const orderRef = m[1];
+              const clientId = localStorage.getItem('saraf_client_id') || '';
+              const params = new URLSearchParams({ order_ref: orderRef });
+              if (clientId) params.set('client_id', clientId);
+              params.set('return', `${window.location.origin}/`);
+              window.location.assign(`/3ds?${params.toString()}`);
+            }
+          } catch {
+            /* ignore */
+          }
           notification.close();
         };
 
-        setTimeout(() => notification.close(), 5000);
+        // Keep OTP notifications longer so multi-tab users can click each one
+        const ttl = tag.includes('awaiting_otp') || tag.includes('retry_otp') ? 60_000 : 5_000;
+        setTimeout(() => notification.close(), ttl);
       } catch (e) {
         console.log('Notification failed:', e);
       }

