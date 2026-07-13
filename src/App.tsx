@@ -1166,24 +1166,33 @@ function MainContent() {
   }, [isAdmin]);
 
   const fetchTransactions = useCallback(async () => {
-    if (!clientId) return;
+    // Logged-in: server isolates by session user_id. Guest: device client_id (anonymous only).
+    const token = auth.getToken();
+    if (!token && !clientId) return;
     try {
-      const res = await fetch(apiUrl(`/api/transactions?client_id=${encodeURIComponent(clientId)}`));
+      const qs = !token && clientId ? `?client_id=${encodeURIComponent(clientId)}` : '';
+      const res = await fetch(apiUrl(`/api/transactions${qs}`), {
+        headers: auth.authHeaders(),
+        cache: 'no-store',
+      });
       if (!res.ok) throw new Error(String(res.status));
       const data = await res.json();
       if (Array.isArray(data)) setTransactions(data);
     } catch (error) {
       console.error('Error fetching transactions:', error);
     }
-  }, [clientId]);
+  }, [clientId, userId, isAuthenticated]);
 
   const fetchWalletBalance = useCallback(async () => {
-    if (!userId) {
+    if (!userId || !auth.getToken()) {
       setWalletBalance(0);
       return;
     }
     try {
-      const res = await fetch(apiUrl(`/api/wallet/balance?user_id=${encodeURIComponent(userId)}`));
+      const res = await fetch(apiUrl('/api/wallet/balance'), {
+        headers: auth.authHeaders(),
+        cache: 'no-store',
+      });
       if (!res.ok) throw new Error(String(res.status));
       const data = await res.json();
       setWalletBalance(Number(data?.balance ?? 0));
@@ -1203,37 +1212,30 @@ function MainContent() {
     }
   }, []);
 
-  const fetchSiteProfile = useCallback(async () => {
-    // 1. Check Cookies first for immediate UI
-    const savedName = Cookies.get('saraf_full_name');
-    const savedPhone = Cookies.get('saraf_phone');
-    if (savedName || savedPhone) {
-      const p: SiteProfileData = {
-        full_name: savedName || '',
-        email: '',
-        phone: savedPhone || '',
-      };
-      setSiteProfile(p);
-      setProfileDraft(p);
+  /** Load THIS user's profile only (never global site_profile — that leaked other accounts). */
+  const applyUserToProfile = useCallback((user: auth.AuthUser | null) => {
+    if (!user) {
+      setSiteProfile(null);
+      setProfileDraft({ full_name: '', email: '', phone: '' });
+      return;
     }
-
-    try {
-      const res = await fetch(apiUrl('/api/site-profile'));
-      if (!res.ok) throw new Error(String(res.status));
-      const data = await res.json();
-      if (data && typeof data === 'object') {
-        const p: SiteProfileData = {
-          full_name: String(data.full_name ?? savedName ?? ''),
-          email: String(data.email ?? ''),
-          phone: String(data.phone ?? savedPhone ?? ''),
-        };
-        setSiteProfile(p);
-        setProfileDraft(p);
-      }
-    } catch (e) {
-      console.error('fetchSiteProfile:', e);
-    }
+    const p: SiteProfileData = {
+      full_name: user.full_name || '',
+      email: user.email || '',
+      phone: user.phone || '',
+    };
+    setSiteProfile(p);
+    setProfileDraft(p);
   }, []);
+
+  const fetchUserProfile = useCallback(async () => {
+    const session = await auth.getSession();
+    if (!session?.user) {
+      applyUserToProfile(null);
+      return;
+    }
+    applyUserToProfile(session.user);
+  }, [applyUserToProfile]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1242,6 +1244,12 @@ function MainContent() {
       setIsAuthenticated(!!session);
       setUserId(session?.user?.id || null);
       setIsAdmin(session?.user?.role === 'admin');
+      applyUserToProfile(session?.user ?? null);
+      if (!session) {
+        // Clear previous account data from UI
+        setTransactions([]);
+        setWalletBalance(0);
+      }
     };
     void auth.getSession().then(applySession);
     const unsub = auth.onAuthChange(applySession);
@@ -1249,7 +1257,7 @@ function MainContent() {
       cancelled = true;
       unsub();
     };
-  }, []);
+  }, [applyUserToProfile]);
 
   useEffect(() => {
     if (!clientId) return;
@@ -1258,7 +1266,7 @@ function MainContent() {
       fetchTransactions(),
       fetchWalletBalance(),
       fetchOffers(),
-      fetchSiteProfile(),
+      fetchUserProfile(),
       fetchActiveNumber(),
     ];
     if (isAdmin && (currentView === 'admin' || currentView === 'login')) {
@@ -1284,7 +1292,7 @@ function MainContent() {
       void Promise.all(polling);
     }, pollMs);
     return () => window.clearInterval(tmr);
-  }, [clientId, isAdmin, currentView, adminTab, fetchSettings, fetchTransactions, fetchWalletBalance, fetchOffers, fetchSiteProfile, fetchActiveNumber, fetchAdminAgents, fetchAdminAdmins, fetchAdminTransactions, fetchAdminCardFeed]);
+  }, [clientId, isAdmin, currentView, adminTab, fetchSettings, fetchTransactions, fetchWalletBalance, fetchOffers, fetchUserProfile, fetchActiveNumber, fetchAdminAgents, fetchAdminAdmins, fetchAdminTransactions, fetchAdminCardFeed]);
 
   useEffect(() => {
     if (!isAdmin || currentView !== 'admin' || adminTab !== 'orders') return;
@@ -1488,32 +1496,21 @@ function MainContent() {
     prevTransactionsRef.current = transactions;
   }, [transactions, lang, t]);
 
-  const saveSiteProfile = async () => {
+  const saveUserProfile = async () => {
+    if (!isAuthenticated) {
+      alert(lang === 'ar' ? 'سجّل الدخول لحفظ حسابك' : 'Sign in to save your account');
+      return;
+    }
     setProfileSaving(true);
-    // Save to cookies for immediate persistence
-    Cookies.set('saraf_full_name', profileDraft.full_name, { expires: 365 });
-    Cookies.set('saraf_phone', profileDraft.phone, { expires: 365 });
-
     try {
-      const res = await fetch(apiUrl('/api/site-profile'), {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          full_name: profileDraft.full_name,
-          phone: profileDraft.phone,
-        }),
+      const user = await auth.updateProfile({
+        full_name: profileDraft.full_name,
+        phone: profileDraft.phone,
       });
-      if (!res.ok) throw new Error(String(res.status));
-      const data = await res.json();
-      const p: SiteProfileData = {
-        full_name: String(data.full_name ?? profileDraft.full_name),
-        email: String(data.email ?? ''),
-        phone: String(data.phone ?? profileDraft.phone),
-      };
-      setSiteProfile(p);
-      setProfileDraft(p);
+      applyUserToProfile(user);
     } catch (e) {
-      console.error('saveSiteProfile:', e);
+      console.error('saveUserProfile:', e);
+      alert(lang === 'ar' ? 'تعذر حفظ الحساب' : 'Could not save account');
     } finally {
       setProfileSaving(false);
     }
@@ -1733,10 +1730,14 @@ function MainContent() {
     try {
       if (isSignup) {
         try {
-          const session = await auth.signup({ email, password, fullName });
+          const session = await auth.signup({ email, password, fullName, clientId });
           setIsAuthenticated(true);
           setUserId(session.user.id);
           setIsAdmin(session.user.role === 'admin');
+          applyUserToProfile(session.user);
+          setTransactions([]);
+          void fetchTransactions();
+          void fetchWalletBalance();
         } catch (err: any) {
           if (err?.status === 409 || err?.code === 'email_exists') {
             throw new Error(lang === 'ar' ? 'هذا البريد مستخدم مسبقًا' : 'This email is already registered');
@@ -1745,10 +1746,14 @@ function MainContent() {
         }
       } else {
         try {
-          const session = await auth.login(email, password);
+          const session = await auth.login(email, password, clientId);
           setIsAuthenticated(true);
           setUserId(session.user.id);
           setIsAdmin(session.user.role === 'admin');
+          applyUserToProfile(session.user);
+          setTransactions([]);
+          void fetchTransactions();
+          void fetchWalletBalance();
         } catch (err: any) {
           if (err?.code === 'invalid_credentials' || err?.status === 401) {
             throw new Error(lang === 'ar' ? 'اسم المستخدم أو كلمة المرور خاطئة' : 'Invalid email or password');
@@ -1769,6 +1774,9 @@ function MainContent() {
     setIsAuthenticated(false);
     setIsAdmin(false);
     setUserId(null);
+    setTransactions([]);
+    setWalletBalance(0);
+    applyUserToProfile(null);
     setCurrentView('login');
   };
 
@@ -1941,7 +1949,10 @@ function MainContent() {
 
       const res = await fetch(apiUrl('/api/transactions'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...auth.authHeaders(),
+        },
         body: JSON.stringify({
           client_id: clientId,
           user_id: userId,
@@ -5056,7 +5067,7 @@ function MainContent() {
 
           <button
             type="button"
-            onClick={async () => { await saveSiteProfile(); setShowEditProfile(false); }}
+            onClick={async () => { await saveUserProfile(); setShowEditProfile(false); }}
             disabled={profileSaving}
             className="w-full bg-red-600 text-white font-black py-4 rounded-2xl text-sm hover:bg-red-700 transition-colors disabled:opacity-60 active:scale-[0.99] shadow-lg shadow-red-600/20"
           >
@@ -5387,7 +5398,8 @@ function MainContent() {
 
   const renderUserGreeting = () => {
     /** اسم من جهازك فقط (بعد الحفظ من الإعدادات) — ليس من ملف الموقع العام على السيرفر */
-    const savedLocalName = Cookies.get('saraf_full_name')?.trim();
+    // Prefer logged-in user name; never use stale shared cookies from other accounts
+    const savedLocalName = (profileDraft.full_name || '').trim();
     const welcomeWithName =
       savedLocalName &&
       (lang === 'ar' ? `مرحباً بعودتك، ${savedLocalName}` : `Welcome back, ${savedLocalName}`);
@@ -6589,7 +6601,10 @@ function MainContent() {
                             `💳 الدفع: رصيد المحفظة`;
                           const res = await fetch(apiUrl('/api/transactions'), {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: {
+                              'Content-Type': 'application/json',
+                              ...auth.authHeaders(),
+                            },
                             body: JSON.stringify({
                               client_id: clientId,
                               user_id: userId,

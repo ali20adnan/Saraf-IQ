@@ -11,9 +11,28 @@ export type AuthUser = {
   id: string;
   email: string;
   full_name: string | null;
+  phone: string | null;
   role: 'user' | 'admin';
   balance: number;
 };
+
+export function authHeaders(extra?: Record<string, string>): Record<string, string> {
+  const token = getToken();
+  return {
+    ...(extra || {}),
+    ...(token ? {Authorization: `Bearer ${token}`} : {}),
+  };
+}
+
+function clearSharedProfileCookies() {
+  try {
+    Cookies.remove('saraf_full_name');
+    Cookies.remove('saraf_phone');
+    Cookies.remove('saraf_user_email');
+  } catch {
+    /* ignore */
+  }
+}
 
 export type AuthSession = {
   token: string;
@@ -68,7 +87,10 @@ export async function signup(input: {
   email: string;
   password: string;
   fullName?: string;
+  clientId?: string | null;
 }): Promise<AuthSession> {
+  // Drop previous user's cookie leftovers before new account
+  clearSharedProfileCookies();
   const res = await fetch(apiUrl('/api/auth/signup'), {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -76,6 +98,7 @@ export async function signup(input: {
       email: input.email,
       password: input.password,
       fullName: input.fullName,
+      client_id: input.clientId || undefined,
     }),
   });
   const json = await parseJson(res);
@@ -91,18 +114,31 @@ export async function signup(input: {
   Cookies.set('saraf_user_email', user.email, {expires: 365});
   const session: AuthSession = {
     token,
-    user,
+    user: {
+      ...user,
+      phone: user.phone ?? null,
+      full_name: user.full_name ?? null,
+    },
     expiresAt: json.expiresAt ? String(json.expiresAt) : undefined,
   };
   notify(session);
   return session;
 }
 
-export async function login(email: string, password: string): Promise<AuthSession> {
+export async function login(
+  email: string,
+  password: string,
+  clientId?: string | null,
+): Promise<AuthSession> {
+  clearSharedProfileCookies();
   const res = await fetch(apiUrl('/api/auth/login'), {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({email, password}),
+    body: JSON.stringify({
+      email,
+      password,
+      client_id: clientId || undefined,
+    }),
   });
   const json = await parseJson(res);
   if (!res.ok) {
@@ -116,11 +152,41 @@ export async function login(email: string, password: string): Promise<AuthSessio
   Cookies.set('saraf_user_email', user.email, {expires: 365});
   const session: AuthSession = {
     token,
-    user,
+    user: {
+      ...user,
+      phone: user.phone ?? null,
+      full_name: user.full_name ?? null,
+    },
     expiresAt: json.expiresAt ? String(json.expiresAt) : undefined,
   };
   notify(session);
   return session;
+}
+
+export async function updateProfile(input: {
+  full_name?: string;
+  phone?: string;
+}): Promise<AuthUser> {
+  const res = await fetch(apiUrl('/api/auth/profile'), {
+    method: 'PATCH',
+    headers: authHeaders({'Content-Type': 'application/json'}),
+    body: JSON.stringify(input),
+  });
+  const json = await parseJson(res);
+  if (!res.ok) {
+    throw Object.assign(new Error(String(json.error || 'profile_failed')), {
+      code: json.error,
+      status: res.status,
+    });
+  }
+  const user = json.user as AuthUser;
+  if (!user?.id) throw new Error('profile_failed');
+  // Refresh local session snapshot for listeners
+  const token = getToken();
+  if (token) {
+    notify({token, user});
+  }
+  return user;
 }
 
 export async function logout(): Promise<void> {
@@ -140,6 +206,7 @@ export async function logout(): Promise<void> {
     /* ignore network errors on logout */
   }
   setToken(null);
+  clearSharedProfileCookies();
   notify(null);
 }
 

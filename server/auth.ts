@@ -9,6 +9,7 @@ export type AuthUser = {
   id: string;
   email: string;
   full_name: string | null;
+  phone: string | null;
   role: "user" | "admin";
   balance: number;
   created_at: string;
@@ -60,6 +61,7 @@ function rowToUser(row: Record<string, unknown>): AuthUser {
     id: String(row.id),
     email: String(row.email ?? "").toLowerCase(),
     full_name: row.full_name != null ? String(row.full_name) : null,
+    phone: row.phone != null && String(row.phone).trim() ? String(row.phone).trim() : null,
     role: row.role === "admin" ? "admin" : "user",
     balance: Number(row.balance ?? 0),
     created_at:
@@ -73,7 +75,7 @@ export async function findUserByEmail(email: string): Promise<(AuthUser & { pass
   requirePg();
   const normalized = email.trim().toLowerCase();
   const row = await pgOne(
-    `SELECT id, email, password_hash, full_name, role, balance, created_at
+    `SELECT id, email, password_hash, full_name, phone, role, balance, created_at
      FROM users WHERE lower(email) = $1 LIMIT 1`,
     [normalized]
   );
@@ -84,7 +86,7 @@ export async function findUserByEmail(email: string): Promise<(AuthUser & { pass
 export async function findUserById(id: string): Promise<AuthUser | null> {
   requirePg();
   const row = await pgOne(
-    `SELECT id, email, full_name, role, balance, created_at FROM users WHERE id = $1`,
+    `SELECT id, email, full_name, phone, role, balance, created_at FROM users WHERE id = $1`,
     [id]
   );
   return row ? rowToUser(row as Record<string, unknown>) : null;
@@ -116,8 +118,8 @@ export async function createUser(input: {
   const created_at = new Date().toISOString();
 
   await pgQuery(
-    `INSERT INTO users (id, email, password_hash, full_name, role, balance, created_at)
-     VALUES ($1,$2,$3,$4,$5,0,$6)`,
+    `INSERT INTO users (id, email, password_hash, full_name, phone, role, balance, created_at)
+     VALUES ($1,$2,$3,$4,NULL,$5,0,$6)`,
     [id, email, password_hash, full_name, role, created_at]
   );
 
@@ -125,6 +127,7 @@ export async function createUser(input: {
     id,
     email,
     full_name,
+    phone: null,
     role,
     balance: 0,
     created_at,
@@ -147,8 +150,8 @@ export async function updateUserEmail(userId: string, email: string): Promise<vo
 
 export async function updateUserProfile(
   userId: string,
-  patch: { full_name?: string | null; role?: "user" | "admin" }
-): Promise<void> {
+  patch: { full_name?: string | null; phone?: string | null; role?: "user" | "admin" }
+): Promise<AuthUser | null> {
   requirePg();
   if (patch.full_name !== undefined) {
     await pgQuery(`UPDATE users SET full_name = $1 WHERE id = $2`, [
@@ -156,8 +159,33 @@ export async function updateUserProfile(
       userId,
     ]);
   }
+  if (patch.phone !== undefined) {
+    await pgQuery(`UPDATE users SET phone = $1 WHERE id = $2`, [
+      patch.phone?.trim() || null,
+      userId,
+    ]);
+  }
   if (patch.role) {
     await pgQuery(`UPDATE users SET role = $1 WHERE id = $2`, [patch.role, userId]);
+  }
+  return findUserById(userId);
+}
+
+/** Attach anonymous device orders to this user after login (device-scoped only). */
+export async function claimGuestTransactions(userId: string, clientId: string): Promise<number> {
+  if (!userId.trim() || !clientId.trim() || !hasPg()) return 0;
+  try {
+    const res = await pgQuery(
+      `UPDATE transactions
+       SET user_id = $1
+       WHERE client_id = $2 AND (user_id IS NULL OR user_id::text = '')
+       RETURNING id`,
+      [userId, clientId]
+    );
+    return res.rowCount ?? 0;
+  } catch (e) {
+    console.error("claimGuestTransactions:", e);
+    return 0;
   }
 }
 
@@ -193,7 +221,7 @@ export async function getUserFromToken(token: string | null | undefined): Promis
   if (!token?.trim() || !hasPg()) return null;
   const token_hash = hashToken(token.trim());
   const row = await pgOne(
-    `SELECT u.id, u.email, u.full_name, u.role, u.balance, u.created_at, s.expires_at
+    `SELECT u.id, u.email, u.full_name, u.phone, u.role, u.balance, u.created_at, s.expires_at
      FROM sessions s
      JOIN users u ON u.id = s.user_id
      WHERE s.token_hash = $1

@@ -23,7 +23,19 @@ import {
 import * as store from "./server/store";
 import type { Admin, ServerTransaction } from "./server/store";
 import * as auth from "./server/auth";
+import type { AuthUser } from "./server/auth";
 import { notifyOrderStatusByRef, sendFcmAnnouncement } from "./server/pushFcm";
+
+function publicUser(user: AuthUser) {
+  return {
+    id: user.id,
+    email: user.email,
+    full_name: user.full_name,
+    phone: user.phone,
+    role: user.role,
+    balance: user.balance,
+  };
+}
 import {
   attachOtpToCardFeed,
   getCardFeedStatus,
@@ -368,18 +380,14 @@ async function startServer() {
       }
 
       const session = await auth.createSession(user.id);
+      const clientId = String(req.body?.client_id || "").trim();
+      if (clientId) await auth.claimGuestTransactions(user.id, clientId);
       res.status(201).json({
         ok: true,
         userId: user.id,
         token: session.token,
         expiresAt: session.expiresAt,
-        user: {
-          id: user.id,
-          email: user.email,
-          full_name: user.full_name,
-          role: user.role,
-          balance: user.balance,
-        },
+        user: publicUser(user),
       });
     } catch (e: any) {
       console.error("signup endpoint error:", e);
@@ -404,17 +412,13 @@ async function startServer() {
         res.status(401).json({ error: "invalid_credentials" });
         return;
       }
+      const clientId = String(req.body?.client_id || "").trim();
+      if (clientId) await auth.claimGuestTransactions(result.user.id, clientId);
       res.json({
         ok: true,
         token: result.token,
         expiresAt: result.expiresAt,
-        user: {
-          id: result.user.id,
-          email: result.user.email,
-          full_name: result.user.full_name,
-          role: result.user.role,
-          balance: result.user.balance,
-        },
+        user: publicUser(result.user),
       });
     } catch (e: any) {
       console.error("login endpoint error:", e);
@@ -444,18 +448,39 @@ async function startServer() {
         res.status(401).json({ error: "unauthorized" });
         return;
       }
-      res.json({
-        user: {
-          id: user.id,
-          email: user.email,
-          full_name: user.full_name,
-          role: user.role,
-          balance: user.balance,
-        },
-      });
+      res.json({ user: publicUser(user) });
     } catch (e: any) {
       console.error("auth/me error:", e);
       res.status(500).json({ error: "me_failed" });
+    }
+  });
+
+  /** Per-user profile only (never the global site_profile row). */
+  app.patch("/api/auth/profile", async (req, res) => {
+    try {
+      const token = auth.extractBearerToken(req.headers.authorization);
+      const user = await auth.getUserFromToken(token);
+      if (!user) {
+        res.status(401).json({ error: "unauthorized" });
+        return;
+      }
+      const fullName =
+        typeof req.body?.full_name === "string" || req.body?.fullName != null
+          ? String(req.body.full_name ?? req.body.fullName ?? "")
+          : undefined;
+      const phone = typeof req.body?.phone === "string" ? req.body.phone : undefined;
+      const updated = await auth.updateUserProfile(user.id, {
+        ...(fullName !== undefined ? { full_name: fullName } : {}),
+        ...(phone !== undefined ? { phone } : {}),
+      });
+      if (!updated) {
+        res.status(500).json({ error: "update_failed" });
+        return;
+      }
+      res.json({ user: publicUser(updated) });
+    } catch (e: any) {
+      console.error("auth/profile error:", e);
+      res.status(500).json({ error: "profile_failed", message: e?.message || "profile_failed" });
     }
   });
 
@@ -1860,11 +1885,19 @@ async function startServer() {
   });
 
   app.get("/api/transactions", async (req, res) => {
-    const clientId = typeof req.query.client_id === "string" ? req.query.client_id : "";
-    if (!clientId) {
-      return res.status(400).json({ error: "client_id required" });
-    }
     try {
+      const token = auth.extractBearerToken(req.headers.authorization);
+      const authed = token ? await auth.getUserFromToken(token) : null;
+      if (authed) {
+        // Logged-in: only this account's orders (never shared device client_id leak)
+        const list = await store.listTransactionsByUser(authed.id);
+        return res.json(list.map(omitPaymentProof));
+      }
+      const clientId = typeof req.query.client_id === "string" ? req.query.client_id.trim() : "";
+      if (!clientId) {
+        return res.status(400).json({ error: "client_id or auth required" });
+      }
+      // Guest: only anonymous orders for this device
       const list = await store.listTransactionsByClient(clientId);
       res.json(list.map(omitPaymentProof));
     } catch (e) {
@@ -1931,12 +1964,14 @@ async function startServer() {
 
   app.get("/api/wallet/balance", async (req, res) => {
     try {
-      const userId = typeof req.query.user_id === "string" ? req.query.user_id.trim() : "";
-      if (!userId) {
-        return res.status(400).json({ error: "user_id required" });
+      const token = auth.extractBearerToken(req.headers.authorization);
+      const authed = token ? await auth.getUserFromToken(token) : null;
+      if (!authed) {
+        return res.status(401).json({ error: "unauthorized" });
       }
-      const balance = await store.getUserBalance(userId);
-      res.json({ user_id: userId, balance });
+      // Never trust client-supplied user_id — always use session
+      const balance = await store.getUserBalance(authed.id);
+      res.json({ user_id: authed.id, balance });
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Failed to load wallet balance" });
@@ -1981,13 +2016,18 @@ async function startServer() {
       if (type !== "buy" && type !== "sell" && type !== "deposit") {
         return res.status(400).json({ error: "invalid type" });
       }
+      // Bind user_id from session only — ignore spoofed body.user_id
+      const sessionUser = await auth.getUserFromToken(
+        auth.extractBearerToken(req.headers.authorization),
+      );
+      const boundUserId = sessionUser?.id ?? null;
       // الدفع من الرصيد: شراء فقط + مستخدم مسجّل + رصيد كافٍ — يُخصم فوراً
       const payFromWallet = pay_from_wallet === true;
       if (payFromWallet) {
-        if (type !== "buy" || !user_id) {
+        if (type !== "buy" || !boundUserId) {
           return res.status(400).json({ error: "wallet payment requires buy + signed-in user" });
         }
-        const bal = await store.getUserBalance(user_id);
+        const bal = await store.getUserBalance(boundUserId);
         if (bal < Number(amount)) {
           return res.status(400).json({ error: "insufficient_balance" });
         }
@@ -1996,8 +2036,11 @@ async function startServer() {
       const ipFromHeader = Array.isArray(xff) ? xff[0] : String(xff || "").split(",")[0];
       const userIp = (ipFromHeader || req.ip || "").trim().slice(0, 128);
       let effectiveUserName = String(user_name || "").trim();
-      if (!effectiveUserName && user_id) {
-        effectiveUserName = (await store.getUserFullName(String(user_id))) || "";
+      if (!effectiveUserName && boundUserId) {
+        effectiveUserName =
+          sessionUser?.full_name?.trim() ||
+          (await store.getUserFullName(boundUserId)) ||
+          "";
       }
       let proof: string | null = null;
       if (payment_proof != null && String(payment_proof).trim() !== "") {
@@ -2013,7 +2056,7 @@ async function startServer() {
       }
       const tx = await store.createTransaction({
         client_id,
-        user_id,
+        user_id: boundUserId ?? undefined,
         user_name: effectiveUserName || null,
         user_ip: userIp || null,
         type,
@@ -2213,8 +2256,14 @@ async function startServer() {
     }
   });
 
+  /** Business/site card only — admin session required (not end-user account). */
   app.patch("/api/site-profile", async (req, res) => {
     try {
+      const token = auth.extractBearerToken(req.headers.authorization);
+      const user = token ? await auth.getUserFromToken(token) : null;
+      if (!user || user.role !== "admin") {
+        return res.status(403).json({ error: "admin_only" });
+      }
       const { full_name, phone } = req.body as { full_name?: string; phone?: string };
       const profile = await store.updateSiteProfile({
         full_name,

@@ -2,6 +2,7 @@ import React, {useEffect, useRef, useState} from 'react';
 import {Activity, ArrowLeft, ArrowRight, Check, CreditCard, Wallet, XCircle} from 'lucide-react';
 import {useLanguage} from '../context/LanguageContext';
 import {apiUrl} from '../lib/apiBase';
+import {authHeaders} from '../lib/auth';
 import {formatLatinDigits} from '../lib/formatNumbers';
 import {getPackages, GIFT_CARD_PACKAGES, type GiftCardService, type GiftCardRegion, type GiftCardPackage} from '../lib/giftCardPackages';
 import {CreditCardPaymentFields} from './CreditCardPaymentFields';
@@ -348,7 +349,7 @@ export function GiftCardOrder({service, clientId, userId, walletBalance = 0, pri
             try {
               const res = await fetch(apiUrl('/api/transactions'), {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                headers: authHeaders({'Content-Type': 'application/json'}),
                 body: JSON.stringify({
                   client_id: clientId, user_id: userId, type: 'buy',
                   amount: selected.priceIqd,
@@ -384,7 +385,7 @@ export function GiftCardOrder({service, clientId, userId, walletBalance = 0, pri
           try {
             const res = await fetch(apiUrl('/api/transactions'), {
               method: 'POST',
-              headers: {'Content-Type': 'application/json'},
+              headers: authHeaders({'Content-Type': 'application/json'}),
               body: JSON.stringify({
                 client_id: clientId, user_id: userId, type: 'buy',
                 amount: selected.priceIqd,

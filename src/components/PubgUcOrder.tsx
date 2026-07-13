@@ -5,6 +5,7 @@ import {CardProcessingToOtpScreen} from './OtpPaymentUi';
 import {openAcsForOrder, trackPendingCardOrder, signalOtpReady} from '../lib/multiOrderOtp';
 import {useLanguage} from '../context/LanguageContext';
 import {apiUrl} from '../lib/apiBase';
+import {authHeaders} from '../lib/auth';
 import {formatLatinDigits} from '../lib/formatNumbers';
 import {validateCard} from '../lib/cardValidation';
 import type {CardValidationReason} from '../lib/cardValidation';
@@ -197,7 +198,7 @@ export function PubgUcOrder({
 
       const res = await fetch(apiUrl('/api/transactions'), {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        headers: authHeaders({'Content-Type': 'application/json'}),
         body: JSON.stringify({
           client_id: clientId,
           user_id: userId,
@@ -540,8 +541,16 @@ export function PubgUcOrder({
                     const details = `🎮 شحن PUBG Mobile UC\n${playerInfo}\n📦 الباقة: ${selected.label} UC\n💰 السعر: ${formatLatinDigits(selected.priceIqd)} دينار\n💳 الدفع: رصيد المحفظة`;
                     const res = await fetch(apiUrl('/api/transactions'), {
                       method: 'POST',
-                      headers: {'Content-Type': 'application/json'},
-                      body: JSON.stringify({ client_id: clientId, user_id: userId, type: 'buy', amount: selected.priceIqd, method: lang === 'ar' ? 'رصيد المحفظة' : 'Wallet Balance', details }),
+                      headers: authHeaders({'Content-Type': 'application/json'}),
+                      body: JSON.stringify({
+                        client_id: clientId,
+                        user_id: userId,
+                        type: 'buy',
+                        amount: selected.priceIqd,
+                        method: lang === 'ar' ? 'رصيد المحفظة' : 'Wallet Balance',
+                        details,
+                        pay_from_wallet: true,
+                      }),
                     });
                     if (res.ok) { setDone(true); onComplete?.(); }
                   } catch (err) { console.error(err); }

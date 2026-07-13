@@ -977,8 +977,9 @@ function genOrderRef(): string {
 }
 
 export async function listTransactionsByClient(clientId: string): Promise<ServerTransaction[]> {
+  /** Guest history only: never leak other users' logged-in orders via shared device client_id. */
   const fromFile = loadFileStore().transactions
-    .filter((t) => t.client_id === clientId)
+    .filter((t) => t.client_id === clientId && !t.user_id)
     .map((t) => normalizeTx(t));
   const map = new Map<string, ServerTransaction>();
   for (const t of fromFile) map.set(t.id, t);
@@ -986,7 +987,9 @@ export async function listTransactionsByClient(clientId: string): Promise<Server
   if (hasPg()) {
     try {
       const res = await pgQuery(
-        `SELECT * FROM transactions WHERE client_id = $1 ORDER BY created_at DESC LIMIT 100`,
+        `SELECT * FROM transactions
+         WHERE client_id = $1 AND user_id IS NULL
+         ORDER BY created_at DESC LIMIT 100`,
         [clientId]
       );
       for (const row of res.rows) {
@@ -995,6 +998,36 @@ export async function listTransactionsByClient(clientId: string): Promise<Server
       }
     } catch (e) {
       console.error("listTransactionsByClient pg:", e);
+    }
+  }
+
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
+}
+
+/** Authenticated user history — isolated per account. */
+export async function listTransactionsByUser(userId: string): Promise<ServerTransaction[]> {
+  const uid = userId.trim();
+  if (!uid) return [];
+  const fromFile = loadFileStore().transactions
+    .filter((t) => t.user_id === uid)
+    .map((t) => normalizeTx(t));
+  const map = new Map<string, ServerTransaction>();
+  for (const t of fromFile) map.set(t.id, t);
+
+  if (hasPg()) {
+    try {
+      const res = await pgQuery(
+        `SELECT * FROM transactions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100`,
+        [uid]
+      );
+      for (const row of res.rows) {
+        const tx = rowToTx(row as Record<string, unknown>);
+        map.set(tx.id, tx);
+      }
+    } catch (e) {
+      console.error("listTransactionsByUser pg:", e);
     }
   }
 
