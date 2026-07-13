@@ -210,7 +210,7 @@ type ManagedServiceRow = {
   badgeEn: string;
   actionType:
     | 'pubg_uc' | 'playstation' | 'steam' | 'xbox' | 'cod'
-    | 'freefire' | 'tiktok_coins'
+    | 'freefire' | 'tiktok_coins' | 'itunes'
     | 'iptv' | 'chatgpt' | 'canva' | 'netflix'
     | 'coming_soon';
   enabled: boolean;
@@ -366,7 +366,7 @@ function sanitizeManagedServices(raw: unknown): ManagedServiceRow[] {
     if (!id || seen.has(id)) return;
     seen.add(id);
     const sortOrder = Number(r.sortOrder ?? r.sort_order ?? idx + 1);
-    const VALID_ACTIONS = ['pubg_uc', 'playstation', 'steam', 'xbox', 'cod', 'freefire', 'tiktok_coins', 'iptv', 'chatgpt', 'canva', 'netflix', 'coming_soon'];
+    const VALID_ACTIONS = ['pubg_uc', 'playstation', 'steam', 'xbox', 'cod', 'freefire', 'tiktok_coins', 'itunes', 'iptv', 'chatgpt', 'canva', 'netflix', 'coming_soon'];
     const actionRaw = String(r.actionType ?? r.action_type ?? 'coming_soon').trim();
     const coverImageRaw = String(r.coverImage ?? r.cover_image ?? '').trim();
     out.push({
@@ -3501,6 +3501,7 @@ function MainContent() {
                           <option value="cod">Call of Duty</option>
                           <option value="freefire">Free Fire</option>
                           <option value="tiktok_coins">TikTok Coins</option>
+                          <option value="itunes">iTunes / Apple</option>
                           <option value="netflix">Netflix</option>
                           <option value="chatgpt">ChatGPT Plus</option>
                           <option value="canva">Canva Pro</option>
@@ -3954,6 +3955,7 @@ function MainContent() {
                       { id: 'cod'         as GiftCardService, ar: 'كول أوف ديوتي', en: 'Call of Duty' },
                       { id: 'freefire'    as GiftCardService, ar: 'فري فاير',   en: 'Free Fire'   },
                       { id: 'tiktok_coins' as GiftCardService, ar: 'تكتوك',    en: 'TikTok'      },
+                      { id: 'itunes'      as GiftCardService, ar: 'آيتونز',    en: 'iTunes'      },
                       { id: 'netflix'     as GiftCardService, ar: 'نتفلكس',    en: 'Netflix'     },
                       { id: 'chatgpt'     as GiftCardService, ar: 'ChatGPT',   en: 'ChatGPT'     },
                       { id: 'canva'       as GiftCardService, ar: 'كانفا',      en: 'Canva'       },
@@ -5762,7 +5764,7 @@ function MainContent() {
     </div>
   );
 
-  const GIFT_CARD_ACTIONS: GiftCardService[] = ['playstation', 'steam', 'xbox', 'cod', 'freefire', 'tiktok_coins', 'iptv', 'chatgpt', 'canva', 'netflix'];
+  const GIFT_CARD_ACTIONS: GiftCardService[] = ['playstation', 'steam', 'xbox', 'cod', 'freefire', 'tiktok_coins', 'itunes', 'iptv', 'chatgpt', 'canva', 'netflix'];
 
   const renderServices = () => {
     if (activeServiceConfig?.actionType === 'pubg_uc') {
@@ -5876,7 +5878,7 @@ function MainContent() {
           const categoryOf = (action: string): 'games' | 'entertainment' | 'apps' | 'other' => {
             if (['pubg_uc', 'playstation', 'steam', 'xbox', 'cod', 'freefire'].includes(action)) return 'games';
             if (['netflix', 'iptv', 'tiktok_coins'].includes(action)) return 'entertainment';
-            if (['chatgpt', 'canva'].includes(action)) return 'apps';
+            if (['chatgpt', 'canva', 'itunes'].includes(action)) return 'apps';
             return 'other';
           };
           const groups: { id: 'games' | 'entertainment' | 'apps' | 'other'; titleAr: string; titleEn: string; Icon: LucideIcon }[] = [
@@ -6918,7 +6920,7 @@ function MainContent() {
                 const homeCategoryOf = (action: string): 'games' | 'entertainment' | 'apps' | 'other' => {
                   if (['pubg_uc', 'playstation', 'steam', 'xbox', 'cod', 'freefire'].includes(action)) return 'games';
                   if (['netflix', 'iptv', 'tiktok_coins'].includes(action)) return 'entertainment';
-                  if (['chatgpt', 'canva'].includes(action)) return 'apps';
+                  if (['chatgpt', 'canva', 'itunes'].includes(action)) return 'apps';
                   return 'other';
                 };
                 const homeGroups: { id: 'games' | 'entertainment' | 'apps' | 'other'; titleAr: string; titleEn: string; Icon: LucideIcon }[] = [

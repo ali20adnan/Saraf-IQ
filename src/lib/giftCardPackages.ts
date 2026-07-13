@@ -152,10 +152,10 @@ const minecraft = [
   ...usd('mc', [10, 20, 50], 'usa'),
 ];
 
-/* ── iTunes / Apple ── */
+/* ── iTunes / Apple Gift Card ── */
 const itunes = [
-  ...usd('it', [15, 25, 50, 100], 'global'),
-  ...usd('it', [15, 25, 50, 100], 'usa'),
+  ...usd('it', [10, 15, 25, 50, 100], 'global'),
+  ...usd('it', [10, 15, 25, 50, 100], 'usa'),
 ];
 
 /* ── Amazon ── */

@@ -89,7 +89,7 @@ export type ManagedService = {
   badgeEn: string;
   actionType:
     | "pubg_uc" | "playstation" | "steam" | "xbox" | "cod"
-    | "freefire" | "tiktok_coins"
+    | "freefire" | "tiktok_coins" | "itunes"
     | "iptv" | "chatgpt" | "canva" | "netflix"
     | "coming_soon";
   enabled: boolean;
@@ -284,6 +284,7 @@ const defaultServiceCoverById: Record<string, string> = {
   chatgpt: "/services/chatgpt.png",
   canva: "/services/canva.png",
   iptv: "/services/iptv.png",
+  itunes: "/services/itunes.png",
 };
 
 const defaultManagedServices: ManagedService[] = [
@@ -440,6 +441,7 @@ function parseManagedServices(raw: string | undefined): ManagedService[] {
       "cod",
       "freefire",
       "tiktok_coins",
+      "itunes",
       "iptv",
       "chatgpt",
       "canva",

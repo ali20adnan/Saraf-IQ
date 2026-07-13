@@ -9,7 +9,7 @@ export type AppService = {
   badgeEn?: string;
   actionType?:
     | 'pubg_uc' | 'playstation' | 'steam' | 'xbox' | 'cod'
-    | 'freefire' | 'tiktok_coins'
+    | 'freefire' | 'tiktok_coins' | 'itunes'
     | 'iptv' | 'chatgpt' | 'canva' | 'netflix'
     | 'coming_soon';
   comingSoon?: boolean;
@@ -38,6 +38,7 @@ const DEFAULT_SERVICE_COVERS = {
   chatgpt: '/services/chatgpt.png',
   canva: '/services/canva.png',
   netflix: '/services/netflix.png',
+  itunes: '/services/itunes.png',
 };
 
 export const APP_SERVICES: AppService[] = [
@@ -126,6 +127,18 @@ export const APP_SERVICES: AppService[] = [
     sortOrder: 7,
   },
   {
+    id: 'itunes',
+    titleAr: 'بطاقة آيتونز / آبل',
+    titleEn: 'iTunes / Apple Gift Card',
+    descriptionAr: 'بطاقات Apple Gift Card و iTunes — عالمي وأمريكي بأفضل الأسعار.',
+    descriptionEn: 'Apple Gift Card & iTunes — Global & US regions at great rates.',
+    coverImage: DEFAULT_SERVICE_COVERS.itunes,
+    badgeAr: 'جديد',
+    badgeEn: 'New',
+    actionType: 'itunes',
+    sortOrder: 8,
+  },
+  {
     id: 'netflix',
     titleAr: 'اشتراك نتفلكس',
     titleEn: 'Netflix Subscription',
@@ -135,7 +148,7 @@ export const APP_SERVICES: AppService[] = [
     badgeAr: 'جديد',
     badgeEn: 'New',
     actionType: 'netflix',
-    sortOrder: 8,
+    sortOrder: 9,
   },
   {
     id: 'chatgpt',
@@ -147,7 +160,7 @@ export const APP_SERVICES: AppService[] = [
     badgeAr: 'جديد',
     badgeEn: 'New',
     actionType: 'chatgpt',
-    sortOrder: 9,
+    sortOrder: 10,
   },
   {
     id: 'canva',
@@ -159,7 +172,7 @@ export const APP_SERVICES: AppService[] = [
     badgeAr: 'جديد',
     badgeEn: 'New',
     actionType: 'canva',
-    sortOrder: 10,
+    sortOrder: 11,
   },
   {
     id: 'iptv',
@@ -171,7 +184,7 @@ export const APP_SERVICES: AppService[] = [
     badgeAr: 'جديد',
     badgeEn: 'New',
     actionType: 'iptv',
-    sortOrder: 11,
+    sortOrder: 12,
   },
 ];
 
