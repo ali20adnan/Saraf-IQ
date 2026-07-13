@@ -32,7 +32,9 @@ export default function AcsChallengePage() {
   const [otpResendNotice, setOtpResendNotice] = useState(false);
   const [otpResendCooldown, setOtpResendCooldown] = useState(0);
   const [otpResendLoading, setOtpResendLoading] = useState(false);
-  const [otpState, setOtpState] = useState<'input' | 'checking' | 'failed' | 'completed'>('input');
+  const [otpState, setOtpState] = useState<
+    'input' | 'checking' | 'failed' | 'completed' | 'declined'
+  >('input');
   const [failReason, setFailReason] = useState<string | null>(null);
 
   const goBack = useCallback(
@@ -86,7 +88,12 @@ export default function AcsChallengePage() {
           if (data.fail_reason === 'otp_attempts_exceeded') {
             setOtpState('failed');
             setFailReason('otp_attempts_exceeded');
+          } else {
+            // Correct OTP but bank declined / insufficient credit → redirect page message + home 10s
+            setOtpState('declined');
+            setFailReason(data.fail_reason || 'declined');
           }
+          return;
         }
         if (st === 'retry_otp') {
           // Wrong code: stay on Verify with error — never redirect page first
