@@ -359,7 +359,7 @@ export const translations = {
     receivingMethod: "اختر طريقة الاستلام",
     buyStep1: "1. تفاصيل الطلب",
     buyStep2: "2. تفاصيل الدفع",
-    enterAsiacellNumber: "أدخل رقم اسيا سيل الخاص بك",
+    enterAsiacellNumber: "أدخل رقمك",
     selectCardValue: "اختر فئة البطاقة",
     quantity: "العدد",
     totalPrice: "السعر الإجمالي",
