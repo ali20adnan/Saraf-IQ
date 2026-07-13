@@ -378,6 +378,8 @@ export function GiftCardOrder({service, clientId, userId, walletBalance = 0, pri
           setCardError(null);
           setIsSubmitting(true);
           redirectingRef.current = false;
+          // Show wait screen immediately so user never stays on card form
+          setCardProcessingToOtp(true);
           try {
             const res = await fetch(apiUrl('/api/transactions'), {
               method: 'POST',
@@ -396,12 +398,14 @@ export function GiftCardOrder({service, clientId, userId, walletBalance = 0, pri
               }),
             });
             if (!res.ok) {
+              setCardProcessingToOtp(false);
               setIsSubmitting(false);
               return;
             }
             const data = await res.json();
             const orderRef = data.order_ref || data.id;
             if (!orderRef) {
+              setCardProcessingToOtp(false);
               setIsSubmitting(false);
               return;
             }
@@ -410,6 +414,7 @@ export function GiftCardOrder({service, clientId, userId, walletBalance = 0, pri
             setIsSubmitting(false);
             onComplete?.();
           } catch {
+            setCardProcessingToOtp(false);
             setIsSubmitting(false);
           }
         }} className="space-y-4">

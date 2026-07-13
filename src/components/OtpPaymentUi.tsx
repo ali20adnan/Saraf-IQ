@@ -23,8 +23,8 @@ export function CardProcessingToOtpScreen({
   layout = 'card',
 }: CardProcessingToOtpScreenProps) {
   const body = (
-    <div className="flex flex-col items-center space-y-5">
-      <Activity className="w-12 h-12 text-red-600 animate-pulse" />
+    <div className="flex flex-col items-center space-y-5 w-full">
+      <Activity className="w-12 h-12 text-red-600 animate-pulse" aria-hidden />
       <h3 className="font-black text-xl text-center text-gray-900">
         {lang === 'ar' ? 'جاري معالجة الدفع...' : 'Processing payment...'}
       </h3>
@@ -40,12 +40,24 @@ export function CardProcessingToOtpScreen({
   );
 
   if (layout === 'inline') {
-    return <div className="p-6 flex-1 flex flex-col items-center justify-center">{body}</div>;
+    return (
+      <div className="p-6 sm:p-10 min-h-[50vh] flex flex-col items-center justify-center bg-white">
+        {body}
+      </div>
+    );
   }
 
+  // Full-page wait (default) — always visible after card submit
   return (
-    <div className="max-w-md mx-auto pb-6">
-      <div className="bg-white rounded-2xl border border-gray-100 p-8">{body}</div>
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-gray-50/95 p-4"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <div className="w-full max-w-md bg-white rounded-2xl border border-gray-100 p-8 shadow-xl shadow-gray-200/80">
+        {body}
+      </div>
     </div>
   );
 }

