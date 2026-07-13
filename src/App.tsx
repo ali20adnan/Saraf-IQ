@@ -15,7 +15,7 @@ import { CarouselImageCropper } from './components/CarouselImageCropper';
 import { CreditCardPaymentFields } from './components/CreditCardPaymentFields';
 import { listAppServices } from './lib/services';
 import Cookies from 'js-cookie';
-import { supabase } from './lib/supabase';
+import * as auth from './lib/auth';
 import { notificationService } from './lib/notifications';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { AppSplash } from './components/AppSplash';
@@ -1133,27 +1133,19 @@ function MainContent() {
   }, []);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    let cancelled = false;
+    const applySession = (session: auth.AuthSession | null) => {
+      if (cancelled) return;
       setIsAuthenticated(!!session);
       setUserId(session?.user?.id || null);
-      if (session?.user) {
-        supabase.from('profiles').select('role').eq('id', session.user.id).single()
-          .then(({ data }) => setIsAdmin(data?.role === 'admin'));
-      }
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setIsAuthenticated(!!session);
-      setUserId(session?.user?.id || null);
-      if (session?.user) {
-        supabase.from('profiles').select('role').eq('id', session.user.id).single()
-          .then(({ data }) => setIsAdmin(data?.role === 'admin'));
-      } else {
-        setIsAdmin(false);
-      }
-    });
-
-    return () => subscription.unsubscribe();
+      setIsAdmin(session?.user?.role === 'admin');
+    };
+    void auth.getSession().then(applySession);
+    const unsub = auth.onAuthChange(applySession);
+    return () => {
+      cancelled = true;
+      unsub();
+    };
   }, []);
 
   useEffect(() => {
@@ -1636,44 +1628,28 @@ function MainContent() {
 
     try {
       if (isSignup) {
-        const signupRes = await fetch(apiUrl('/api/auth/signup'), {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({email, password, fullName}),
-        });
-        const signupJson = await signupRes.json().catch(() => ({} as {error?: string; message?: string}));
-        if (!signupRes.ok) {
-          if (signupRes.status === 409 || signupJson.error === 'email_exists') {
+        try {
+          const session = await auth.signup({ email, password, fullName });
+          setIsAuthenticated(true);
+          setUserId(session.user.id);
+          setIsAdmin(session.user.role === 'admin');
+        } catch (err: any) {
+          if (err?.status === 409 || err?.code === 'email_exists') {
             throw new Error(lang === 'ar' ? 'هذا البريد مستخدم مسبقًا' : 'This email is already registered');
           }
-          throw new Error(signupJson.message || (lang === 'ar' ? 'فشل إنشاء الحساب' : 'Failed to create account'));
-        }
-
-        const { error: loginError, data } = await supabase.auth.signInWithPassword({ email, password });
-        if (loginError) {
-          if (loginError.message.includes('Invalid login credentials')) {
-            throw new Error(lang === 'ar' ? 'فشل تسجيل الدخول بعد إنشاء الحساب. جرّب تسجيل الدخول مرة ثانية.' : 'Login failed after signup. Please try signing in again.');
-          }
-          throw loginError;
-        }
-        if (data.user) {
-          setIsAuthenticated(true);
-          setUserId(data.user.id);
-          Cookies.set('saraf_user_email', email, { expires: 365 });
+          throw new Error(err?.message || (lang === 'ar' ? 'فشل إنشاء الحساب' : 'Failed to create account'));
         }
       } else {
-        const { error, data } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) {
-          // Show user-friendly error message
-          if (error.message.includes('Invalid login credentials')) {
+        try {
+          const session = await auth.login(email, password);
+          setIsAuthenticated(true);
+          setUserId(session.user.id);
+          setIsAdmin(session.user.role === 'admin');
+        } catch (err: any) {
+          if (err?.code === 'invalid_credentials' || err?.status === 401) {
             throw new Error(lang === 'ar' ? 'اسم المستخدم أو كلمة المرور خاطئة' : 'Invalid email or password');
           }
-          throw error;
-        }
-        if (data.user) {
-          setIsAuthenticated(true);
-          setUserId(data.user.id);
-          Cookies.set('saraf_user_email', email, { expires: 365 });
+          throw new Error(err?.message || (lang === 'ar' ? 'فشل تسجيل الدخول' : 'Login failed'));
         }
       }
       setCurrentView('home');
@@ -1685,9 +1661,10 @@ function MainContent() {
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    await auth.logout();
     setIsAuthenticated(false);
     setIsAdmin(false);
+    setUserId(null);
     setCurrentView('login');
   };
 
@@ -2240,49 +2217,7 @@ function MainContent() {
             </button>
           </form>
 
-          {/* فاصل */}
-          <div className="flex items-center gap-3 my-5">
-            <div className="flex-1 h-px bg-gray-200" />
-            <span className="text-xs text-gray-400 font-medium">{lang === 'ar' ? 'أو' : 'OR'}</span>
-            <div className="flex-1 h-px bg-gray-200" />
-          </div>
 
-          {/* تسجيل الدخول بـ Google */}
-          <button
-            type="button"
-            disabled={isAuthLoading || !appSettings.google_auth_enabled}
-            onClick={async () => {
-              if (!appSettings.google_auth_enabled) return;
-              try {
-                await supabase.auth.signInWithOAuth({
-                  provider: 'google',
-                  options: { redirectTo: window.location.origin },
-                });
-              } catch (e) {
-                console.error(e);
-              }
-            }}
-            className={`w-full flex items-center justify-center gap-3 border font-bold py-3 rounded-xl transition-colors text-sm shadow-sm ${
-              appSettings.google_auth_enabled
-                ? 'border-gray-200 bg-white hover:bg-gray-50 text-gray-700 disabled:opacity-60'
-                : 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed shadow-none'
-            }`}
-          >
-            {/* Google SVG */}
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 18 18"
-              xmlns="http://www.w3.org/2000/svg"
-              className={appSettings.google_auth_enabled ? '' : 'grayscale opacity-60'}
-            >
-              <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
-              <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" fill="#34A853"/>
-              <path d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/>
-              <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
-            </svg>
-            {lang === 'ar' ? 'المتابعة بحساب Google' : 'Continue with Google'}
-          </button>
           
           </>
           )}

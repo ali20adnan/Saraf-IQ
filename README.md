@@ -1,6 +1,6 @@
 # Saraf IQ — صراف
 
-A mobile-first web app for exchanging and buying/selling Asiacell credit in Iraq. Built with React, Vite, Supabase, and Capacitor (Android).
+A mobile-first web app for exchanging and buying/selling Asiacell credit in Iraq. Built with React, Vite, Railway PostgreSQL, and Capacitor (Android).
 
 ## Features
 
@@ -14,7 +14,7 @@ A mobile-first web app for exchanging and buying/selling Asiacell credit in Iraq
 ## Prerequisites
 
 - Node.js ≥ 20
-- A [Supabase](https://supabase.com) project
+- Railway PostgreSQL (`DATABASE_URL`)
 - A Telegram bot token
 
 ## Setup

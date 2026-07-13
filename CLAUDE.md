@@ -32,7 +32,9 @@ Saraf IQ is an Iraqi currency-exchange web app (buy/sell Asiacell credit in IQD)
 
 ### 1. Express server (`server.ts` + `server/`)
 - Entry: `server.ts` — registers all REST routes and runs the Telegram bot
-- **`server/store.ts`** — the entire data layer. All state (transactions, agents, admins, offers, settings, push tokens) lives in a single JSON file at `data/saraf-store.json`. No SQL database is used for transactions; Supabase is only for auth (`profiles` table with `role` column).
+- **`server/store.ts`** — app data layer (transactions, agents, admins, offers, settings, push tokens) on **Railway PostgreSQL** when `DATABASE_URL` is set (`db/schema.sql`). Falls back to `data/saraf-store.json` only if Postgres is unavailable.
+- **`server/auth.ts`** — local email/password auth + sessions on Railway Postgres (`users`, `sessions` tables). No Supabase.
+- **`server/pg.ts`** — PostgreSQL pool + schema bootstrap
 - **`server/botMessages.ts`** — Telegram bot message formatters and callback-data parsers
 - **`server/pushFcm.ts`** — Firebase Cloud Messaging helpers for native push notifications
 - **`server/telegram.ts`** — CJS shim for `node-telegram-bot-api` (ESM compatibility)
@@ -53,9 +55,8 @@ In **dev mode**, the same `server.ts` process mounts Vite as middleware (SSR dev
 
 | Variable | Purpose |
 |---|---|
-| `VITE_SUPABASE_URL` / `SUPABASE_URL` | Supabase project URL (frontend + server) |
-| `VITE_SUPABASE_ANON_KEY` | Supabase anon key (frontend) |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role (server-side auth) |
+| `DATABASE_URL` | Railway PostgreSQL (app data + auth). On Railway: `${{Postgres.DATABASE_URL}}` |
+| `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` | Optional first admin (only if no admin users exist) |
 | `TELEGRAM_BOT_TOKEN` | Telegram bot for order notifications |
 | `TELEGRAM_CHAT_ID` | Primary admin chat ID |
 | `VITE_APP_API_ORIGIN` | Full Railway URL; required in `android/.env` for APK builds |
@@ -64,11 +65,11 @@ In **dev mode**, the same `server.ts` process mounts Vite as middleware (SSR dev
 ## Data Flow for an Order
 
 1. User submits form → `POST /api/transactions` in `server.ts`
-2. Transaction written to `data/saraf-store.json` via `store.createTransaction()`
+2. Transaction written to Railway PostgreSQL via `store.createTransaction()` (JSON file fallback if no `DATABASE_URL`)
 3. Telegram notification sent to all admin chat IDs + active agent
 4. For credit-card buys: OTP flow via `POST /api/transactions/otp`
 5. Admin/agent updates status via Telegram inline buttons → server updates store → FCM push to client
 
 ## Admin Access
 
-`/admin` path triggers admin login view. Admin role is stored in Supabase `profiles.role = 'admin'`. Secondary admins and agents are stored in `data/saraf-store.json`.
+`/admin` path triggers admin login view. Admin role is `users.role = 'admin'` in Railway PostgreSQL. Secondary Telegram admins/agents are also in Postgres.

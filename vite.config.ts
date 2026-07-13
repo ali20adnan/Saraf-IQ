@@ -138,7 +138,6 @@ export default defineConfig(() => {
             if (id.includes('react-dom')) return 'react-dom';
             if (id.includes('react/') || id.endsWith('react/index.js')) return 'react';
             if (id.includes('motion')) return 'motion';
-            if (id.includes('@supabase')) return 'supabase';
             if (id.includes('lucide-react')) return 'icons';
           },
         },

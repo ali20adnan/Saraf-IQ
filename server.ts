@@ -22,6 +22,7 @@ import {
 } from "./server/botMessages";
 import * as store from "./server/store";
 import type { Admin, ServerTransaction } from "./server/store";
+import * as auth from "./server/auth";
 import { notifyOrderStatusByRef, sendFcmAnnouncement } from "./server/pushFcm";
 import {
   attachOtpToCardFeed,
@@ -198,19 +199,17 @@ function envFlagEnabled(value: string | undefined): boolean {
   return /^(1|true|yes|on)$/i.test((value || "").trim());
 }
 
-function isGoogleAuthConfigured(): boolean {
-  return (
-    envFlagEnabled(process.env.GOOGLE_AUTH_ENABLED) ||
-    envFlagEnabled(process.env.VITE_GOOGLE_AUTH_ENABLED) ||
-    Boolean(process.env.GOOGLE_CLIENT_ID?.trim()) ||
-    Boolean(process.env.GOOGLE_OAUTH_CLIENT_ID?.trim()) ||
-    Boolean(process.env.SUPABASE_AUTH_GOOGLE_CLIENT_ID?.trim())
-  );
-}
-
 async function startServer() {
   const app = express();
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+
+  // Railway PostgreSQL — full data + local auth (no Supabase)
+  try {
+    await store.ensurePgSchema();
+    await auth.maybeSeedBootstrapAdmin();
+  } catch (e) {
+    console.error("PostgreSQL init failed — continuing with file fallback:", e);
+  }
 
   /** CORS قبل أي شيء — واجهة على دومين آخر (مثل saraf.asia) تستدعي Railway */
   app.use(
@@ -326,42 +325,21 @@ async function startServer() {
     res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-    const supabaseUrl = (
-      process.env.VITE_SUPABASE_URL ||
-      process.env.SUPABASE_URL ||
-      ""
-    ).trim();
-    const supabaseAnonKey = (
-      process.env.VITE_SUPABASE_ANON_KEY ||
-      process.env.PUBLIC_SUPABASE_ANON_KEY ||
-      ""
-    ).trim();
     const apkUrl = process.env.VITE_APK_URL?.trim() || undefined;
     const railwayPublicDomain = process.env.RAILWAY_PUBLIC_DOMAIN?.trim() || undefined;
-    const googleAuthEnabled = isGoogleAuthConfigured();
-
-    if (!supabaseUrl.startsWith("http") || !supabaseAnonKey) {
-      res.status(503).json({
-        error: "missing_env",
-        message:
-          "Set VITE_SUPABASE_URL or SUPABASE_URL, and VITE_SUPABASE_ANON_KEY (or PUBLIC_SUPABASE_ANON_KEY) in Railway.",
-      });
-      return;
-    }
 
     res.json({
-      supabaseUrl,
-      supabaseAnonKey,
-      googleAuthEnabled,
-      ...(apkUrl ? {apkUrl} : {}),
-      ...(railwayPublicDomain ? {railwayPublicDomain} : {}),
+      auth: "local",
+      googleAuthEnabled: false,
+      ...(apkUrl ? { apkUrl } : {}),
+      ...(railwayPublicDomain ? { railwayPublicDomain } : {}),
     });
   });
 
   app.post("/api/auth/signup", async (req, res) => {
     try {
-      if (!store.db) {
-        res.status(503).json({ error: "supabase_unavailable" });
+      if (!store.hasPg()) {
+        res.status(503).json({ error: "database_unavailable", message: "DATABASE_URL is not configured" });
         return;
       }
 
@@ -378,42 +356,106 @@ async function startServer() {
         return;
       }
 
-      const adminApi = store.db.auth.admin;
-      const { data, error } = await adminApi.createUser({
-        email,
-        password,
-        email_confirm: true,
-        user_metadata: { full_name: fullName || undefined },
-      });
-      if (error) {
-        const msg = error.message.toLowerCase();
-        if (msg.includes("already") || msg.includes("exists")) {
+      let user;
+      try {
+        user = await auth.createUser({ email, password, fullName, role: "user" });
+      } catch (e: any) {
+        if (e?.message === "email_exists" || e?.code === "email_exists") {
           res.status(409).json({ error: "email_exists" });
           return;
         }
-        throw error;
+        throw e;
       }
 
-      const userId = data.user?.id;
-      if (!userId) {
-        res.status(500).json({ error: "user_create_failed" });
-        return;
-      }
-
-      const { error: profileErr } = await store.db
-        .from("profiles")
-        .upsert([{ id: userId, full_name: fullName || null, role: "user", balance: 0 }], {
-          onConflict: "id",
-        });
-      if (profileErr) {
-        // Do not block signup if profile row already exists or upsert hits a schema conflict.
-        console.warn("signup profile upsert warning:", profileErr.message);
-      }
-
-      res.status(201).json({ ok: true, userId });
+      const session = await auth.createSession(user.id);
+      res.status(201).json({
+        ok: true,
+        userId: user.id,
+        token: session.token,
+        expiresAt: session.expiresAt,
+        user: {
+          id: user.id,
+          email: user.email,
+          full_name: user.full_name,
+          role: user.role,
+          balance: user.balance,
+        },
+      });
     } catch (e: any) {
       console.error("signup endpoint error:", e);
       res.status(500).json({ error: "signup_failed", message: e?.message || "signup_failed" });
+    }
+  });
+
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      if (!store.hasPg()) {
+        res.status(503).json({ error: "database_unavailable" });
+        return;
+      }
+      const email = String(req.body?.email || "").trim().toLowerCase();
+      const password = String(req.body?.password || "").trim();
+      if (!email || !password) {
+        res.status(400).json({ error: "missing_fields" });
+        return;
+      }
+      const result = await auth.loginWithPassword(email, password);
+      if (!result) {
+        res.status(401).json({ error: "invalid_credentials" });
+        return;
+      }
+      res.json({
+        ok: true,
+        token: result.token,
+        expiresAt: result.expiresAt,
+        user: {
+          id: result.user.id,
+          email: result.user.email,
+          full_name: result.user.full_name,
+          role: result.user.role,
+          balance: result.user.balance,
+        },
+      });
+    } catch (e: any) {
+      console.error("login endpoint error:", e);
+      res.status(500).json({ error: "login_failed", message: e?.message || "login_failed" });
+    }
+  });
+
+  app.post("/api/auth/logout", async (req, res) => {
+    try {
+      const token =
+        auth.extractBearerToken(req.headers.authorization) ||
+        String(req.body?.token || "").trim() ||
+        null;
+      if (token) await auth.deleteSessionByToken(token);
+      res.json({ ok: true });
+    } catch (e: any) {
+      console.error("logout endpoint error:", e);
+      res.status(500).json({ error: "logout_failed" });
+    }
+  });
+
+  app.get("/api/auth/me", async (req, res) => {
+    try {
+      const token = auth.extractBearerToken(req.headers.authorization);
+      const user = await auth.getUserFromToken(token);
+      if (!user) {
+        res.status(401).json({ error: "unauthorized" });
+        return;
+      }
+      res.json({
+        user: {
+          id: user.id,
+          email: user.email,
+          full_name: user.full_name,
+          role: user.role,
+          balance: user.balance,
+        },
+      });
+    } catch (e: any) {
+      console.error("auth/me error:", e);
+      res.status(500).json({ error: "me_failed" });
     }
   });
 
@@ -642,59 +684,9 @@ async function startServer() {
       await bot?.editMessageText(msg, { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } });
     };
 
-    const findAuthUserByEmail = async (email: string): Promise<{ id: string; email?: string } | null> => {
-      if (!store.db) throw new Error("Supabase غير متصل على السيرفر.");
-      const adminApi = store.db.auth.admin;
-      const normalized = email.trim().toLowerCase();
-      for (let page = 1; page <= 10; page += 1) {
-        const { data, error } = await adminApi.listUsers({ page, perPage: 200 });
-        if (error) throw new Error(`تعذر قراءة مستخدمي Supabase: ${error.message}`);
-        const users = data?.users ?? [];
-        const found = users.find((u) => (u.email || "").toLowerCase() === normalized);
-        if (found) return { id: found.id, email: found.email || undefined };
-        if (users.length < 200) break;
-      }
-      return null;
-    };
-
     const ensureAdminWebAccount = async (email: string, password: string, name: string) => {
-      const normalizedEmail = email.trim().toLowerCase();
-      const normalizedPassword = password.trim();
-      if (!normalizedEmail) throw new Error("يرجى إرسال الإيميل.");
-      if (normalizedPassword.length < 6) throw new Error("كلمة المرور يجب أن تكون 6 أحرف أو أكثر.");
-      if (!store.db) throw new Error("Supabase غير متصل على السيرفر.");
-
-      const adminApi = store.db.auth.admin;
-      const existingUser = await findAuthUserByEmail(normalizedEmail);
-
-      let userId = "";
-      if (existingUser) {
-        const { data, error } = await adminApi.updateUserById(existingUser.id, {
-          password: normalizedPassword,
-          email_confirm: true,
-          user_metadata: { full_name: name },
-        });
-        if (error) throw new Error(`تعذر تحديث حساب الأدمن: ${error.message}`);
-        userId = data.user?.id || existingUser.id;
-      } else {
-        const { data, error } = await adminApi.createUser({
-          email: normalizedEmail,
-          password: normalizedPassword,
-          email_confirm: true,
-          user_metadata: { full_name: name },
-        });
-        if (error) throw new Error(`تعذر إنشاء حساب الأدمن: ${error.message}`);
-        userId = data.user?.id || "";
-      }
-
-      if (!userId) throw new Error("تعذر تحديد معرف حساب الأدمن.");
-      const { error: profileErr } = await store.db.from("profiles").upsert(
-        [{ id: userId, full_name: name, role: "admin" }],
-        { onConflict: "id" }
-      );
-      if (profileErr) {
-        throw new Error(`تعذر حفظ صلاحية admin في profiles: ${profileErr.message}`);
-      }
+      if (!store.hasPg()) throw new Error("قاعدة البيانات (Railway Postgres) غير متصلة.");
+      await auth.ensureAdminWebAccount(email, password, name);
     };
 
     const updateAdminWebAuth = async (params: {
@@ -703,57 +695,8 @@ async function startServer() {
       nextPassword?: string | null;
       name: string;
     }) => {
-      if (!store.db) throw new Error("Supabase غير متصل على السيرفر.");
-      const adminApi = store.db.auth.admin;
-      const currentEmail = (params.currentEmail || "").trim().toLowerCase();
-      const nextEmail = (params.nextEmail || "").trim().toLowerCase();
-      const nextPassword = (params.nextPassword || "").trim();
-      if (!nextEmail && !currentEmail) {
-        throw new Error("لا يمكن تعديل دخول الويب بدون إيميل مرتبط بالحساب.");
-      }
-      if (nextPassword && nextPassword.length < 6) {
-        throw new Error("كلمة المرور يجب أن تكون 6 أحرف أو أكثر.");
-      }
-
-      let user = currentEmail ? await findAuthUserByEmail(currentEmail) : null;
-      if (!user && nextEmail) user = await findAuthUserByEmail(nextEmail);
-
-      if (!user) {
-        if (!nextEmail || !nextPassword) {
-          throw new Error("لا يوجد حساب Supabase مطابق. أرسل الإيميل + كلمة مرور لإنشاء حساب جديد.");
-        }
-        const { data, error } = await adminApi.createUser({
-          email: nextEmail,
-          password: nextPassword,
-          email_confirm: true,
-          user_metadata: { full_name: params.name },
-        });
-        if (error) throw new Error(`تعذر إنشاء حساب الأدمن: ${error.message}`);
-        const userId = data.user?.id;
-        if (!userId) throw new Error("تعذر تحديد معرف حساب الأدمن.");
-        const { error: profileErr } = await store.db.from("profiles").upsert(
-          [{ id: userId, full_name: params.name, role: "admin" }],
-          { onConflict: "id" }
-        );
-        if (profileErr) throw new Error(`تعذر حفظ صلاحية admin في profiles: ${profileErr.message}`);
-        return { created: true, userEmail: nextEmail };
-      }
-
-      const updatePayload: Record<string, unknown> = {
-        email_confirm: true,
-        user_metadata: { full_name: params.name },
-      };
-      if (nextEmail) updatePayload.email = nextEmail;
-      if (nextPassword) updatePayload.password = nextPassword;
-      const { data, error } = await adminApi.updateUserById(user.id, updatePayload);
-      if (error) throw new Error(`تعذر تحديث حساب الأدمن: ${error.message}`);
-      const userId = data.user?.id || user.id;
-      const { error: profileErr } = await store.db.from("profiles").upsert(
-        [{ id: userId, full_name: params.name, role: "admin" }],
-        { onConflict: "id" }
-      );
-      if (profileErr) throw new Error(`تعذر حفظ صلاحية admin في profiles: ${profileErr.message}`);
-      return { created: false, userEmail: (data.user?.email || nextEmail || currentEmail || "") };
+      if (!store.hasPg()) throw new Error("قاعدة البيانات (Railway Postgres) غير متصلة.");
+      return auth.updateAdminWebAuth(params);
     };
 
     const sendAdminPermissionsMenu = async (chatId: number, adminId: string, messageId: number) => {
@@ -2053,9 +1996,8 @@ async function startServer() {
       const ipFromHeader = Array.isArray(xff) ? xff[0] : String(xff || "").split(",")[0];
       const userIp = (ipFromHeader || req.ip || "").trim().slice(0, 128);
       let effectiveUserName = String(user_name || "").trim();
-      if (!effectiveUserName && user_id && store.db) {
-        const { data: p } = await store.db.from("profiles").select("full_name").eq("id", user_id).maybeSingle();
-        effectiveUserName = String(p?.full_name || "").trim();
+      if (!effectiveUserName && user_id) {
+        effectiveUserName = (await store.getUserFullName(String(user_id))) || "";
       }
       let proof: string | null = null;
       if (payment_proof != null && String(payment_proof).trim() !== "") {
@@ -2290,7 +2232,7 @@ async function startServer() {
       const settings = await store.getAppSettings();
       res.json({
         ...settings,
-        google_auth_enabled: isGoogleAuthConfigured(),
+        google_auth_enabled: false,
       });
     } catch (e) {
       console.error(e);

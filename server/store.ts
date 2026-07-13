@@ -1,8 +1,11 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import type { ServerTransaction } from "../types/transaction.js";
+import { hasPg, pgQuery, pgOne } from "./pg.js";
+import * as auth from "./auth.js";
+
+export { ensurePgSchema, hasPg } from "./pg.js";
 
 export type { ServerTransaction };
 
@@ -584,14 +587,12 @@ export type SiteContentPublic = {
 export async function getSiteContent(): Promise<SiteContentPublic> {
   const merged: Record<string, string> = { ...defaultAppSettings };
   const dbSettings: Record<string, string> = {};
-  if (db) {
-    const { data, error } = await db.from("settings").select("key, value");
-    if (!error && data?.length) {
-      for (const row of data as { key: string; value: string }[]) {
-        if (row.key && typeof row.value === "string") {
-          merged[row.key] = row.value;
-          dbSettings[row.key] = row.value;
-        }
+  {
+    const pgSettings = await pgLoadSettings();
+    if (pgSettings) {
+      for (const [k, v] of Object.entries(pgSettings)) {
+        merged[k] = v;
+        dbSettings[k] = v;
       }
     }
   }
@@ -671,18 +672,12 @@ function parseSellCustomWallets(raw: string | undefined): SellCustomWallet[] {
 }
 
 export async function getBuyCustomWallets(): Promise<BuyCustomWallet[]> {
-  const merged: Record<string, string> = { ...defaultAppSettings };
-  if (db) {
-    const { data, error } = await db.from("settings").select("key, value");
-    if (!error && data?.length) {
-      for (const row of data as { key: string; value: string }[]) {
-        if (row.key && typeof row.value === "string") merged[row.key] = row.value;
-      }
-    }
+  const pgSettings = await pgLoadSettings();
+  if (pgSettings && Object.prototype.hasOwnProperty.call(pgSettings, "buy_custom_wallets")) {
+    return parseBuyCustomWallets(pgSettings.buy_custom_wallets);
   }
   const fileSettings = loadFileStore().app_settings;
-  const final = { ...merged, ...fileSettings };
-  return parseBuyCustomWallets(final.buy_custom_wallets);
+  return parseBuyCustomWallets(fileSettings.buy_custom_wallets ?? defaultAppSettings.buy_custom_wallets);
 }
 
 function syncBuyWalletIconFiles(prev: BuyCustomWallet[], next: BuyCustomWallet[]): void {
@@ -731,10 +726,7 @@ export async function setBuyCustomWallets(next: BuyCustomWallet[]): Promise<BuyC
   syncBuyWalletIconFiles(prev, normalized);
   const prevIds = new Set(prev.map((p) => p.id));
   const json = JSON.stringify(normalized);
-  if (db) {
-    const { error } = await db.from("settings").upsert({ key: "buy_custom_wallets", value: json }, { onConflict: "key" });
-    if (error) console.error("setBuyCustomWallets db:", error);
-  }
+  await pgUpsertSetting("buy_custom_wallets", json);
   const st = loadFileStore();
   st.app_settings = { ...st.app_settings, buy_custom_wallets: json };
   saveFileStore(st);
@@ -747,15 +739,11 @@ export async function setBuyCustomWallets(next: BuyCustomWallet[]): Promise<BuyC
 }
 
 export async function getSellCustomWallets(): Promise<SellCustomWallet[]> {
-  const merged: Record<string, string> = { ...defaultAppSettings };
-  if (db) {
-    const { data, error } = await db.from("settings").select("key, value");
-    if (!error && data?.length) {
-      for (const row of data as { key: string; value: string }[]) {
-        if (row.key && typeof row.value === "string") merged[row.key] = row.value;
-      }
-    }
+  const pgSettings = await pgLoadSettings();
+  if (pgSettings && Object.prototype.hasOwnProperty.call(pgSettings, "sell_custom_wallets")) {
+    return parseSellCustomWallets(pgSettings.sell_custom_wallets);
   }
+  const merged: Record<string, string> = { ...defaultAppSettings };
   const fileSettings = loadFileStore().app_settings;
   const final = { ...merged, ...fileSettings };
   return parseSellCustomWallets(final.sell_custom_wallets);
@@ -807,10 +795,7 @@ export async function setSellCustomWallets(next: SellCustomWallet[]): Promise<Se
   syncSellWalletIconFiles(prev, normalized);
   const prevIds = new Set(prev.map((p) => p.id));
   const json = JSON.stringify(normalized);
-  if (db) {
-    const { error } = await db.from("settings").upsert({ key: "sell_custom_wallets", value: json }, { onConflict: "key" });
-    if (error) console.error("setSellCustomWallets db:", error);
-  }
+  await pgUpsertSetting("sell_custom_wallets", json);
   const st = loadFileStore();
   st.app_settings = { ...st.app_settings, sell_custom_wallets: json };
   saveFileStore(st);
@@ -837,7 +822,13 @@ export async function addAgentPermission(agentId: string, permission: string): P
   const cur = st.agents[ix].permissions || [];
   if (cur.includes(permission)) return;
   st.agents[ix].permissions = [...cur, permission];
-  if (db) await db.from("agents").update({ permissions: st.agents[ix].permissions }).eq("id", agentId);
+  if (hasPg()) {
+    try {
+      await pgQuery(`UPDATE agents SET permissions = $1 WHERE id = $2`, [st.agents[ix].permissions, agentId]);
+    } catch (e) {
+      console.error("agent permissions pg:", e);
+    }
+  }
   saveFileStore(st);
 }
 
@@ -859,42 +850,55 @@ export async function setSiteStringSetting(key: string, value: string): Promise<
   if (key === "link_support" && !isValidHttpUrl(v)) {
     throw new Error("invalid support URL");
   }
-  if (db) {
-    const { error } = await db.from("settings").upsert({ key, value: v }, { onConflict: "key" });
-    if (error) {
-      console.error("setSiteStringSetting db:", error);
-      throw error;
-    }
+  if (hasPg()) {
+    const ok = await pgUpsertSetting(key, v);
+    if (!ok) throw new Error("failed to save setting to PostgreSQL");
   }
   const st = loadFileStore();
   st.app_settings = { ...st.app_settings, [key]: v };
   saveFileStore(st);
 }
 
-function getSupabase(): SupabaseClient | null {
-  const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "").trim();
-  const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
-  
-  if (!url || !key) {
-    console.warn("⚠️  Supabase Config Missing: Please set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in your environment.");
-    return null;
-  }
-
-  if (!isValidHttpUrl(url)) {
-    console.warn("⚠️  Supabase URL is invalid:", url);
-    return null;
-  }
-
-  return createClient(url, key);
-}
-
-export const db = getSupabase();
+/** @deprecated Supabase removed — always null. Kept so old references fail closed. */
+export const db = null;
 
 // Log connection status
-if (db) {
-  console.log("✅ Supabase connected successfully");
+if (hasPg()) {
+  console.log("✅ Railway PostgreSQL configured (app data + auth)");
 } else {
-  console.warn("⚠️ Supabase NOT connected - using file storage (data will be lost on redeploy)");
+  console.warn("⚠️ DATABASE_URL missing — app data falls back to local JSON (lost on redeploy); auth unavailable");
+}
+
+/** Upsert a settings key on Railway PG (no-op if PG unavailable). */
+async function pgUpsertSetting(key: string, value: string): Promise<boolean> {
+  if (!hasPg()) return false;
+  try {
+    await pgQuery(
+      `INSERT INTO settings (key, value) VALUES ($1, $2)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      [key, value]
+    );
+    return true;
+  } catch (e) {
+    console.error("pgUpsertSetting:", e);
+    return false;
+  }
+}
+
+/** Load all settings from Railway PG, or null if unavailable. */
+async function pgLoadSettings(): Promise<Record<string, string> | null> {
+  if (!hasPg()) return null;
+  try {
+    const res = await pgQuery<{ key: string; value: string }>("SELECT key, value FROM settings");
+    const out: Record<string, string> = {};
+    for (const row of res.rows) {
+      if (row.key && typeof row.value === "string") out[row.key] = row.value;
+    }
+    return out;
+  } catch (e) {
+    console.error("pgLoadSettings:", e);
+    return null;
+  }
 }
 
 function loadFileStore(): FileStore {
@@ -977,19 +981,18 @@ export async function listTransactionsByClient(clientId: string): Promise<Server
   const map = new Map<string, ServerTransaction>();
   for (const t of fromFile) map.set(t.id, t);
 
-  if (db) {
-    const { data, error } = await db
-      .from("transactions")
-      .select("*")
-      .eq("client_id", clientId)
-      .order("created_at", { ascending: false })
-      .limit(100);
-    if (error) console.error("listTransactionsByClient:", error);
-    else if (data?.length) {
-      for (const row of data) {
+  if (hasPg()) {
+    try {
+      const res = await pgQuery(
+        `SELECT * FROM transactions WHERE client_id = $1 ORDER BY created_at DESC LIMIT 100`,
+        [clientId]
+      );
+      for (const row of res.rows) {
         const tx = rowToTx(row as Record<string, unknown>);
         map.set(tx.id, tx);
       }
+    } catch (e) {
+      console.error("listTransactionsByClient pg:", e);
     }
   }
 
@@ -1058,30 +1061,31 @@ export async function createTransaction(input: {
     user_ip: input.user_ip,
   });
 
-  if (db) {
-    const { data, error } = await db
-      .from("transactions")
-      .insert([
-        {
+  if (hasPg()) {
+    try {
+      const res = await pgQuery(
+        `INSERT INTO transactions
+          (id, order_ref, client_id, user_id, type, amount, method, status, details, agent_number_id, payment_proof, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,'pending',$8,$9,$10,$11)
+         RETURNING *`,
+        [
           id,
           order_ref,
-          client_id: input.client_id,
-          user_id: input.user_id ?? null,
-          type: input.type,
-          amount: input.amount,
-          method: input.method,
-          status: "pending",
-          details: persistedDetails,
-          agent_number_id: input.agent_number_id ?? null,
-          payment_proof: input.payment_proof ?? null,
-        },
-      ])
-      .select()
-      .single();
-    if (!error && data) {
-      return rowToTx(data as Record<string, unknown>);
+          input.client_id,
+          input.user_id ?? null,
+          input.type,
+          input.amount,
+          input.method,
+          persistedDetails,
+          input.agent_number_id ?? null,
+          input.payment_proof ?? null,
+          created_at,
+        ]
+      );
+      if (res.rows[0]) return rowToTx(res.rows[0] as Record<string, unknown>);
+    } catch (e) {
+      console.error("createTransaction pg (using file fallback):", e);
     }
-    console.error("createTransaction db (using file fallback):", error);
   }
 
   const store = loadFileStore();
@@ -1097,18 +1101,17 @@ export async function createTransaction(input: {
 export async function listAllTransactionsMerged(): Promise<ServerTransaction[]> {
   const map = new Map<string, ServerTransaction>();
 
-  if (db) {
-    const { data, error } = await db
-      .from("transactions")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(5000);
-
-    if (!error && data?.length) {
-      for (const row of data) {
+  if (hasPg()) {
+    try {
+      const res = await pgQuery(
+        `SELECT * FROM transactions ORDER BY created_at DESC LIMIT 5000`
+      );
+      for (const row of res.rows) {
         const tx = rowToTx(row as Record<string, unknown>);
         map.set(tx.id, tx);
       }
+    } catch (e) {
+      console.error("listAllTransactionsMerged pg:", e);
     }
   }
 
@@ -1159,10 +1162,16 @@ export async function updateTransactionStatusByRef(
     if (balance < before.amount) return false;
   }
   let ok = false;
-  if (db) {
-    const { error } = await db.from("transactions").update({ status }).eq("order_ref", orderRef);
-    if (!error) ok = true;
-    else console.error("updateTransactionStatusByRef db:", error);
+  if (hasPg()) {
+    try {
+      const res = await pgQuery(
+        `UPDATE transactions SET status = $1 WHERE order_ref = $2`,
+        [status, orderRef]
+      );
+      if ((res.rowCount ?? 0) > 0) ok = true;
+    } catch (e) {
+      console.error("updateTransactionStatusByRef pg:", e);
+    }
   }
   const store = loadFileStore();
   const ix = store.transactions.findIndex((t) => t.order_ref === orderRef);
@@ -1200,79 +1209,67 @@ function balanceDeltaForStatusChange(
 }
 
 export async function getTransactionByOrderRef(orderRef: string): Promise<ServerTransaction | null> {
-  if (db) {
-    const { data, error } = await db.from("transactions").select("*").eq("order_ref", orderRef).maybeSingle();
-    if (!error && data) return rowToTx(data as Record<string, unknown>);
+  if (hasPg()) {
+    try {
+      const row = await pgOne(`SELECT * FROM transactions WHERE order_ref = $1`, [orderRef]);
+      if (row) return rowToTx(row as Record<string, unknown>);
+    } catch (e) {
+      console.error("getTransactionByOrderRef pg:", e);
+    }
   }
   const local = loadFileStore().transactions.find((x) => x.order_ref === orderRef);
   return local ? normalizeTx(local) : null;
 }
 
 export async function getUserBalance(userId: string): Promise<number> {
-  if (!userId.trim()) return 0;
-  if (db) {
-    const { data, error } = await db.from("profiles").select("balance").eq("id", userId).maybeSingle();
-    if (!error && data) {
-      return Number((data as { balance?: number }).balance ?? 0);
-    }
-  }
-  return 0;
+  return auth.getUserBalance(userId);
 }
 
 export async function adjustUserBalance(userId: string, delta: number): Promise<number> {
-  if (!userId.trim() || delta === 0) return getUserBalance(userId);
-  if (db) {
-    const current = await getUserBalance(userId);
-    const next = Math.max(0, current + delta);
-    const { error } = await db.from("profiles").update({ balance: next }).eq("id", userId);
-    if (error) {
-      console.error("adjustUserBalance:", error);
-      return current;
-    }
-    return next;
-  }
-  return 0;
+  return auth.adjustUserBalance(userId, delta);
+}
+
+export async function getUserFullName(userId: string): Promise<string | null> {
+  return auth.getUserFullName(userId);
 }
 
 export async function listOffers(): Promise<ServerOffer[]> {
-  if (db) {
-    const { data, error } = await db
-      .from("offers")
-      .select("*")
-      .order("sort_order", { ascending: true });
-    
-    if (error) {
-      console.error("listOffers db error:", error);
-    } else if (data && data.length > 0) {
-      return data.map((r: Record<string, unknown>) => ({
-        id: String(r.id),
-        variant: r.variant === "buy" ? "buy" : "sell",
-        title_ar: String(r.title_ar ?? ""),
-        title_en: String(r.title_en ?? ""),
-        amount_display: String(r.amount_display ?? ""),
-        unit_ar: String(r.unit_ar ?? ""),
-        unit_en: String(r.unit_en ?? ""),
-        sort_order: Number(r.sort_order ?? 0),
-      }));
+  if (hasPg()) {
+    try {
+      const res = await pgQuery(`SELECT * FROM offers ORDER BY sort_order ASC`);
+      if (res.rows.length > 0) {
+        return res.rows.map((r: Record<string, unknown>) => ({
+          id: String(r.id),
+          variant: (r.variant === "buy" ? "buy" : "sell") as "buy" | "sell",
+          title_ar: String(r.title_ar ?? ""),
+          title_en: String(r.title_en ?? ""),
+          amount_display: String(r.amount_display ?? ""),
+          unit_ar: String(r.unit_ar ?? ""),
+          unit_en: String(r.unit_en ?? ""),
+          sort_order: Number(r.sort_order ?? 0),
+        }));
+      }
+    } catch (e) {
+      console.error("listOffers pg:", e);
     }
   }
   return loadFileStore().offers.sort((a, b) => a.sort_order - b.sort_order);
 }
 
 export async function getSiteProfile(): Promise<SiteProfile> {
-  if (db) {
-    const { data, error } = await db.from("site_profile").select("*").eq("id", 1).maybeSingle();
-    if (error) {
-      console.error("getSiteProfile:", error);
+  if (hasPg()) {
+    try {
+      const r = await pgOne(`SELECT * FROM site_profile WHERE id = 1`);
+      if (!r) return { ...defaultProfile };
+      return {
+        full_name: String(r.full_name ?? defaultProfile.full_name),
+        email: String(r.email ?? defaultProfile.email),
+        phone: String(r.phone ?? ""),
+      };
+    } catch (e) {
+      console.error("getSiteProfile pg:", e);
       return { ...defaultProfile };
     }
-    if (!data) return { ...defaultProfile };
-    const r = data as Record<string, unknown>;
-    return {
-      full_name: String(r.full_name ?? defaultProfile.full_name),
-      email: String(r.email ?? defaultProfile.email),
-      phone: String(r.phone ?? ""),
-    };
   }
   return { ...loadFileStore().site_profile };
 }
@@ -1285,12 +1282,21 @@ export async function updateSiteProfile(patch: Partial<SiteProfile>): Promise<Si
     phone: patch.phone ?? current.phone,
   };
 
-  if (db) {
-    const { error } = await db.from("site_profile").upsert(
-      { id: 1, ...next, updated_at: new Date().toISOString() },
-      { onConflict: "id" }
-    );
-    if (error) console.error("updateSiteProfile db:", error);
+  if (hasPg()) {
+    try {
+      await pgQuery(
+        `INSERT INTO site_profile (id, full_name, email, phone, updated_at)
+         VALUES (1, $1, $2, $3, now())
+         ON CONFLICT (id) DO UPDATE SET
+           full_name = EXCLUDED.full_name,
+           email = EXCLUDED.email,
+           phone = EXCLUDED.phone,
+           updated_at = now()`,
+        [next.full_name, next.email, next.phone]
+      );
+    } catch (e) {
+      console.error("updateSiteProfile pg:", e);
+    }
   }
   const store = loadFileStore();
   store.site_profile = next;
@@ -1354,12 +1360,10 @@ const APP_SETTING_KEYS = [
 export async function getAppSettings(): Promise<AppSettingsPublic> {
   const merged: Record<string, string> = { ...defaultAppSettings };
   
-  if (db) {
-    const { data, error } = await db.from("settings").select("key, value");
-    if (!error && data?.length) {
-      for (const row of data as { key: string; value: string }[]) {
-        if (row.key && typeof row.value === "string") merged[row.key] = row.value;
-      }
+  {
+    const pgSettings = await pgLoadSettings();
+    if (pgSettings && Object.keys(pgSettings).length) {
+      Object.assign(merged, pgSettings);
       const z = methodPairFromMerged(merged, "zaincash");
       const su = methodPairFromMerged(merged, "superqi");
       const fi = methodPairFromMerged(merged, "firstbank");
@@ -1413,10 +1417,7 @@ export async function setAppSetting(key: string, value: boolean): Promise<AppSet
     throw new Error("invalid setting key");
   }
   const str = value ? "true" : "false";
-  if (db) {
-    const { error } = await db.from("settings").upsert({ key, value: str }, { onConflict: "key" });
-    if (error) console.error("setAppSetting db:", error);
-  }
+  await pgUpsertSetting(key, str);
   const st = loadFileStore();
   st.app_settings = { ...st.app_settings, [key]: str };
   saveFileStore(st);
@@ -1426,12 +1427,16 @@ export async function setAppSetting(key: string, value: boolean): Promise<AppSet
 /** AGENTS MANAGEMENT */
 
 export async function listAgents(): Promise<Agent[]> {
-  if (db) {
-    const { data, error } = await db.from("agents").select("*").order("created_at", { ascending: false });
-    if (error) {
-      console.error("listAgents:", error);
-    } else {
-      return (data ?? []) as Agent[];
+  if (hasPg()) {
+    try {
+      const res = await pgQuery(`SELECT * FROM agents ORDER BY created_at DESC`);
+      return res.rows.map((a) => ({
+        ...a,
+        telegram_id: Number(a.telegram_id),
+        permissions: Array.isArray(a.permissions) ? a.permissions : [],
+      })) as Agent[];
+    } catch (e) {
+      console.error("listAgents pg:", e);
     }
   }
   return loadFileStore().agents;
@@ -1447,8 +1452,16 @@ export async function createAgent(input: { telegram_id: number; name: string }):
     permissions: ['add_number', 'reset_balance', 'method_zaincash', 'method_superqi', 'method_firstbank', 'method_fastpay', 'method_creditcard'],
     created_at: new Date().toISOString(),
   };
-  if (db) {
-    await db.from("agents").insert([row]);
+  if (hasPg()) {
+    try {
+      await pgQuery(
+        `INSERT INTO agents (id, telegram_id, name, is_active, permissions, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [row.id, row.telegram_id, row.name, row.is_active, row.permissions, row.created_at]
+      );
+    } catch (e) {
+      console.error("createAgent pg:", e);
+    }
   }
   const st = loadFileStore();
   st.agents.unshift(row);
@@ -1465,11 +1478,15 @@ export async function createAgent(input: { telegram_id: number; name: string }):
 }
 
 export async function toggleAgentActive(id: string, active: boolean): Promise<void> {
-  if (db) {
-    if (active) {
-      await db.from("agents").update({ is_active: false }).neq("id", id);
+  if (hasPg()) {
+    try {
+      if (active) {
+        await pgQuery(`UPDATE agents SET is_active = false WHERE id <> $1`, [id]);
+      }
+      await pgQuery(`UPDATE agents SET is_active = $1 WHERE id = $2`, [active, id]);
+    } catch (e) {
+      console.error("toggleAgentActive pg:", e);
     }
-    await db.from("agents").update({ is_active: active }).eq("id", id);
   }
   const st = loadFileStore();
   if (active) {
@@ -1485,10 +1502,14 @@ export async function toggleAgentActive(id: string, active: boolean): Promise<vo
 }
 
 export async function deleteAgent(id: string): Promise<void> {
-  if (db) {
-    await db.from("agents").delete().eq("id", id);
-    await db.from("agent_numbers").delete().eq("agent_id", id);
-    await db.from("agent_payment_methods").delete().eq("agent_id", id);
+  if (hasPg()) {
+    try {
+      await pgQuery(`DELETE FROM agent_payment_methods WHERE agent_id = $1`, [id]);
+      await pgQuery(`DELETE FROM agent_numbers WHERE agent_id = $1`, [id]);
+      await pgQuery(`DELETE FROM agents WHERE id = $1`, [id]);
+    } catch (e) {
+      console.error("deleteAgent pg:", e);
+    }
   }
   const st = loadFileStore();
   st.agents = st.agents.filter(a => a.id !== id);
@@ -1500,14 +1521,20 @@ export async function deleteAgent(id: string): Promise<void> {
 /** AGENT NUMBERS */
 
 export async function listAgentNumbers(agentId?: string): Promise<AgentNumber[]> {
-  if (db) {
-    let query = db.from("agent_numbers").select("*").order("sort_order", { ascending: true });
-    if (agentId) query = query.eq("agent_id", agentId);
-    const { data, error } = await query;
-    if (error) {
-      console.error("listAgentNumbers:", error);
-    } else {
-      return (data ?? []) as AgentNumber[];
+  if (hasPg()) {
+    try {
+      const res = agentId
+        ? await pgQuery(
+            `SELECT * FROM agent_numbers WHERE agent_id = $1 ORDER BY sort_order ASC`,
+            [agentId]
+          )
+        : await pgQuery(`SELECT * FROM agent_numbers ORDER BY sort_order ASC`);
+      return res.rows.map((n) => ({
+        ...n,
+        balance: Number(n.balance ?? 0),
+      })) as AgentNumber[];
+    } catch (e) {
+      console.error("listAgentNumbers pg:", e);
     }
   }
   const nums = loadFileStore().agent_numbers;
@@ -1515,9 +1542,13 @@ export async function listAgentNumbers(agentId?: string): Promise<AgentNumber[]>
 }
 
 export async function getAgentNumberById(id: string): Promise<AgentNumber | null> {
-  if (db) {
-    const { data, error } = await db.from("agent_numbers").select("*").eq("id", id).maybeSingle();
-    if (!error && data) return data as AgentNumber;
+  if (hasPg()) {
+    try {
+      const row = await pgOne(`SELECT * FROM agent_numbers WHERE id = $1`, [id]);
+      if (row) return { ...row, balance: Number(row.balance ?? 0) } as AgentNumber;
+    } catch (e) {
+      console.error("getAgentNumberById pg:", e);
+    }
   }
   return loadFileStore().agent_numbers.find((n) => n.id === id) ?? null;
 }
@@ -1532,8 +1563,16 @@ export async function addAgentNumber(agentId: string, phoneNumber: string, sortO
     is_exhausted: false,
     sort_order: sortOrder,
   };
-  if (db) {
-    await db.from("agent_numbers").insert([row]);
+  if (hasPg()) {
+    try {
+      await pgQuery(
+        `INSERT INTO agent_numbers (id, agent_id, phone_number, balance, is_exhausted, sort_order)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [row.id, row.agent_id, row.phone_number, row.balance, row.is_exhausted, row.sort_order]
+      );
+    } catch (e) {
+      console.error("addAgentNumber pg:", e);
+    }
   }
   const st = loadFileStore();
   st.agent_numbers.push(row);
@@ -1542,8 +1581,26 @@ export async function addAgentNumber(agentId: string, phoneNumber: string, sortO
 }
 
 export async function updateAgentNumber(id: string, patch: Partial<AgentNumber>): Promise<void> {
-  if (db) {
-    await db.from("agent_numbers").update(patch).eq("id", id);
+  if (hasPg()) {
+    try {
+      const fields: string[] = [];
+      const vals: unknown[] = [];
+      let i = 1;
+      for (const [k, v] of Object.entries(patch)) {
+        if (v === undefined) continue;
+        fields.push(`${k} = $${i++}`);
+        vals.push(v);
+      }
+      if (fields.length) {
+        vals.push(id);
+        await pgQuery(
+          `UPDATE agent_numbers SET ${fields.join(", ")} WHERE id = $${i}`,
+          vals
+        );
+      }
+    } catch (e) {
+      console.error("updateAgentNumber pg:", e);
+    }
   }
   const st = loadFileStore();
   const ix = st.agent_numbers.findIndex(n => n.id === id);
@@ -1554,8 +1611,12 @@ export async function updateAgentNumber(id: string, patch: Partial<AgentNumber>)
 }
 
 export async function deleteAgentNumber(id: string): Promise<void> {
-  if (db) {
-    await db.from("agent_numbers").delete().eq("id", id);
+  if (hasPg()) {
+    try {
+      await pgQuery(`DELETE FROM agent_numbers WHERE id = $1`, [id]);
+    } catch (e) {
+      console.error("deleteAgentNumber pg:", e);
+    }
   }
   const st = loadFileStore();
   st.agent_numbers = st.agent_numbers.filter(n => n.id !== id);
@@ -1598,19 +1659,30 @@ export async function upsertAgentPaymentMethod(input: {
     updated_at: new Date().toISOString(),
   };
 
-  if (db) {
-    const { error } = await db.from("agent_payment_methods").upsert(
-      {
-        agent_id: row.agent_id,
-        method_key: row.method_key,
-        account_number: row.account_number,
-        account_holder: row.account_holder,
-        barcode_url: row.barcode_url,
-        updated_at: row.updated_at,
-      },
-      { onConflict: "agent_id,method_key" },
-    );
-    if (error) console.error("upsertAgentPaymentMethod:", error);
+  if (hasPg()) {
+    try {
+      await pgQuery(
+        `INSERT INTO agent_payment_methods
+          (id, agent_id, method_key, account_number, account_holder, barcode_url, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (agent_id, method_key) DO UPDATE SET
+           account_number = EXCLUDED.account_number,
+           account_holder = EXCLUDED.account_holder,
+           barcode_url = EXCLUDED.barcode_url,
+           updated_at = EXCLUDED.updated_at`,
+        [
+          row.id,
+          row.agent_id,
+          row.method_key,
+          row.account_number,
+          row.account_holder,
+          row.barcode_url,
+          row.updated_at,
+        ]
+      );
+    } catch (e) {
+      console.error("upsertAgentPaymentMethod pg:", e);
+    }
   }
 
   const st = loadFileStore();
@@ -1626,15 +1698,13 @@ export async function upsertAgentPaymentMethod(input: {
 export async function listAgentPaymentMethods(agentId: string): Promise<AgentPaymentMethod[]> {
   const id = agentId.trim();
   if (!id) return [];
-  if (db) {
-    const { data, error } = await db
-      .from("agent_payment_methods")
-      .select("*")
-      .eq("agent_id", id);
-    if (error) {
-      console.error("listAgentPaymentMethods:", error);
-    } else {
-      return ((data ?? []) as AgentPaymentMethod[]).sort((a, b) => {
+  if (hasPg()) {
+    try {
+      const res = await pgQuery(
+        `SELECT * FROM agent_payment_methods WHERE agent_id = $1`,
+        [id]
+      );
+      return (res.rows as AgentPaymentMethod[]).sort((a, b) => {
         const ai = AGENT_METHOD_KEYS.indexOf(a.method_key as AgentPaymentMethodKey);
         const bi = AGENT_METHOD_KEYS.indexOf(b.method_key as AgentPaymentMethodKey);
         if (ai !== -1 && bi !== -1) return ai - bi;
@@ -1642,6 +1712,8 @@ export async function listAgentPaymentMethods(agentId: string): Promise<AgentPay
         if (bi !== -1) return 1;
         return a.method_key.localeCompare(b.method_key);
       });
+    } catch (e) {
+      console.error("listAgentPaymentMethods pg:", e);
     }
   }
   return loadFileStore().agent_payment_methods
@@ -1660,13 +1732,15 @@ export async function removeAgentPaymentMethod(agentId: string, methodKey: strin
   const id = agentId.trim();
   const key = normalizeAgentPaymentMethodKey(methodKey);
   if (!id || !key) return;
-  if (db) {
-    const { error } = await db
-      .from("agent_payment_methods")
-      .delete()
-      .eq("agent_id", id)
-      .eq("method_key", key);
-    if (error) console.error("removeAgentPaymentMethod:", error);
+  if (hasPg()) {
+    try {
+      await pgQuery(
+        `DELETE FROM agent_payment_methods WHERE agent_id = $1 AND method_key = $2`,
+        [id, key]
+      );
+    } catch (e) {
+      console.error("removeAgentPaymentMethod pg:", e);
+    }
   }
   const st = loadFileStore();
   st.agent_payment_methods = st.agent_payment_methods.filter(
@@ -1745,22 +1819,34 @@ export async function getActiveSellNumber(): Promise<{
 }
 
 export async function incrementNumberBalance(numberId: string, amount: number): Promise<{ exhausted: boolean; agentId: string } | null> {
+  if (hasPg()) {
+    try {
+      const current = await pgOne<{ balance: string | number; agent_id: string }>(
+        `SELECT balance, agent_id FROM agent_numbers WHERE id = $1`,
+        [numberId]
+      );
+      if (!current) return null;
+      const newBalance = Number(current.balance ?? 0) + amount;
+      const exhausted = newBalance >= 300000;
+      await pgQuery(
+        `UPDATE agent_numbers SET balance = $1, is_exhausted = $2 WHERE id = $3`,
+        [newBalance, exhausted, numberId]
+      );
+      return { exhausted, agentId: String(current.agent_id) };
+    } catch (e) {
+      console.error("incrementNumberBalance pg:", e);
+    }
+  }
+
   const st = loadFileStore();
   const ix = st.agent_numbers.findIndex(n => n.id === numberId);
   if (ix === -1) return null;
 
   const newBalance = st.agent_numbers[ix].balance + amount;
   const exhausted = newBalance >= 300000;
-  
   const update = { balance: newBalance, is_exhausted: exhausted };
-  
-  if (db) {
-    await db.from("agent_numbers").update(update).eq("id", numberId);
-  }
-  
   st.agent_numbers[ix] = { ...st.agent_numbers[ix], ...update };
   saveFileStore(st);
-  
   return { exhausted, agentId: st.agent_numbers[ix].agent_id };
 }
 
@@ -1776,15 +1862,28 @@ export async function toggleAgentPermission(agentId: string, permission: string)
   } else {
     st.agents[ix].permissions = [...current, permission];
   }
-  if (db) await db.from("agents").update({ permissions: st.agents[ix].permissions }).eq("id", agentId);
+  if (hasPg()) {
+    try {
+      await pgQuery(`UPDATE agents SET permissions = $1 WHERE id = $2`, [st.agents[ix].permissions, agentId]);
+    } catch (e) {
+      console.error("agent permissions pg:", e);
+    }
+  }
   saveFileStore(st);
 }
 
 export async function listAdmins(): Promise<Admin[]> {
-  if (db) {
-    const { data, error } = await db.from("admins").select("*").order("created_at", { ascending: false });
-    if (!error && data?.length) {
-      return (data as Admin[]).map((a) => ({ ...a, email: typeof a.email === "string" ? a.email : null }));
+  if (hasPg()) {
+    try {
+      const res = await pgQuery(`SELECT * FROM admins ORDER BY created_at DESC`);
+      return res.rows.map((a) => ({
+        ...a,
+        telegram_id: Number(a.telegram_id),
+        email: typeof a.email === "string" ? a.email : null,
+        permissions: Array.isArray(a.permissions) ? a.permissions : [],
+      })) as Admin[];
+    } catch (e) {
+      console.error("listAdmins pg:", e);
     }
   }
   return loadFileStore().admins;
@@ -1800,20 +1899,15 @@ export async function createAdmin(input: { telegram_id: number; name: string; em
     permissions: ['manage_agents', 'site_settings', 'edit_links', 'view_stats'], // Default
     created_at: new Date().toISOString(),
   };
-  if (db) {
-    const { error } = await db.from("admins").insert([row]);
-    if (error) {
-      // توافق مع مخطط قديم لا يحتوي عمود email
-      const { error: e2 } = await db.from("admins").insert([
-        {
-          id: row.id,
-          telegram_id: row.telegram_id,
-          name: row.name,
-          permissions: row.permissions,
-          created_at: row.created_at,
-        },
-      ]);
-      if (e2) console.error("createAdmin:", e2);
+  if (hasPg()) {
+    try {
+      await pgQuery(
+        `INSERT INTO admins (id, telegram_id, name, email, permissions, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [row.id, row.telegram_id, row.name, row.email, row.permissions, row.created_at]
+      );
+    } catch (e) {
+      console.error("createAdmin pg:", e);
     }
   }
   const st = loadFileStore();
@@ -1829,9 +1923,20 @@ export async function updateAdmin(adminId: string, patch: Partial<Pick<Admin, "n
   else if (patch.email === null) next.email = null;
   if (Object.keys(next).length === 0) return;
 
-  if (db) {
-    const { error } = await db.from("admins").update(next).eq("id", adminId);
-    if (error) console.error("updateAdmin:", error);
+  if (hasPg()) {
+    try {
+      const fields: string[] = [];
+      const vals: unknown[] = [];
+      let i = 1;
+      for (const [k, v] of Object.entries(next)) {
+        fields.push(`${k} = $${i++}`);
+        vals.push(v);
+      }
+      vals.push(adminId);
+      await pgQuery(`UPDATE admins SET ${fields.join(", ")} WHERE id = $${i}`, vals);
+    } catch (e) {
+      console.error("updateAdmin pg:", e);
+    }
   }
   const st = loadFileStore();
   const ix = st.admins.findIndex((a) => a.id === adminId);
@@ -1851,7 +1956,13 @@ export async function toggleAdminPermission(adminId: string, permission: string)
   } else {
     st.admins[ix].permissions = [...current, permission];
   }
-  if (db) await db.from("admins").update({ permissions: st.admins[ix].permissions }).eq("id", adminId);
+  if (hasPg()) {
+    try {
+      await pgQuery(`UPDATE admins SET permissions = $1 WHERE id = $2`, [st.admins[ix].permissions, adminId]);
+    } catch (e) {
+      console.error("admin permissions pg:", e);
+    }
+  }
   saveFileStore(st);
 }
 
@@ -1864,7 +1975,13 @@ export async function deleteAdmin(id: string): Promise<void> {
     return;
   }
 
-  if (db) await db.from("admins").delete().eq("id", id);
+  if (hasPg()) {
+    try {
+      await pgQuery(`DELETE FROM admins WHERE id = $1`, [id]);
+    } catch (e) {
+      console.error("deleteAdmin pg:", e);
+    }
+  }
   st.admins = st.admins.filter(a => a.id !== id);
   saveFileStore(st);
 }
@@ -1873,10 +1990,33 @@ export async function deleteAdmin(id: string): Promise<void> {
  * Bot Users Management (for Broadcasts)
  */
 export async function registerBotUser(telegramId: number) {
-  // Always check DB first as the primary truth
-  if (db) {
-    const { data, error } = await db.from("bot_users").select("*").eq("telegram_id", telegramId).maybeSingle();
-    if (!error && data) return data as BotUser;
+  if (hasPg()) {
+    try {
+      const existing = await pgOne(
+        `SELECT id, telegram_id, created_at FROM bot_users WHERE telegram_id = $1`,
+        [telegramId]
+      );
+      if (existing) {
+        return {
+          id: String(existing.id),
+          telegram_id: Number(existing.telegram_id),
+          created_at: String(existing.created_at),
+        } as BotUser;
+      }
+      const newUser: BotUser = {
+        id: globalThis.crypto?.randomUUID?.() ?? `botuser-${Date.now()}`,
+        telegram_id: telegramId,
+        created_at: new Date().toISOString(),
+      };
+      await pgQuery(
+        `INSERT INTO bot_users (id, telegram_id, created_at) VALUES ($1,$2,$3)
+         ON CONFLICT (telegram_id) DO NOTHING`,
+        [newUser.id, newUser.telegram_id, newUser.created_at]
+      );
+      return newUser;
+    } catch (e) {
+      console.error("registerBotUser pg:", e);
+    }
   }
 
   const store = loadFileStore();
@@ -1888,24 +2028,23 @@ export async function registerBotUser(telegramId: number) {
     telegram_id: telegramId,
     created_at: new Date().toISOString(),
   };
-
-  if (db) {
-    const { error } = await db.from("bot_users").upsert({
-      telegram_id: telegramId,
-      created_at: newUser.created_at,
-    });
-    if (error) console.error("registerBotUser DB failure:", error);
-  }
-
   store.bot_users.push(newUser);
   saveFileStore(store);
   return newUser;
 }
 
 export async function listBotUsers() {
-  if (db) {
-    const { data, error } = await db.from("bot_users").select("*");
-    if (!error && data) return data as BotUser[];
+  if (hasPg()) {
+    try {
+      const res = await pgQuery(`SELECT id, telegram_id, created_at FROM bot_users`);
+      return res.rows.map((u) => ({
+        id: String(u.id),
+        telegram_id: Number(u.telegram_id),
+        created_at: String(u.created_at),
+      })) as BotUser[];
+    } catch (e) {
+      console.error("listBotUsers pg:", e);
+    }
   }
   const store = loadFileStore();
   return store.bot_users;
@@ -1925,15 +2064,36 @@ export async function createOffer(offerData: Omit<ServerOffer, "id">) {
   store.offers.sort((a, b) => a.sort_order - b.sort_order);
   saveFileStore(store);
 
-  if (db) {
-    await db.from("offers").insert(newOffer);
+  if (hasPg()) {
+    try {
+      await pgQuery(
+        `INSERT INTO offers (id, variant, title_ar, title_en, amount_display, unit_ar, unit_en, sort_order)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [
+          newOffer.id,
+          newOffer.variant,
+          newOffer.title_ar,
+          newOffer.title_en,
+          newOffer.amount_display,
+          newOffer.unit_ar,
+          newOffer.unit_en,
+          newOffer.sort_order,
+        ]
+      );
+    } catch (e) {
+      console.error("createOffer pg:", e);
+    }
   }
   return newOffer;
 }
 
 export async function deleteOffer(id: string) {
-  if (db) {
-    await db.from("offers").delete().eq("id", id);
+  if (hasPg()) {
+    try {
+      await pgQuery(`DELETE FROM offers WHERE id = $1`, [id]);
+    } catch (e) {
+      console.error("deleteOffer pg:", e);
+    }
   }
   const store = loadFileStore();
   store.offers = store.offers.filter((o) => o.id !== id);
@@ -1944,12 +2104,20 @@ export async function deleteOffer(id: string) {
 export async function upsertPushToken(input: { token: string; client_id: string; platform: string }): Promise<void> {
   const updated_at = new Date().toISOString();
   const row: PushTokenRecord = { ...input, updated_at };
-  if (db) {
-    const { error } = await db.from("push_tokens").upsert(
-      { token: input.token, client_id: input.client_id, platform: input.platform, updated_at },
-      { onConflict: "token" }
-    );
-    if (error) console.error("upsertPushToken:", error);
+  if (hasPg()) {
+    try {
+      await pgQuery(
+        `INSERT INTO push_tokens (token, client_id, platform, updated_at)
+         VALUES ($1,$2,$3,$4)
+         ON CONFLICT (token) DO UPDATE SET
+           client_id = EXCLUDED.client_id,
+           platform = EXCLUDED.platform,
+           updated_at = EXCLUDED.updated_at`,
+        [input.token, input.client_id, input.platform, updated_at]
+      );
+    } catch (e) {
+      console.error("upsertPushToken pg:", e);
+    }
   }
   const st = loadFileStore();
   const ix = st.push_tokens.findIndex((p) => p.token === input.token);
@@ -1959,17 +2127,25 @@ export async function upsertPushToken(input: { token: string; client_id: string;
 }
 
 export async function listPushTokens(): Promise<PushTokenRecord[]> {
-  if (db) {
-    const { data, error } = await db.from("push_tokens").select("*");
-    if (!error && data?.length) return data as PushTokenRecord[];
+  if (hasPg()) {
+    try {
+      const res = await pgQuery(`SELECT token, client_id, platform, updated_at FROM push_tokens`);
+      if (res.rows.length) return res.rows as PushTokenRecord[];
+    } catch (e) {
+      console.error("listPushTokens pg:", e);
+    }
   }
   return loadFileStore().push_tokens;
 }
 
 export async function removePushTokens(tokens: string[]): Promise<void> {
   if (!tokens.length) return;
-  if (db) {
-    await db.from("push_tokens").delete().in("token", tokens);
+  if (hasPg()) {
+    try {
+      await pgQuery(`DELETE FROM push_tokens WHERE token = ANY($1::text[])`, [tokens]);
+    } catch (e) {
+      console.error("removePushTokens pg:", e);
+    }
   }
   const st = loadFileStore();
   const set = new Set(tokens);
@@ -1981,9 +2157,12 @@ export async function removePushTokens(tokens: string[]): Promise<void> {
 export async function removePushTokensByClientId(client_id: string): Promise<void> {
   const id = client_id.trim();
   if (!id) return;
-  if (db) {
-    const { error } = await db.from("push_tokens").delete().eq("client_id", id);
-    if (error) console.error("removePushTokensByClientId:", error);
+  if (hasPg()) {
+    try {
+      await pgQuery(`DELETE FROM push_tokens WHERE client_id = $1`, [id]);
+    } catch (e) {
+      console.error("removePushTokensByClientId pg:", e);
+    }
   }
   const st = loadFileStore();
   st.push_tokens = st.push_tokens.filter((p) => p.client_id !== id);
