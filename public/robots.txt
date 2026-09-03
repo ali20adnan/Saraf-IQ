@@ -1,0 +1,8 @@
+# https://www.robotstxt.org/robotstxt.html
+User-agent: *
+Allow: /
+
+# SPA — لا تفهرس واجهات API
+Disallow: /api/
+
+Sitemap: https://saraf.asia/sitemap.xml

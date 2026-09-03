@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "375040990600",
+    "project_id": "saraf-d205d",
+    "storage_bucket": "saraf-d205d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:375040990600:android:5cac72bb5970cca785ee3d",
+        "android_client_info": {
+          "package_name": "com.sarafiq.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDGrbDsUOpSQIu57lf5Ax2idnQndRO_uJo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,164 @@
+/* الخطوط تُحمَّل من index.html لتقليل حظر الرسم (أداء الجوال/سطح المكتب) */
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", "Cairo", ui-sans-serif, system-ui, sans-serif;
+}
+
+html {
+  height: 100%;
+  max-height: 100%;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* عربي: Cairo أولاً — يقلّل «ازدواجية» السماكة مع Inter + font-black في WebKit/WebView */
+html[lang="ar"] body,
+html[lang="ar"] #root {
+  font-family: "Cairo", "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  height: 100%;
+  max-height: 100%;
+  margin: 0;
+  overflow: hidden;
+  font-family: var(--font-sans);
+  background-color: #F8FAFC;
+  -webkit-tap-highlight-color: transparent;
+  /* manipulation يمكن أن يتعارض مع تمرير عمودي في WebView */
+  touch-action: pan-y pinch-zoom;
+  overscroll-behavior-y: none;
+}
+
+#root {
+  height: 100%;
+  min-height: 0;
+}
+
+/* إخفاء scrollbar أفقي في الأقسام الأفقية */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* تمرير في WebView — بدون transform يتعارض مع hit-testing على بعض الأجهزة */
+.saraf-main-scroll {
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+}
+
+/* دخول خفيف للوحة التحكم — بدون blur أو حركات ثقيلة */
+@keyframes saraf-dash-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.saraf-dash-in {
+  animation: saraf-dash-in 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .saraf-dash-in {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* أجهزة ضعيفة: تقليل الحركة والوميض (يُضبط من AppSplash) */
+html.saraf-low-end {
+  scroll-behavior: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* شريط تقدّم غير محدد لشاشة التحميل */
+@keyframes saraf-loading-shimmer {
+  0% {
+    transform: translateX(-120%);
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(280%);
+    opacity: 0.5;
+  }
+}
+
+.saraf-loading-bar {
+  position: relative;
+  height: 3px;
+  width: min(12rem, 78vw);
+  overflow: hidden;
+  border-radius: 9999px;
+  background: rgb(15 23 42 / 0.1);
+}
+
+.saraf-loading-bar--on-video {
+  background: rgb(255 255 255 / 0.22);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.08);
+}
+
+.saraf-loading-bar::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 42%;
+  border-radius: 9999px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    #dc2626,
+    #f87171,
+    #dc2626,
+    transparent
+  );
+  animation: saraf-loading-shimmer 1.35s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .saraf-loading-bar::after {
+    animation: none;
+    left: 29%;
+    transform: none;
+    opacity: 0.85;
+  }
+}
+
+/* Hide number input spin buttons */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+
+input[type=number] {
+  -webkit-appearance: textfield;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}

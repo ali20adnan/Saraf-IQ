@@ -1,0 +1,85 @@
+# يبني الـ APK ويُنشئ GitHub Release بملف saraf-iq-debug.apk
+#
+# الطريقة أ — يدوي (الأسهل): Actions → Release APK → Run workflow → اترك v1.0.0 → Run workflow
+# الطريقة ب — من Git: git tag v1.0.0 && git push origin v1.0.0
+#
+# الرابط بعد النجاح:
+# https://github.com/OWNER/REPO/releases/download/TAG/saraf-iq-debug.apk
+name: Release APK
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "اسم الإصدار (مثل v1.0.0)"
+        required: true
+        default: "v1.0.0"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve release tag
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@v3
+
+      - run: yes | sdkmanager --licenses || true
+
+      - run: npx cap sync android
+
+      - name: Gradle assembleDebug
+        working-directory: android
+        run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Rename for release asset
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk saraf-iq-debug.apk
+
+      - name: Create or update GitHub Release
+        run: |
+          set -e
+          TAG="${{ steps.meta.outputs.tag }}"
+          REPO="${{ github.repository }}"
+          URL="https://github.com/${REPO}/releases/download/${TAG}/saraf-iq-debug.apk"
+          NOTES="**تنزيل مباشر:** [saraf-iq-debug.apk](${URL})"
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "Release $TAG موجود — استبدال الملف..."
+            gh release upload "$TAG" saraf-iq-debug.apk --repo "$REPO" --clobber
+          else
+            echo "إنشاء Release $TAG ..."
+            gh release create "$TAG" saraf-iq-debug.apk \
+              --repo "$REPO" \
+              --title "Saraf IQ $TAG" \
+              --notes "$NOTES"
+          fi
+          echo "✅ جاهز: $URL"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
