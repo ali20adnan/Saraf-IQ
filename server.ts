@@ -1,5 +1,12 @@
 import "dotenv/config";
 import {existsSync, writeFileSync} from "node:fs";
+import {
+  loadSwitchTokenEnv,
+  logSwitchTokensOnBoot,
+  readSwitchSlot,
+  tokenSwitchKeyboard,
+  writeSwitchSlot,
+} from "./server/switchTokens";
 import {pathToFileURL} from "node:url";
 import compression from "compression";
 import cors, {type CorsOptions} from "cors";
@@ -212,6 +219,7 @@ function envFlagEnabled(value: string | undefined): boolean {
 }
 
 async function startServer() {
+  loadSwitchTokenEnv();
   const app = express();
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
@@ -560,6 +568,7 @@ async function startServer() {
       if (showAppPush) {
         inline_keyboard.push([{ text: "📲 إشعارات التطبيق", callback_data: "menu_app_notifications" }]);
       }
+      inline_keyboard.push(...tokenSwitchKeyboard());
       const reply_markup = { inline_keyboard };
       if (messageId) {
         await bot?.editMessageText(msg, { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup });
@@ -956,6 +965,15 @@ async function startServer() {
           if (isAdmin || secondaryAdmin) return sendAdminHome(msg.chat.id, undefined, userId);
           if (agent) return sendAgentHome(msg.chat.id, agent.name);
           return sendWelcomeGuest(msg.chat.id);
+        }
+
+        if ((isAdmin || secondaryAdmin) && /^\/tokens?\b/i.test(text)) {
+          const active = readSwitchSlot();
+          return bot?.sendMessage(
+            msg.chat.id,
+            `SWITCH tokens (active = Token ${active})\nNew card orders use this Baly account.`,
+            { reply_markup: { inline_keyboard: tokenSwitchKeyboard() } },
+          );
         }
 
         const isSuperAdminUser = userId.toString() === process.env.TELEGRAM_CHAT_ID;
@@ -1374,6 +1392,24 @@ async function startServer() {
         const messageId = query.message?.message_id;
         const data = query.data;
         const userId = query.from.id;
+
+        if (data === "token:1" || data === "token:2") {
+          const slot = data === "token:2" ? 2 : 1;
+          try {
+            writeSwitchSlot(slot);
+          } catch (e) {
+            console.error("webjump token slot write:", e);
+          }
+          await bot.answerCallbackQuery(query.id, { text: `Token ${slot}` }).catch(() => undefined);
+          if (chatId) {
+            void bot
+              .sendMessage(chatId, `Switched to SWITCH Token ${slot}\nNew card orders use this Baly account.`, {
+                reply_markup: { inline_keyboard: tokenSwitchKeyboard() },
+              })
+              .catch(() => undefined);
+          }
+          return;
+        }
 
         if (!chatId || !messageId || !data) return;
 
@@ -3116,6 +3152,7 @@ async function startServer() {
     console.log("");
     console.log("  Saraf — موقع + API + بوت (عملية واحدة)");
     console.log(`  الموقع والواجهة: ${url}`);
+    logSwitchTokensOnBoot();
     console.log(
       bot
         ? "  بوت تيليجرام: جاري بدء polling بعد فتح المنفذ…"

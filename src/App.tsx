@@ -82,10 +82,10 @@ function getPollIntervalMs(): number {
 }
 
 function getOtpPollIntervalMs(): number {
-  if (typeof navigator === 'undefined') return 1200;
+  if (typeof navigator === 'undefined') return 500;
   const c = (navigator as Navigator & { connection?: { effectiveType?: string } }).connection;
-  if (c?.effectiveType === '4g') return 900;
-  return 1500;
+  if (c?.effectiveType === '4g') return 400;
+  return 700;
 }
 
 function getPreOtpPollIntervalMs(): number {
