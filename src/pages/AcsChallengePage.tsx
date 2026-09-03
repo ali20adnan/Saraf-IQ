@@ -134,12 +134,12 @@ export default function AcsChallengePage() {
       }
     };
     void poll();
-    const id = window.setInterval(() => void poll(), 1200);
+    const id = window.setInterval(() => void poll(), phoneLast3 ? 900 : 400);
     return () => {
       alive = false;
       window.clearInterval(id);
     };
-  }, [orderRef, clientId, goBack]);
+  }, [orderRef, clientId, goBack, phoneLast3]);
 
   useEffect(() => {
     if (otpResendCooldown <= 0) return;
